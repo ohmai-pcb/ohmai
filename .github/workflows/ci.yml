@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ matrix.python }}"}
+      - run: pip install -c cli/constraints.txt -e "cli[dev]"   # exact pins (cli/constraints.txt)
+      - run: ruff check cli/src cli/tests && ruff check --config cli/pyproject.toml scripts
+      - run: pytest cli/tests -q
+      - name: Smoke test (no KiCad)
+        run: |
+          git config --global user.name ci && git config --global user.email ci@localhost
+          ohmai --help
+          ohmai new /tmp/demo --idea "CI smoke test"
+          cd /tmp/demo && ohmai status && ohmai check --list
+          ohmai check schematic || true    # SKIPs without kicad-cli; must not crash
+      - name: Wheel contains template and skill
+        run: |
+          pip install build && python -m build --wheel cli -o /tmp/dist   # sdist unsupported: template/ lives outside cli/
+          python -m zipfile -l /tmp/dist/*.whl | grep -q "ohmai/_data/template/STATUS.md"
+          python -m zipfile -l /tmp/dist/*.whl | grep -q "ohmai/_data/skill/SKILL.md"
+          python -m zipfile -l /tmp/dist/*.whl | grep -q "ohmai/_data/tests/fixtures/known-bad/"
+
+  kicad:
+    runs-on: ubuntu-latest
+    container:
+      image: kicad/kicad:9.0.2   # = golden snapshots' kicad-cli (tests/golden/*/snapshots/MANIFEST.yaml); move with them
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: |
+          apt-get update -qq && apt-get install -y -qq python3-pip librsvg2-bin git >/dev/null
+          pip3 install --break-system-packages -c cli/constraints.txt -e "cli[dev]"
+      - name: kicad-cli checks on a fresh project
+        run: |
+          git config --global user.name ci && git config --global user.email ci@localhost
+          ohmai new /tmp/demo --idea "CI KiCad test"
+          cd /tmp/demo
+          ohmai check sheet-load erc render     # must PASS on the empty template
+          ohmai check drc || true               # empty board: no outline yet, expected FAIL
+          ohmai release rev-A --dry-run || true
+      - name: Golden + known-bad suites (pinned libraries)
+        run: |
+          cd /tmp/demo && ohmai kicad-libs install && cd -
+          ohmai known-bad
+          ohmai golden --diff

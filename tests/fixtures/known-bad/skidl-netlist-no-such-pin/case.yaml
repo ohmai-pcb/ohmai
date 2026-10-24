@@ -1,0 +1,9 @@
+check: skidl-netlist
+bug: "expected_nets.csv puts the LED anode on R1 pin 3; the Device:R symbol has pins 1 and 2 only"
+detail: "R1\\.3: symbol Device:R has no pin 3"
+needs: [skidl, kicad-cli, kicad-libs]
+base: ["golden:ldo-led"]
+name: ldo-led
+build: true
+mutate:
+  - {file: expected_nets.csv, replace: "LED_A,R1.2,D1.2", with: "LED_A,R1.3,D1.2"}

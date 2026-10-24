@@ -1,0 +1,5 @@
+check: kicad-app
+bug: "KiCad 9.1.0 installed, project pins kicad.app >=9.0,<9.1 (a newer KiCad rewrites files)"
+detail: "outside the pinned range"
+opts: {kicad_version: "9.0.2"}
+bad_opts: {kicad_version: "9.1.0"}

@@ -1,0 +1,9 @@
+(footprint "SOT-3_fixture"
+	(version 20241229)
+	(generator "fixture")
+	(layer "F.Cu")
+	(descr "Fictional 3-pad fixture footprint, not a real land pattern (fixture datasheet p. 1)")
+	(pad "1" smd roundrect (at -0.95 1) (size 0.6 0.7) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+	(pad "2" smd roundrect (at 0.95 1) (size 0.6 0.7) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+	(pad "3" smd roundrect (at 0 -1) (size 0.6 0.7) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+)

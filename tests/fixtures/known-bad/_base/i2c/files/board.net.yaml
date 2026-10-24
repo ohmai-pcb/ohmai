@@ -1,0 +1,16 @@
+# Two FICTIONAL I2C sensors on one bus with 4k7 pull-ups (ohmai.testkit YAML netlist).
+parts:
+  U2: {value: OHM-TMP1, part: 'fixture:OHM-TMP', mpn: OHM-TMP1-FICT}
+  U3: {value: OHM-TMP2, part: 'fixture:OHM-TMP', mpn: OHM-TMP2-FICT}
+  R2: {value: 4k7, part: 'Device:R'}
+  R3: {value: 4k7, part: 'Device:R'}
+  R4: {value: 10k, part: 'Device:R'}
+pins:
+  fixture:OHM-TMP: {'1': SDA, '2': SCL, '3': ALERT, '4': GND, '5': VDD}
+  Device:R: {'1': '', '2': ''}
+nets:
+  SDA: [U2.1, U3.1, R2.1]
+  SCL: [U2.2, U3.2, R3.1]
+  ALERT: [U2.3, U3.3, R4.1]
+  3V3: [U2.5, U3.5, R2.2, R3.2, R4.2]
+  GND: [U2.4, U3.4]

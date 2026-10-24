@@ -1,0 +1,9 @@
+# ldo-led: minimal golden reference board (connector -> AP2112K-3.3 LDO -> 3V3 -> LED), drawn by
+# `ohmai schematic build` from src/hardware/gen/layout/*.yaml with the pinned official libraries.
+# No layout yet: drc and gerbers join `artefacts` once src/ has a routed .kicad_pcb.
+name: ldo-led
+description: "3V3 LDO + LED + 2-pin header; 2 sheets; AP2112 DS39724 Rev. 2-2 citations; FICT- passive MPNs"
+needs: [kicad-cli, kicad-libs]
+build: [kicad-libs-tables, schematic]
+artefacts: [netlist, erc, bom, symbols, checks]
+checks: [sheet-load, erc, netlist, pin-map, single-source, passives, pullups, i2c-addr, readability, bom-schema, bom-lock, constraints]

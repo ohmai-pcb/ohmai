@@ -1,0 +1,7 @@
+check: pin-map
+bug: "symbol pin map wrong: VIN and VOUT swapped on the regulator symbol (pin 1 named VOUT)"
+detail: "U1\\.1: symbol says 'VOUT', datasheet says 'VIN'"
+base: ["golden:ldo-led", ldo-led]
+opts: {netlist: board.net}
+mutate:
+  - {file: board.net.yaml, replace: "{'1': VIN, '2': GND, '3': EN, '4': NC, '5': VOUT}", with: "{'1': VOUT, '2': GND, '3': EN, '4': NC, '5': VIN}"}

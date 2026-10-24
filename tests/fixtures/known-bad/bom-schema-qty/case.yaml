@@ -1,0 +1,8 @@
+check: bom-schema
+bug: "qty 3 on the C1 C2 row (two refs): fab would buy the wrong count"
+detail: "qty 3 but 2 ref"
+base: ["golden:ldo-led", ldo-led]
+expect: {clean: WARN}
+why_clean_warn: "the fixture BOM has no second sources (fictional parts); bom-schema WARNs on that by design"
+mutate:
+  - {file: bom/bom.csv, replace: "C1 C2,2,", with: "C1 C2,3,"}

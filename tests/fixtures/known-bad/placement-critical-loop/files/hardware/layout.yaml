@@ -1,0 +1,4 @@
+# FICTIONAL fixture board: decoupler C1 critical loop to U1.2 must be <= 2.5 mm on the same layer.
+planes: {GND: B.Cu}
+critical_loops:
+  - {name: "C1-U1.2", from: C1.1, to: U1.2, max_mm: 2.5, same_layer: true}

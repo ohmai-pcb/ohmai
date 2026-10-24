@@ -1,0 +1,9 @@
+check: commits
+bug: "a commit on the phase branch has no OhmAI-Author trailer"
+detail: "no `OhmAI-Author:` trailer"
+needs: [git]
+git:
+  commits:
+    - {message: "notes: add bring-up idea\n\nOhmAI-Author: name=OhmAI; kind=agent; vendor=Fixture; model=none; instructions=known-bad\n", files: {notes.md: "idea\n"}}
+mutate:
+  - {commit: 0, replace: "OhmAI-Author: name=OhmAI; kind=agent; vendor=Fixture; model=none; instructions=known-bad", with: ""}

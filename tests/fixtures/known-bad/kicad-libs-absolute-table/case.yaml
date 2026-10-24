@@ -1,0 +1,6 @@
+check: kicad-libs
+bug: "sym-lib-table points at a personal absolute path instead of the pinned library variable"
+detail: "does not use"
+fake_kicad_libs: true
+mutate:
+  - {file: hardware/sym-lib-table, replace: "${OHMAI_KICAD_SYMBOLS}", with: "/home/someone/kicad/symbols"}

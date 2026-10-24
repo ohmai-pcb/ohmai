@@ -1,0 +1,8 @@
+check: netlist
+bug: "net label 3V3 dropped on the VIN wire shorts VIN to 3V3"
+detail: "merged|split"
+base: ["golden:ldo-led", ldo-led]
+opts: {netlist: board.net}
+mutate:
+  - {file: board.net.yaml, replace: "3V3: [C2.1, R1.1, U1.5]", with: "3V3: [C2.1, R1.1, U1.5, C1.1, J1.1, U1.1, U1.3]"}
+  - {file: board.net.yaml, replace: "  Net-(J1-Pin_1): [C1.1, J1.1, U1.1, U1.3]\n", with: ""}

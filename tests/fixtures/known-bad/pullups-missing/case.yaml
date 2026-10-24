@@ -1,0 +1,8 @@
+check: pullups
+bug: "SDA pull-up R2 missing (open bus line floats)"
+detail: "SDA\\) on SDA: no pull-up"
+base: [i2c]
+opts: {netlist: board.net}
+mutate:
+  - {file: board.net.yaml, replace: "SDA: [U2.1, U3.1, R2.1]", with: "SDA: [U2.1, U3.1]"}
+  - {file: board.net.yaml, replace: "3V3: [U2.5, U3.5, R2.2,", with: "3V3: [U2.5, U3.5,"}

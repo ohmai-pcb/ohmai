@@ -1,0 +1,11 @@
+check: skidl-netlist
+bug: "copy-pasted net label VIN on the VOUT wire shorts VIN to 3V3; the SKiDL netlist from expected_nets.csv disagrees"
+detail: "short: expected nets VIN and 3V3|short: expected nets 3V3 and VIN"
+needs: [skidl, kicad-cli, kicad-libs]
+base: ["golden:ldo-led"]
+name: ldo-led
+build: true
+prepare:
+  - {file: hardware/power.kicad_sch, replace: "\t(sheet_instances", with: "\t(label \"VIN\" (at 104.14 91.44 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid \"0b1e5b4e-0000-4000-8000-000000000001\"))\n\t(sheet_instances", stage: built}
+mutate:
+  - {file: hardware/power.kicad_sch, replace: "\t(sheet_instances", with: "\t(label \"VIN\" (at 149.86 91.44 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid \"0b1e5b4e-0000-4000-8000-000000000002\"))\n\t(sheet_instances", stage: built}

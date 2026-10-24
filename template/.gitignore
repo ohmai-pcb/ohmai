@@ -1,0 +1,49 @@
+# OhmAI outputs (CI artifacts and releases only)
+out/
+release/
+
+# KiCad backups, caches, locks, local settings
+*.bak
+*.bck
+*-bak
+*~
+_autosave-*
+*-backups/
+\#auto_saved_files#
+fp-info-cache
+*.kicad_prl
+*.lck
+~*.lck
+*.kicad_sch-bak
+*.kicad_pcb-bak
+
+# Fabrication outputs (attach to GitHub releases instead)
+*.gbr
+*.gbl
+*.gtl
+*.gbs
+*.gts
+*.gbo
+*.gto
+*.gm1
+*.drl
+*.zip
+*-pos.csv
+*-job.gbrjob
+
+# Freerouting / Specctra intermediates
+*.dsn
+*.ses
+*.rules
+
+# Python / OS
+__pycache__/
+.venv/
+.DS_Store
+
+# Datasheets (tracked via datasheets/manifest.yaml; binary PDFs stay local)
+datasheets/*.pdf
+.env
+.env.*
+*.pem
+*.key

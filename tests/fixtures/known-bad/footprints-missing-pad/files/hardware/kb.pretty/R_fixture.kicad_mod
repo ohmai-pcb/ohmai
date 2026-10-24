@@ -1,0 +1,8 @@
+(footprint "R_fixture"
+	(version 20241229)
+	(generator "fixture")
+	(layer "F.Cu")
+	(descr "Fictional 2-pad fixture footprint, not a real land pattern (fixture datasheet p. 1)")
+	(pad "1" smd roundrect (at -0.8 0) (size 0.8 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+	(pad "2" smd roundrect (at 0.8 0) (size 0.8 0.9) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+)

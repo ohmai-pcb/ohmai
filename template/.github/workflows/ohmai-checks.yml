@@ -1,0 +1,107 @@
+# OhmAI project CI. On every PR: run the checks for the phase in STATUS.md, render the schematic,
+# diff netlist and BOM against the base branch, and post one sticky comment.
+# On rev-* tags: KiBot builds fab outputs and a GitHub release (gerbers, BOM, PnP).
+name: ohmai-checks
+
+on:
+  pull_request:
+  push:
+    tags: ["rev-*"]
+
+permissions:
+  contents: write        # release on tags
+  pull-requests: write   # PR comment
+
+env:
+  # Pin to the OhmAI version in ohmai.yaml (upgrade in its own PR).
+  OHMAI_PIP: "ohmai=={{ohmai_version}}"
+  # Until OhmAI is on PyPI: OHMAI_PIP: "git+https://github.com/ohmai/ohmai@v{{ohmai_version}}#subdirectory=cli"
+
+jobs:
+  checks:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    container:
+      # Set the exact KiCad build pinned in toolchain.lock.yaml (tools.kicad-app.version), e.g. kicad/kicad:9.0.2;
+      # `ohmai check toolchain` FAILs when the image's kicad-cli differs from the lock.
+      image: kicad/kicad:9.0
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, lfs: true}
+      - name: Install OhmAI
+        run: |
+          apt-get update -qq && apt-get install -y -qq python3-pip librsvg2-bin git gh >/dev/null
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          pip3 install --break-system-packages "$OHMAI_PIP"
+          # exact Python deps from toolchain.lock.yaml (tier 1), so `ohmai check toolchain` sees the locked set
+          if [ -f toolchain.lock.yaml ]; then
+            mkdir -p out && ohmai lock --constraints > out/ohmai-constraints.txt
+            pip3 install --break-system-packages -r out/ohmai-constraints.txt
+          fi
+      # `ohmai check current` includes `review:<phase>`: the gate's independent review files in
+      # reviews/<phase>/ (see OhmAI docs/REVIEWS.md). fetch-depth 0 lets it verify commit refs/trailers.
+      # Optional extra gate: branch protection "Require approvals" for a GitHub PR review.
+      - name: ohmai check current
+        id: check
+        run: |
+          set +e
+          ohmai status
+          ohmai check current; echo "rc=$?" >> "$GITHUB_OUTPUT"
+      - name: Netlist and BOM diff vs base
+        if: always()
+        run: |
+          set +e
+          ohmai check bom-diff --against "origin/${{ github.base_ref }}" > /dev/null
+          ohmai check netlist > /dev/null      # writes out/actual_nets.csv
+          mkdir -p out/base
+          git show "origin/${{ github.base_ref }}:expected_nets.csv" > out/base/expected_nets.csv 2>/dev/null
+          {
+            echo; echo "<details><summary>expected_nets.csv diff vs base</summary>"; echo; echo '```diff'
+            git diff --no-color "origin/${{ github.base_ref }}" -- expected_nets.csv | tail -n +5
+            echo '```'; echo "</details>"
+            echo; echo "<details><summary>BOM changes vs base</summary>"; echo; echo '```'
+            cat out/bom-diff.txt 2>/dev/null || echo "(none)"
+            echo '```'; echo "</details>"
+            echo; echo "Schematic renders (PNG) and reports: see the **ohmai-out** artifact of this run."
+          } >> out/summary.md
+      - name: Upload renders and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: ohmai-out, path: out/, retention-days: 30}
+      - name: Post sticky PR comment
+        if: always()
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          echo "<!-- ohmai-checks -->" | cat - out/summary.md > out/comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --edit-last --body-file out/comment.md \
+            || gh pr comment "${{ github.event.pull_request.number }}" --body-file out/comment.md
+      - name: Fail if checks failed
+        if: steps.check.outputs.rc != '0'
+        run: exit 1
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/rev-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {lfs: true}
+      # KiBot is AGPL-3.0: used as a separate tool via its action, never vendored.
+      - uses: INTI-CMNB/KiBot@v2_k9
+        with:
+          config: hardware/release.kibot.yaml
+          dir: release
+      - name: Package
+        run: |
+          cd release && zip -qr "../${GITHUB_REF_NAME}-gerbers.zip" gerbers && cd ..
+          cp bom/bom.csv "${GITHUB_REF_NAME}-bom.csv"
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: "Fab release ${{ github.ref_name }}. Checklist and decisions: STATUS.md, docs/decisions.md."
+          files: |
+            ${{ github.ref_name }}-gerbers.zip
+            ${{ github.ref_name }}-bom.csv
+            release/assembly/*
+            release/docs/*
+            release/3d/*

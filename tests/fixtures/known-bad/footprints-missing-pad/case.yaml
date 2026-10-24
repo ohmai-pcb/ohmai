@@ -1,0 +1,6 @@
+check: footprints
+bug: "transistor footprint has no pad 3 (collector): a symbol pin without copper"
+detail: 'Q1 \(kb:SOT-3_fixture\): symbol pin\(s\) without a pad: 3'
+opts: {netlist: board.net}
+mutate:
+  - {file: hardware/kb.pretty/SOT-3_fixture.kicad_mod, regex: true, replace: '^\t\(pad "3" smd.*\n', with: ""}

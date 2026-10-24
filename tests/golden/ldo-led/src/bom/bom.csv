@@ -1,0 +1,7 @@
+# ldo-led golden reference board. MPNs starting FICT- are fictional placeholders (test fixture, not orderable).
+refs,qty,value,footprint,manufacturer,mpn,approved_alternates,status,dnp,supplier,supplier_pn,price_qty1,price_qty100,price_qty1000,currency,price_source,price_date,stock,lifecycle,second_source,rating_notes,notes
+J1,1,VIN 5V,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical,FICTIONAL,FICT-HDR-1X02,,locked,,,,,,,,,,,,,,input header
+U1,1,AP2112K-3.3,Package_TO_SOT_SMD:SOT-23-5,Diodes Incorporated,AP2112K-3.3TRG1,,locked,,,,,,,,,,,,,,3.3 V LDO
+C1 C2,2,1u,Capacitor_SMD:C_0603_1608Metric,FICTIONAL,FICT-C-1U-0603,,locked,,,,,,,,,,,,,X5R or X7R (AP2112 p.2 Note 4),CIN / COUT
+R1,1,1k,Resistor_SMD:R_0603_1608Metric,FICTIONAL,FICT-R-1K-0603,,locked,,,,,,,,,,,,,,LED series resistor
+D1,1,LED green,LED_SMD:LED_0603_1608Metric,FICTIONAL,FICT-LED-GRN-0603,,locked,,,,,,,,,,,,,,power LED

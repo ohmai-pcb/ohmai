@@ -1,0 +1,8 @@
+check: drc
+bug: "board outline (Edge.Cuts) has a missing segment: not a closed shape"
+detail: "invalid_outline"
+needs: [kicad-cli]
+prepare:
+  - {file: hardware/kb.kicad_pcb, replace: "\t(embedded_fonts no)\n)", with: "\t(gr_line (start 100 100) (end 130 100) (stroke (width 0.1) (type default)) (layer \"Edge.Cuts\") (uuid \"0b1e5b4e-0000-4000-8000-000000000100\"))\n\t(gr_line (start 130 100) (end 130 120) (stroke (width 0.1) (type default)) (layer \"Edge.Cuts\") (uuid \"0b1e5b4e-0000-4000-8000-000000000101\"))\n\t(gr_line (start 130 120) (end 100 120) (stroke (width 0.1) (type default)) (layer \"Edge.Cuts\") (uuid \"0b1e5b4e-0000-4000-8000-000000000102\"))\n\t(gr_line (start 100 120) (end 100 100) (stroke (width 0.1) (type default)) (layer \"Edge.Cuts\") (uuid \"0b1e5b4e-0000-4000-8000-000000000103\"))\n\t(embedded_fonts no)\n)"}
+mutate:
+  - {file: hardware/kb.kicad_pcb, regex: true, replace: '^\t\(gr_line \(start 130 120\).*\n', with: ""}

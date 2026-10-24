@@ -1,0 +1,10 @@
+# expected_nets.csv: the connectivity `ohmai check netlist` enforces. Written in phase 7 from the
+# architecture and parts/constraints before drawing, then kept in sync (owner approves changes in the PR).
+# Format: net,ref.pin,ref.pin,...
+#   ref.pin  exact pin (U1.20)     ref.*  any pin of a non-polar part (C3.*)
+#   ...      open row: other nodes allowed on this net
+#   NC       row name: listed pins must be unconnected
+#   TODO     in any cell: row is skipped and counted (fill in, then remove TODO)
+# Cite the pin source per part in a comment, e.g.  # U1 TPS63001: datasheet Rev 1.0 p.4 PIN FUNCTIONS
+net,nodes
+TODO_EXAMPLE_VIN,U1.20,C1.*,J1.1,...

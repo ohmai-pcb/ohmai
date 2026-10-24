@@ -1,0 +1,5 @@
+# ldo-led golden reference board: connector -> AP2112K-3.3 LDO -> 3V3 rail -> status LED.
+title: "ldo-led: root (hierarchy)"
+paper: A4
+sheets: [power, led]
+power: {GND: "power:GND", 3V3: "power:+3V3"}

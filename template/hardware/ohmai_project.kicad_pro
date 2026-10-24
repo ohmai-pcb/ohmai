@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "filename": "{{project_slug}}.kicad_pro",
+    "version": 1
+  }
+}

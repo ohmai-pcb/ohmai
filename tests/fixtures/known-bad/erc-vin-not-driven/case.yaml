@@ -1,0 +1,9 @@
+check: erc
+bug: "PWR_FLAG on VIN removed: U1 VIN power input not driven"
+detail: "power_pin_not_driven"
+needs: [kicad-cli, kicad-libs]
+base: ["golden:ldo-led"]
+name: ldo-led
+build: true
+mutate:
+  - {file: hardware/gen/layout/power.yaml, replace: "  - {net: VIN, to: J1.1, from: [7.62, 0], side: up}\n", with: ""}

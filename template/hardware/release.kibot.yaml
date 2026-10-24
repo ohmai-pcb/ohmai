@@ -1,0 +1,47 @@
+# KiBot config for tagged releases (rev-*). Runs in CI as a separate process (KiBot is AGPL-3.0).
+# Docs: https://kibot.readthedocs.io  (check option names against your KiBot version)
+kibot:
+  version: 1
+
+preflight:
+  erc: true
+  drc: true
+  update_xml: true
+
+outputs:
+  - name: gerbers
+    type: gerber
+    dir: gerbers
+    layers: [copper, F.SilkS, B.SilkS, F.Mask, B.Mask, F.Paste, B.Paste, Edge.Cuts]
+  - name: drill
+    type: excellon
+    dir: gerbers
+  - name: pnp
+    type: position
+    dir: assembly
+    options: {format: CSV, units: millimeters, only_smd: false}
+  - name: bom_csv
+    type: bom
+    dir: assembly
+    options: {format: CSV}
+  - name: ibom
+    type: ibom
+    dir: assembly
+  - name: schematic_pdf
+    type: pdf_sch_print
+    dir: docs
+  - name: assembly_pdf
+    type: pcb_print
+    dir: docs
+    options:
+      pages:
+        - layers: [F.Fab, Edge.Cuts]
+        - layers: [B.Fab, Edge.Cuts]
+          mirror: true
+  - name: step
+    type: step
+    dir: 3d
+  - name: render_top
+    type: render_3d
+    dir: 3d
+    options: {view: top}

@@ -1,0 +1,7 @@
+check: docs:docs/requirements.md
+bug: "requirements doc still carries a TODO line"
+detail: "TODO"
+prepare:
+  - {file: docs/requirements.md, write: "# Requirements: kb\n| ID | Requirement | Value | Unit | Source |\n|---|---|---|---|---|\n| R-01 | Input voltage | 5 | V | owner |\n"}
+mutate:
+  - {file: docs/requirements.md, append: "| R-02 | Output current | TODO | mA | owner |\n"}

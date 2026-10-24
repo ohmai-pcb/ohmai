@@ -1,0 +1,9 @@
+check: passives
+bug: "VIN input capacitor C1 (CIN, AP2112 p.2) left out"
+detail: 'U1\.1 \(VIN\) capacitor'
+base: ["golden:ldo-led", ldo-led]
+opts: {netlist: board.net}
+mutate:
+  - {file: board.net.yaml, replace: "  C1: {value: 1u, part: 'Device:C', mpn: FICT-C-1U-0603, footprint: 'Capacitor_SMD:C_0603_1608Metric'}\n", with: ""}
+  - {file: board.net.yaml, replace: "GND: [C1.2, C2.2,", with: "GND: [C2.2,"}
+  - {file: board.net.yaml, replace: "Net-(J1-Pin_1): [C1.1, J1.1,", with: "Net-(J1-Pin_1): [J1.1,"}

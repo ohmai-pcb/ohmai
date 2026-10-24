@@ -1,0 +1,6 @@
+check: bom-lock
+bug: "BOM row U1 still status 'approved' at BOM lock"
+detail: "must be 'locked'"
+base: ["golden:ldo-led", ldo-led]
+mutate:
+  - {file: bom/bom.csv, replace: "AP2112K-3.3TRG1,,locked,", with: "AP2112K-3.3TRG1,,approved,"}

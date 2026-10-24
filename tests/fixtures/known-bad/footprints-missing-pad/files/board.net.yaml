@@ -1,0 +1,13 @@
+# Fictional fixture board (no real part): one NPN transistor with a base resistor, footprints in a
+# project library (hardware/kb.pretty) so the check needs no pinned KiCad libraries.
+parts:
+  Q1: {value: NPN, part: 'Device:Q_NPN_BEC', mpn: FICT-NPN-SOT3, footprint: 'kb:SOT-3_fixture'}
+  R1: {value: 1k, part: 'Device:R', mpn: FICT-R-1K, footprint: 'kb:R_fixture'}
+pins:
+  Device:Q_NPN_BEC: {'1': B, '2': E, '3': C}
+  Device:R: {'1': '', '2': ''}
+nets:
+  Net-(Q1-B): [Q1.1, R1.2]
+  GND: [Q1.2]
+  OUT: [Q1.3]
+  IN: [R1.1]

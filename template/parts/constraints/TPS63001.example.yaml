@@ -1,0 +1,60 @@
+# EXAMPLE constraints file (files named *.example.yaml are not checked).
+# Copy to parts/constraints/<PART>.yaml for a real part. Every fact cites a datasheet page.
+# Facts below are from the MPS TPS63001 datasheet Rev. 1.0, 7/20/2022 (PIN FUNCTIONS p.4,
+# ABSOLUTE MAXIMUM RATINGS and Recommended Operating Conditions p.5).
+schema: ohmai-constraints/v1
+part: TPS63001
+manufacturer: Monolithic Power Systems
+package: QFN-20 (3mm x 5mm)
+match: {value: TPS63001, lib_symbol: TPS63001}
+datasheet:
+  file: datasheets/TPS63001.pdf
+  revision: "Rev. 1.0, 7/20/2022"
+review:
+  status: draft          # a human sets 'reviewed' + reviewer + date after checking every line
+abs_max:
+  - {param: VIN, min: -0.4, max: 40, unit: V, cite: {page: 5, where: ABSOLUTE MAXIMUM RATINGS}}
+  - {param: VOUT, min: -0.3, max: 40, unit: V, cite: {page: 5, where: ABSOLUTE MAXIMUM RATINGS}}
+  - {param: VEN, min: -0.3, max: 40, unit: V, cite: {page: 5, where: ABSOLUTE MAXIMUM RATINGS}}
+  - {param: VCC, min: -0.3, max: 6, unit: V, cite: {page: 5, where: ABSOLUTE MAXIMUM RATINGS}, note: "7.5 V for <500 us"}
+  - {param: All other pins, min: -0.3, max: 6, unit: V, cite: {page: 5, where: ABSOLUTE MAXIMUM RATINGS}}
+  - {param: Junction temperature, max: 150, unit: degC, cite: {page: 5, where: ABSOLUTE MAXIMUM RATINGS}}
+recommended:
+  - {param: Operating input voltage, min: 3.6, max: 36, unit: V, cite: {page: 5, where: Recommended Operating Conditions}}
+  - {param: Operating output voltage, min: 1, max: 24, unit: V, cite: {page: 5, where: Recommended Operating Conditions}}
+  - {param: Output current, max: 5, unit: A, cite: {page: 5, where: Recommended Operating Conditions}}
+  - {param: Operating junction temp, min: -40, max: 125, unit: degC, cite: {page: 5, where: Recommended Operating Conditions}}
+open_questions:
+  - "I2C address: not on p.4-5; find it in the register map section and add an i2c: block with its page."
+pins:
+  - {number: "1", name: SCL, direction: input, cite: {page: 4},
+     abs_max: {min: -0.3, max: 6, unit: V, cite: {page: 5}, note: all other pins}}
+  - {number: "2", name: SDA, direction: io, needs_pullup: true, cite: {page: 4},
+     abs_max: {min: -0.3, max: 6, unit: V, cite: {page: 5}, note: all other pins}}
+  - {number: "3", name: ALT, direction: open_drain, cite: {page: 4}, note: "I2C alert, open drain, active low"}
+  - {number: "4", name: FB, direction: feedback, cite: {page: 4},
+     required_external: [{kind: resistor, cite: {page: 4}, note: "divider from output to AGND; values from the design"}]}
+  - {number: "5", name: ISEN-, direction: sense, cite: {page: 4}}
+  - {number: "6", name: ISEN+, direction: sense, cite: {page: 4}}
+  - {number: "7", name: VOUT, direction: sense, cite: {page: 4}, note: "also supplies VCC under certain VOUT conditions",
+     abs_max: {min: -0.3, max: 40, unit: V, cite: {page: 5}}}
+  - {number: "8", name: BST2, direction: bootstrap, cite: {page: 4},
+     required_external: [{kind: capacitor, to: "pin:13", nominal: 0.22, unit: uF, cite: {page: 4}, note: "Kelvin to SW2"}]}
+  - {number: "9", name: HG2, direction: gate_drive, cite: {page: 4}, note: "boost-mode high-side gate (SWD)"}
+  - {number: "10", name: VCC, direction: regulator_out, cite: {page: 4},
+     abs_max: {min: -0.3, max: 6, unit: V, cite: {page: 5}},
+     required_external: [{kind: capacitor, min: 0.47, max: 1.5, unit: uF, total_on_net: true, cite: {page: 4},
+                          note: "0.47-1 uF alone; total <1.5 uF if VCC also supplies another controller"}]}
+  - {number: "11", name: AGND, direction: ground, cite: {page: 4}, note: "connect to PGND and to the VCC capacitor ground"}
+  - {number: "12", name: PGND, direction: ground, cite: {page: 4}}
+  - {number: "13", name: SW2, direction: switch, cite: {page: 4}}
+  - {number: "14", name: SW1, direction: switch, cite: {page: 4}}
+  - {number: "15", name: PGND, direction: ground, cite: {page: 4}}
+  - {number: "16", name: IMON, direction: analog_out, cite: {page: 4}}
+  - {number: "17", name: EN, direction: input, cite: {page: 4}, abs_max: {min: -0.3, max: 40, unit: V, cite: {page: 5}}}
+  - {number: "18", name: HG1, direction: gate_drive, cite: {page: 4}, note: "buck-mode high-side gate (SWA)"}
+  - {number: "19", name: BST1, direction: bootstrap, cite: {page: 4},
+     required_external: [{kind: capacitor, to: "pin:14", nominal: 0.22, unit: uF, cite: {page: 4}, note: "between SW1 and BST1"}]}
+  - {number: "20", name: VIN, direction: supply_in, cite: {page: 4},
+     abs_max: {min: -0.4, max: 40, unit: V, cite: {page: 5}},
+     note: "Kelvin to SWA drain with a wide trace; must not be shared with another DC-DC"}

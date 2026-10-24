@@ -1,0 +1,642 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ohmai:constraints:v1",
+  "title": "OhmAI per-part constraints (parts/constraints/<PART>.yaml)",
+  "description": "Datasheet facts for one part, each with a page citation. Written by an agent, reviewed by a human. Never guess: unknown values are omitted and listed in open_questions.",
+  "type": "object",
+  "required": [
+    "schema",
+    "part",
+    "match",
+    "datasheet",
+    "review",
+    "pins"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "ohmai-constraints/v1"
+    },
+    "part": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Base part name, also the file name (TPS63001)"
+    },
+    "mpn": {
+      "type": "string",
+      "description": "Orderable MPN as locked in bom/bom.csv"
+    },
+    "manufacturer": {
+      "type": "string"
+    },
+    "package": {
+      "type": "string"
+    },
+    "match": {
+      "type": "object",
+      "description": "How to find this part in the netlist: MPN field, refs or lib_symbol (value is informational, never used to bind)",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "lib_symbol": {
+          "type": "string"
+        },
+        "mpn": {
+          "type": "string",
+          "description": "Matched against the symbol's MPN field (preferred)"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Reference designators bound to this file"
+        }
+      }
+    },
+    "datasheet": {
+      "type": "object",
+      "required": [
+        "file",
+        "revision"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Path in repo, e.g. datasheets/TPS63001.pdf (Git LFS)"
+        },
+        "revision": {
+          "type": "string",
+          "description": "Revision and date printed on the datasheet"
+        },
+        "url": {
+          "type": "string"
+        },
+        "retrieved": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "draft",
+            "reviewed"
+          ]
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "reviewed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "status",
+          "reviewer",
+          "date"
+        ]
+      }
+    },
+    "abs_max": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rating"
+      }
+    },
+    "recommended": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rating"
+      }
+    },
+    "i2c": {
+      "type": "object",
+      "required": [
+        "address",
+        "sda_pin",
+        "cite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^0x[0-9A-Fa-f]{2}$",
+          "description": "7-bit address as configured"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^0x[0-9A-Fa-f]{2}$"
+          }
+        },
+        "sda_pin": {
+          "type": "string"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        }
+      }
+    },
+    "evb_reference": {
+      "type": "object",
+      "description": "Vendor EVB/reference design the schematic must be compared with (docs/evb-compare/<part>.md)",
+      "required": [
+        "document",
+        "cite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "type": "string"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        }
+      }
+    },
+    "layout_notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/note"
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pins": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/pin"
+      }
+    },
+    "critical_loops": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/critical_loop"
+      }
+    },
+    "keepouts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/keepout"
+      }
+    },
+    "layout_checklist": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/checklist_item"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review": {
+            "properties": {
+              "status": {
+                "const": "reviewed"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "pins": {
+            "items": {
+              "properties": {
+                "direction": {
+                  "not": {
+                    "const": "unknown"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "cite": {
+      "type": "object",
+      "required": [
+        "page"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Page number printed on the datasheet"
+        },
+        "where": {
+          "type": "string",
+          "description": "Table/figure/section, e.g. 'PIN FUNCTIONS', 'Fig. 13'"
+        },
+        "doc": {
+          "type": "string",
+          "description": "Only if not the main datasheet (app note, EVB guide)"
+        }
+      }
+    },
+    "number_or_expr": {
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ],
+      "description": "Number, or an expression copied from the datasheet such as 'VIN+0.3'"
+    },
+    "rating": {
+      "type": "object",
+      "required": [
+        "param",
+        "unit",
+        "cite"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "min"
+          ]
+        },
+        {
+          "required": [
+            "max"
+          ]
+        },
+        {
+          "required": [
+            "typ"
+          ]
+        }
+      ],
+      "properties": {
+        "param": {
+          "type": "string"
+        },
+        "min": {
+          "$ref": "#/$defs/number_or_expr"
+        },
+        "typ": {
+          "$ref": "#/$defs/number_or_expr"
+        },
+        "max": {
+          "$ref": "#/$defs/number_or_expr"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "range": {
+      "type": "object",
+      "required": [
+        "unit",
+        "cite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "min": {
+          "$ref": "#/$defs/number_or_expr"
+        },
+        "max": {
+          "$ref": "#/$defs/number_or_expr"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "external": {
+      "type": "object",
+      "required": [
+        "kind",
+        "cite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "capacitor",
+            "resistor",
+            "inductor",
+            "diode",
+            "pullup",
+            "ferrite",
+            "crystal",
+            "other"
+          ]
+        },
+        "to": {
+          "type": "string",
+          "description": "Net base name (GND) or 'pin:<number>' of the same part"
+        },
+        "nominal": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "unit": {
+          "enum": [
+            "F",
+            "mF",
+            "uF",
+            "nF",
+            "pF",
+            "ohm",
+            "kohm",
+            "Mohm",
+            "H",
+            "mH",
+            "uH",
+            "nH"
+          ]
+        },
+        "total_on_net": {
+          "type": "boolean",
+          "description": "Limit applies to the sum of all such parts on the net"
+        },
+        "dielectric": {
+          "type": "string"
+        },
+        "voltage_rating_min": {
+          "type": "number",
+          "description": "Volts"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": [
+        "text",
+        "cite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        }
+      }
+    },
+    "pin": {
+      "type": "object",
+      "required": [
+        "number",
+        "name",
+        "direction",
+        "cite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "string",
+          "description": "As in the symbol (quoted: \"1\", \"A3\", \"EP\")"
+        },
+        "name": {
+          "type": "string"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "direction": {
+          "enum": [
+            "supply_in",
+            "ground",
+            "regulator_out",
+            "switch",
+            "gate_drive",
+            "bootstrap",
+            "input",
+            "output",
+            "io",
+            "open_drain",
+            "analog_in",
+            "analog_out",
+            "feedback",
+            "sense",
+            "passive",
+            "nc",
+            "unknown"
+          ],
+          "description": "From the datasheet pin table. 'unknown' only in draft files: never guess."
+        },
+        "nc": {
+          "type": "boolean",
+          "description": "Must stay unconnected"
+        },
+        "needs_pullup": {
+          "type": "boolean"
+        },
+        "abs_max": {
+          "$ref": "#/$defs/range"
+        },
+        "required_external": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/external"
+          }
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "critical_loop": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "max_mm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "description": "Ref or Ref.pad (e.g. U1.1 or C1)"
+        },
+        "to": {
+          "type": "string",
+          "description": "Ref or Ref.pad (e.g. C1.1 or L1)"
+        },
+        "max_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "same_layer": {
+          "type": "boolean"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "keepout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Component reference for relative keepout box (dx0, dy0, dx1, dy1) or courtyard"
+        },
+        "box": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "[x0, y0, x1, y1] board mm or relative to ref"
+        },
+        "relative": {
+          "type": "boolean"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "no_copper": {
+          "type": "boolean"
+        },
+        "no_tracks": {
+          "type": "boolean"
+        },
+        "no_vias": {
+          "type": "boolean"
+        },
+        "allow_nets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allow_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "checklist_item": {
+      "type": "object",
+      "required": [
+        "id",
+        "rule"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "max_mm": {
+          "type": "number"
+        },
+        "same_layer": {
+          "type": "boolean"
+        },
+        "cite": {
+          "$ref": "#/$defs/cite"
+        }
+      }
+    }
+  }
+}

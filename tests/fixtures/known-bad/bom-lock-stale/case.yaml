@@ -1,0 +1,7 @@
+check: bom-lock
+bug: "stale BOM: schematic changed R1 1k -> 470 (new MPN), bom.csv still lists the 1k part"
+detail: "R1"
+base: ["golden:ldo-led", ldo-led]
+opts: {netlist: board.net}
+mutate:
+  - {file: board.net.yaml, replace: "R1: {value: 1k, part: 'Device:R', mpn: FICT-R-1K-0603,", with: "R1: {value: '470', part: 'Device:R', mpn: FICT-R-470-0603,"}

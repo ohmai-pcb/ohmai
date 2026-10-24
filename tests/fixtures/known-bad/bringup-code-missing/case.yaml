@@ -1,0 +1,26 @@
+check: bringup-code
+bug: "hardware/gen/pinmap.yaml signal GP25 not covered in test/firmware/bringup_selftest.py"
+detail: "GP25"
+prepare:
+  - file: hardware/gen/pinmap.yaml
+    write: |
+      signals:
+        - name: GP24
+          type: gpio
+        - name: GP25
+          type: gpio
+  - file: test/firmware/README.md
+    write: |
+      # Bring-up self-test firmware
+      Ready-to-run self-test covering GP24 and GP25.
+  - file: test/firmware/bringup_selftest.py
+    write: |
+      # Ready-to-run bring-up self-test
+      TEST_PINS = ["GP24", "GP25"]
+mutate:
+  - file: test/firmware/README.md
+    replace: "and GP25"
+    with: "only"
+  - file: test/firmware/bringup_selftest.py
+    replace: '"GP25"'
+    with: '"NONE"'

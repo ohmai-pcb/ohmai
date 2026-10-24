@@ -1,0 +1,21 @@
+# Netlist of the ldo-led golden board (tests/golden/ldo-led), as `kicad-cli sch export netlist` writes it
+# (KiCad 9.0.2, libraries 9.0.9.1), in ohmai.testkit YAML. Known-bad cases mutate this text.
+parts:
+  C1: {value: 1u, part: 'Device:C', mpn: FICT-C-1U-0603, footprint: 'Capacitor_SMD:C_0603_1608Metric'}
+  C2: {value: 1u, part: 'Device:C', mpn: FICT-C-1U-0603, footprint: 'Capacitor_SMD:C_0603_1608Metric'}
+  D1: {value: LED green, part: 'Device:LED', mpn: FICT-LED-GRN-0603, footprint: 'LED_SMD:LED_0603_1608Metric'}
+  J1: {value: VIN 5V, part: 'Connector_Generic:Conn_01x02', mpn: FICT-HDR-1X02, footprint: 'Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical'}
+  R1: {value: 1k, part: 'Device:R', mpn: FICT-R-1K-0603, footprint: 'Resistor_SMD:R_0603_1608Metric'}
+  U1: {value: AP2112K-3.3, part: 'Regulator_Linear:AP2112K-3.3', mpn: AP2112K-3.3TRG1, footprint: 'Package_TO_SOT_SMD:SOT-23-5'}
+pins:
+  Connector_Generic:Conn_01x02: {'1': Pin_1, '2': Pin_2}
+  Device:C: {'1': '', '2': ''}
+  Device:LED: {'1': K, '2': A}
+  Device:R: {'1': '', '2': ''}
+  Regulator_Linear:AP2112K-3.3: {'1': VIN, '2': GND, '3': EN, '4': NC, '5': VOUT}
+nets:
+  3V3: [C2.1, R1.1, U1.5]
+  GND: [C1.2, C2.2, D1.1, J1.2, U1.2]
+  Net-(D1-A): [D1.2, R1.2]
+  Net-(J1-Pin_1): [C1.1, J1.1, U1.1, U1.3]
+  unconnected-(U1-NC-Pad4): [U1.4]

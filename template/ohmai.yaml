@@ -1,0 +1,62 @@
+# OhmAI project config. ohmai_version = the OhmAI release this project was created with.
+ohmai_version: "{{ohmai_version}}"
+project: "{{project_name}}"
+# Public / anonymous repository mode (`ohmai new --anonymous`):
+# When true, keep the repo free of personal/bot names, machine-local absolute paths (/Users/..., /home/...,
+# /workspace/..., /tmp/...), time-of-day timestamps (use YYYY-MM-DD only), verbatim chat quotes, and
+# cross-project references. Use role labels (`owner`, `reviewer-a`, `reviewer-b`).
+anonymous: false
+hardware:
+  schematic: hardware/{{project_slug}}.kicad_sch
+  pcb: hardware/{{project_slug}}.kicad_pcb
+expected_nets: expected_nets.csv
+constraints_dir: parts/constraints
+bom: bom/bom.csv
+out_dir: out
+# Commit author identity for `ohmai commit` (env OHMAI_AUTHOR_NAME/KIND/VENDOR/MODEL/INSTRUCTIONS overrides).
+# Every commit on a phase branch needs one trailer (commit-msg hook, `ohmai check commits`, review gate):
+#   OhmAI-Author: name=...; kind=agent|human; vendor=...; model=...; instructions=...
+# kind=human needs only name. Fill in per agent session; leave empty in a shared repo and use the env vars.
+author: {}
+commits:
+  base: main                   # phase branches are checked since their merge-base with this branch
+  # trailer_required_since: <sha>   # commits reachable from this ref only WARN (history that predates the
+  #                                 # rule; never rewrite it). Owner decision; record it in docs/decisions.md
+checks:
+  erc_allow_warnings: false   # owner decision only; record in docs/decisions.md
+  png_width: 2400
+  readability:                 # `ohmai check readability` (phase 7): datasheet-figure style sheets
+    allow_local_labels: []     # local net labels allowed on block sheets (owner decision, with reason)
+    allow_crossings: false     # unjoined wire crossings
+# Pinned official KiCad libraries (`ohmai kicad-libs install|tables|status`); per-project lib tables.
+kicad:
+  libraries: "9.0.9.1"
+  # KiCad application (kicad-cli) version range, checked by `ohmai check kicad-app`. Keep it on the libraries' major.minor.
+  app: ">=9.0,<9.1"
+# Toolchain lock (`ohmai lock` writes it, `ohmai check toolchain` verifies it, phases 7/8/11). Tier 1 (KiCad app,
+# libraries, Freerouting, KiKit, KiBot, iBOM, kicad-python, SKiDL, jlcparts DB, ohmai's Python deps) = exact pins
+# (version null = not used), FAIL on mismatch; tier 2 helpers
+# = ranges, WARN. kicad.app / kicad.libraries above stay the policy; the lock pins the exact build inside them.
+# Move a tier-1 pin only with `ohmai upgrade <tool> <version>` (golden + known-bad suites, own commit).
+toolchain:
+  lock: toolchain.lock.yaml
+
+# Independent review gates (`ohmai review start <phase>`, `ohmai check review:<phase>`).
+# Per gate: how many independent reviews, which files they must cover, the minimum independence level.
+# Independence levels, best first: 1 different vendor's model, 2 different model same vendor,
+# 3 different agent/bot with different skills/instructions, 4 human. The author's own session/identity
+# never counts. A review below min_independence is recorded and WARNs. Owner decision to change.
+reviews:
+  gates:
+    safety:      {required: 1, min_independence: 4, scope: [docs/safety.md]}
+    constraints: {required: 1, min_independence: 3, scope: ["parts/constraints/*.yaml"], exclude: ["*.example.*"],
+                  sources: [datasheets/README.md]}
+    schematic:   {required: 1, min_independence: 2, scope: ["hardware/*.kicad_sch", expected_nets.csv, "hardware/gen/layout/*.yaml", "parts/symbol-maps/*.yaml"],
+                  sources: ["parts/constraints/*.yaml"]}
+    layout:      {required: 1, min_independence: 2, scope: ["hardware/*.kicad_pcb"], sources: ["parts/constraints/*.yaml"]}
+    bom:         {required: 1, min_independence: 3, scope: [bom/bom.csv], sources: [parts/selection.md]}
+    # fab: pre-order human sign-off on Gerbers/drill, CPL pin-1/rotations, locked BOM + single-source list, and fab DFM preview.
+    fab:         {required: 1, min_independence: 4, require_kind: human, scope: [bom/bom.csv, "hardware/*.kicad_pcb"], sources: [parts/selection.md, docs/safety.md]}
+    # bringup: measurements on a real board need a human sign-off (require_kind: human; the owner may sign off).
+    bringup:     {required: 1, min_independence: 4, require_kind: human, scope: [docs/manual.md, test/bringup-plan.md], sources: [docs/safety.md]}
+    # extra_paths: [docs/review-x.md]   # other accepted reviewer-file locations (same format)

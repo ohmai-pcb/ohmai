@@ -1,0 +1,4 @@
+# FICTIONAL fixture board (ohmai.layout.fixture): a made-up 16-pin QFN U1, its cap C1 and far-end resistors.
+planes: {GND: B.Cu}
+escape_room:
+  parts: [{ref: U1}]

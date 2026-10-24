@@ -1,0 +1,7 @@
+# ldo-led golden reference board: expected connectivity (OhmAI expected_nets format)
+net,nodes
+VIN,J1.1,U1.1,U1.3,C1.1
+3V3,U1.5,C2.1,R1.1
+GND,J1.2,U1.2,C1.2,C2.2,D1.1
+LED_A,R1.2,D1.2
+NC,U1.4

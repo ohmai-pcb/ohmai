@@ -1,0 +1,9 @@
+check: sheet-load
+bug: "sub-sheet led.kicad_sch truncated (ERC alone silently drops a sheet that does not load)"
+detail: "led.kicad_sch does not load"
+needs: [kicad-cli, kicad-libs]
+base: ["golden:ldo-led"]
+name: ldo-led
+build: true
+mutate:
+  - {file: hardware/led.kicad_sch, write: "(kicad_sch (version 20250114) (generator \"eeschema\")\n", stage: built}

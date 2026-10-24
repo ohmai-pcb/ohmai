@@ -1,0 +1,22 @@
+# Block 1: input connector and 3.3 V LDO, drawn like the AP2112 "Typical Applications Circuit"
+# (Diodes DS39724 Rev. 2-2, p.2): CIN 1 uF at VIN, COUT 1 uF at VOUT; EN tied to VIN (always on).
+title: "1 Input and 3V3 LDO (AP2112 p.2)"
+paper: A4
+parts:
+  J1: {lib: "Connector_Generic:Conn_01x02", value: "VIN 5V", mpn: "FICT-HDR-1X02",
+       fp: "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", nets: {"1": VIN, "2": GND}}
+  U1: {lib: "Regulator_Linear:AP2112K-3.3", value: AP2112K-3.3, mpn: AP2112K-3.3TRG1,
+       fp: "Package_TO_SOT_SMD:SOT-23-5", nets: {"1": VIN, "2": GND, "3": VIN, "4": NC, "5": 3V3}}
+  C1: {lib: "Device:C", value: 1u, mpn: "FICT-C-1U-0603", fp: "Capacitor_SMD:C_0603_1608Metric", nets: {"1": VIN, "2": GND}}
+  C2: {lib: "Device:C", value: 1u, mpn: "FICT-C-1U-0603", fp: "Capacitor_SMD:C_0603_1608Metric", nets: {"1": 3V3, "2": GND}}
+place:
+  - {ref: U1, at: [139.7, 93.98]}
+  - {wire: [U1.1, U1.3]}
+  - {ref: C1, to: U1.1, at: [-12.7, 0], orient: v, near: top}
+  - {ref: J1, to: C1.1, at: [-17.78, 0], pin: "1", mirror: y, ref_at: [0, -5.08], value_at: [-7.62, 7.62]}
+  - {ref: C2, to: U1.5, at: [12.7, 0], orient: v, near: top}
+symbols:
+  - {to: C2.1, side: up}
+flags:
+  - {net: VIN, to: J1.1, from: [7.62, 0], side: up}
+  - {net: GND, to: U1.2, side: right}

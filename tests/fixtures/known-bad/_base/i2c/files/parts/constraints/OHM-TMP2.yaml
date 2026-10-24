@@ -1,0 +1,15 @@
+# FICTIONAL part for OhmAI known-bad tests: no real device, no real datasheet. Do not copy into a design.
+schema: ohmai-constraints/v1
+part: OHM-TMP2
+mpn: OHM-TMP2-FICT
+manufacturer: FICTIONAL
+match: {mpn: OHM-TMP2-FICT}
+datasheet: {file: datasheets/FICTIONAL-OHM-TMP.pdf, revision: "FICTIONAL test data"}
+review: {status: draft}
+i2c: {address: "0x49", sda_pin: "1", cite: {page: 1, where: FICTIONAL}}
+pins:
+  - {number: "1", name: SDA, direction: io, needs_pullup: true, cite: {page: 1, where: FICTIONAL}}
+  - {number: "2", name: SCL, direction: input, needs_pullup: true, cite: {page: 1, where: FICTIONAL}}
+  - {number: "3", name: ALERT, direction: open_drain, cite: {page: 1, where: FICTIONAL}}
+  - {number: "4", name: GND, direction: ground, cite: {page: 1, where: FICTIONAL}}
+  - {number: "5", name: VDD, direction: supply_in, cite: {page: 1, where: FICTIONAL}}

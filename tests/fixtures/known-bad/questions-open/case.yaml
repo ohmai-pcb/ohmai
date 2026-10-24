@@ -1,0 +1,12 @@
+check: questions
+bug: "a blocking open question left in STATUS.md at the gate"
+detail: "Which input connector"
+expect: {bad: WARN}
+why_bad_warn: "by design the questions check WARNs (owner decision, ea6351d): open questions are answered at the gate; a docs PASS is not a lock. The planted question is reported."
+prepare:
+  - {file: STATUS.md, replace: "- [ ] Who is the owner", with: "- [x] Who is the owner"}
+  - {file: STATUS.md, replace: "- [ ] Target quantity", with: "- [x] Target quantity"}
+  - {file: STATUS.md, replace: "- [ ] Target markets", with: "- [x] Target markets"}
+  - {file: STATUS.md, replace: "markets: []", with: "markets: [EU]"}
+mutate:
+  - {file: STATUS.md, replace: "## Manual warnings", with: "- [ ] Which input connector does the owner want?\n\n## Manual warnings"}

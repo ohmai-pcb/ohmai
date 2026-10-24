@@ -1,0 +1,6 @@
+check: render
+bug: "root schematic truncated: no SVG/PNG for the reviewer"
+detail: "SVG export failed"
+needs: [kicad-cli]
+mutate:
+  - {file: hardware/kb.kicad_sch, write: "(kicad_sch (version 20250114)\n"}

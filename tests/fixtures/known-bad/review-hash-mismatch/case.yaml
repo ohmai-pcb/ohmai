@@ -1,0 +1,9 @@
+check: review:constraints
+bug: "constraints file edited after the independent review (review hash no longer matches)"
+detail: "changed after review"
+base: ["golden:ldo-led", ldo-led]
+prepare:
+  - {file: STATUS.md, replace: '  - {name: "", kind: agent, vendor: "", model: "", instructions: "ohmai skill', with: '  - {name: OhmAI, kind: agent, vendor: VendorA, model: m1, instructions: "ohmai skill'}
+review: {phase: constraints, reviewer: reviewer-a, vendor: VendorB, model: m9, rows: ["| F1 | parts/constraints/AP2112K-3.3.yaml | OK | | |"]}
+mutate:
+  - {file: parts/constraints/AP2112K-3.3.yaml, append: "# VOUT cap changed after review\n", stage: final}

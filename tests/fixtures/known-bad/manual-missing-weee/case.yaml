@@ -1,0 +1,21 @@
+check: manual
+bug: "user manual lost the crossed-out wheeled bin (WEEE) disposal marking text"
+detail: WEEE
+prepare:
+  - {file: STATUS.md, replace: "- [ ] Who is the owner", with: "- [x] Who is the owner"}
+  - {file: STATUS.md, replace: "- [ ] Target quantity", with: "- [x] Target quantity"}
+  - {file: STATUS.md, replace: "- [ ] Target markets", with: "- [x] Target markets"}
+  - {file: STATUS.md, replace: "markets: []", with: "markets: [EU]"}
+  - {file: STATUS.md, replace: "## Manual warnings\n", with: "## Manual warnings\n- MW-01: input above 6 V destroys the regulator\n"}
+  - {file: docs/manual.md, write: "# User instructions\n## Product identification\nType KB-1, serial number on the bottom\
+  \ label.\n## Manufacturer and contact\nExample AB, Exempelgatan 1, 111 22 Stockholm,\
+  \ Sweden, info@example.com. The manufacturer is the economic operator established\
+  \ in the EU.\n## Intended use\nBench 3.3 V supply demo board (fixture text).\n##\
+  \ Ratings and specifications\n5 V input, 3.3 V output.\n## Safety information\n\
+  - MW-01: WARNING: do not power from a source above 6 V.\n## Installation and use\n\
+  Plug in.\n## Maintenance and cleaning\nNone.\n## Disposal\nCrossed-out wheeled bin:\
+  \ separate collection.\n## Conformity\nCE. The EU declaration of conformity is at\
+  \ https://example.com/doc.\n## Language versions\nEnglish, Swedish (language of\
+  \ the market).\n"}
+mutate:
+  - {file: docs/manual.md, replace: "Crossed-out wheeled bin", with: "Bin"}

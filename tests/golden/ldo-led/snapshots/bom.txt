@@ -1,0 +1,6 @@
+refs,qty,value,footprint,mpn,dnp
+C1 C2,2,1u,Capacitor_SMD:C_0603_1608Metric,FICT-C-1U-0603,
+D1,1,LED green,LED_SMD:LED_0603_1608Metric,FICT-LED-GRN-0603,
+J1,1,VIN 5V,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical,FICT-HDR-1X02,
+R1,1,1k,Resistor_SMD:R_0603_1608Metric,FICT-R-1K-0603,
+U1,1,AP2112K-3.3,Package_TO_SOT_SMD:SOT-23-5,AP2112K-3.3TRG1,

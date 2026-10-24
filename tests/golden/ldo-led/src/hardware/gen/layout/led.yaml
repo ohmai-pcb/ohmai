@@ -1,0 +1,10 @@
+# Block 2: 3V3 power indicator: series resistor and LED to GND.
+title: "2 Power LED"
+paper: A4
+parts:
+  R1: {lib: "Device:R", value: 1k, mpn: "FICT-R-1K-0603", fp: "Resistor_SMD:R_0603_1608Metric", nets: {"1": 3V3, "2": LED_A}}
+  D1: {lib: "Device:LED", value: "LED green", mpn: "FICT-LED-GRN-0603", fp: "LED_SMD:LED_0603_1608Metric",
+       nets: {"1": GND, "2": LED_A}}
+place:
+  - {ref: R1, at: [127, 76.2], rot: 0}
+  - {ref: D1, to: R1.2, at: [0, 7.62], orient: v, near: top}

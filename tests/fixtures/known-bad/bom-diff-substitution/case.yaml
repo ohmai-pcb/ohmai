@@ -1,0 +1,7 @@
+check: bom-diff
+bug: "fab's actual-purchase list substitutes a different LDO for U1"
+detail: "U1: fab substituted"
+base: ["golden:ldo-led", ldo-led]
+files_note: "files/bom/fab-actual.csv is the fab's purchase list for the clean twin"
+mutate:
+  - {file: bom/fab-actual.csv, replace: "U1,AP2112K-3.3TRG1", with: "U1,FICT-LDO-OTHER"}

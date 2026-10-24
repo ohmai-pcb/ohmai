@@ -1,0 +1,9 @@
+check: review:constraints
+bug: "reviewer raised an issue that has no resolution entry"
+detail: "no resolution"
+base: ["golden:ldo-led", ldo-led]
+prepare:
+  - {file: STATUS.md, replace: '  - {name: "", kind: agent, vendor: "", model: "", instructions: "ohmai skill', with: '  - {name: OhmAI, kind: agent, vendor: VendorA, model: m1, instructions: "ohmai skill'}
+review: {phase: constraints, reviewer: reviewer-a, vendor: VendorB, model: m9, rows: ["| F1 | parts/constraints/AP2112K-3.3.yaml | OK | | |"]}
+mutate:
+  - {file: reviews/constraints/reviewer-a.md, replace: "| F1 | parts/constraints/AP2112K-3.3.yaml | OK | | |", with: "| F1 | parts/constraints/AP2112K-3.3.yaml | issue | VIN max is 6.0 V, not 6.5 V | p.3 |", stage: final}

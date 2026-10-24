@@ -1,0 +1,45 @@
+# Toolchain canary (owner 2026-10-15): weekly, run the golden + known-bad suites against the newest
+# KiCad application and libraries and report breakage. It never moves a pin: no lock, snapshot or
+# ohmai.yaml is written and nothing is committed. Moving a pin is `ohmai upgrade` in a project.
+# A red run means "the next upgrade needs work", not "main is broken". See docs/TESTING.md.
+name: canary
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"     # Mondays 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      libs:
+        description: "libraries tag, or match-app / latest"
+        default: match-app
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    continue-on-error: true            # report only: a canary failure never blocks anything
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: "kicad/kicad:9.0", libs: match-app}   # newest 9.0.x app + newest 9.0.x libs (current series)
+          - {image: "kicad/kicad:latest", libs: latest}   # next series: what an upgrade to it would break
+    container:
+      image: ${{ matrix.image }}
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ohmai (pinned deps)
+        run: |
+          apt-get update -qq && apt-get install -y -qq python3-pip librsvg2-bin git >/dev/null
+          pip3 install --break-system-packages -c cli/constraints.txt -e "cli[dev]"
+          git config --global user.name ci && git config --global user.email ci@localhost
+      - name: Canary
+        run: python3 scripts/canary.py --libs "${{ github.event.inputs.libs || matrix.libs }}" --report canary.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canary-${{ strategy.job-index }}
+          path: canary.md

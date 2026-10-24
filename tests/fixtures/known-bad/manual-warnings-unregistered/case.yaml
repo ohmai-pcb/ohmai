@@ -1,0 +1,7 @@
+check: manual-warnings
+bug: "safety plan names manual warning MW-01 that STATUS.md never registered"
+detail: "MW-01 named in docs/safety.md"
+prepare:
+  - {file: docs/safety.md, write: "# Safety plan: kb\nSELV only (5 V input). No mains.\n"}
+mutate:
+  - {file: docs/safety.md, append: "MW-01: do not power from a source above 6 V (AP2112 p.3).\n"}

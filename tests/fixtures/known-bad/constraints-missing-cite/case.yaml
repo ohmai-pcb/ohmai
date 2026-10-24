@@ -1,0 +1,9 @@
+check: constraints
+bug: "reviewed constraints file states a pin fact without a datasheet page (cite removed)"
+detail: "pins/1: 'cite' is a required property"
+base: ["golden:ldo-led", ldo-led]
+prepare:
+  - {file: parts/constraints/AP2112K-3.3.yaml, replace: "  status: draft", with: "  status: reviewed\n  reviewer: known-bad fixture\n  date: '2026-10-15'"}
+  - {file: datasheets/AP2112.pdf, write: "placeholder: the fixture only needs the file to exist\n"}
+mutate:
+  - {file: parts/constraints/AP2112K-3.3.yaml, replace: '{number: "2", name: GND, direction: ground, cite: {page: 2, where: Pin Descriptions (SOT25)}}', with: '{number: "2", name: GND, direction: ground}'}

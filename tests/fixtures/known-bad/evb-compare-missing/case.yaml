@@ -1,0 +1,9 @@
+check: evb-compare
+bug: "part declares an EVB reference but docs/evb-compare/<part>.md was never written"
+detail: "missing"
+base: ["golden:ldo-led", ldo-led]
+prepare:
+  - {file: parts/constraints/AP2112K-3.3.yaml, append: "evb_reference: {document: \"FICTIONAL-EVB (test data)\", cite: {page: 1, where: FICTIONAL}}\n"}
+  - {file: docs/evb-compare/AP2112K-3.3.md, write: "# EVB compare: AP2112K-3.3 (fixture)\n| Part | EVB | Ours | Why |\n|---|---|---|---|\n| CIN | 1 uF | 1 uF | same |\n"}
+mutate:
+  - {file: docs/evb-compare/AP2112K-3.3.md, delete: true}

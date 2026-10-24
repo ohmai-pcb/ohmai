@@ -1,0 +1,28 @@
+# AP2112K-3.3 (U1) constraints for the ldo-led golden reference board.
+# Facts from the Diodes AP2112 datasheet, Document number DS39724 Rev. 2 - 2, June 2017
+# (Typical Applications Circuit and Pin Descriptions p.2, Absolute Maximum Ratings and Recommended
+# Operating Conditions p.3). SOT25 (= KiCad SOT-23-5) pin column.
+schema: ohmai-constraints/v1
+part: AP2112K-3.3
+mpn: AP2112K-3.3TRG1
+manufacturer: Diodes Incorporated
+package: SOT25
+match: {value: AP2112K-3.3, mpn: AP2112K-3.3TRG1}
+datasheet:
+  file: datasheets/AP2112.pdf
+  revision: "DS39724 Rev. 2 - 2, June 2017"
+  url: https://www.diodes.com/assets/Datasheets/AP2112.pdf
+review:
+  status: draft
+abs_max:
+  - {param: Power supply voltage, max: 6.5, unit: V, cite: {page: 3, where: Absolute Maximum Ratings}}
+recommended:
+  - {param: Supply voltage VIN, min: 2.5, max: 6.0, unit: V, cite: {page: 3, where: Recommended Operating Conditions}}
+pins:
+  - {number: "1", name: VIN, direction: supply_in, cite: {page: 2, where: Pin Descriptions (SOT25)},
+     required_external: [{kind: capacitor, to: GND, nominal: 1, unit: uF, cite: {page: 2, where: "Typical Applications Circuit, CIN 1 uF (Note 4)"}}]}
+  - {number: "2", name: GND, direction: ground, cite: {page: 2, where: Pin Descriptions (SOT25)}}
+  - {number: "3", name: EN, direction: input, cite: {page: 2, where: Pin Descriptions (SOT25)}, note: "H normal work, L shutdown; tied to VIN here"}
+  - {number: "4", name: NC, direction: nc, cite: {page: 2, where: Pin Descriptions (SOT25)}}
+  - {number: "5", name: VOUT, direction: regulator_out, cite: {page: 2, where: Pin Descriptions (SOT25)},
+     required_external: [{kind: capacitor, to: GND, nominal: 1, unit: uF, cite: {page: 2, where: "Typical Applications Circuit, COUT 1 uF (Note 4)"}}]}

@@ -1,0 +1,7 @@
+check: rfq
+bug: "RFQ sent to a vendor leaks an internal decision id"
+detail: "internal decision id"
+prepare:
+  - {file: rfq/acme-header.md, write: "# Request for quotation: 2-pin 2.54 mm header\nQuantity 100 and 1000. Please quote price and lead time.\n"}
+mutate:
+  - {file: rfq/acme-header.md, append: "Chosen per D-003.\n"}

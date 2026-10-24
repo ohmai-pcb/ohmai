@@ -1,0 +1,5 @@
+check: escape-room
+bug: "decoupler C1 placed 0.35 mm from the QFN pin toes: no room for an escape via (needs via 0.45 + 2 x 0.1)"
+detail: 'toe-gap\] U1 side L: toe gap 0\.35 mm'
+mutate:
+  - {file: hardware/kb.kicad_pcb, replace: "(at 107.15 110 90)", with: "(at 107.6 110 90)"}

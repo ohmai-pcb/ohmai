@@ -1,0 +1,7 @@
+check: i2c-addr
+bug: "both sensors strapped to I2C address 0x48 on the same bus"
+detail: "address 0x48 used by U2, U3"
+base: [i2c]
+opts: {netlist: board.net}
+mutate:
+  - {file: parts/constraints/OHM-TMP2.yaml, replace: 'address: "0x49"', with: 'address: "0x48"'}

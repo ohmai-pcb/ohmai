@@ -1,0 +1,24 @@
+sheet-load: PASS all 3 sheet(s) load
+erc: PASS 0 violation(s)
+netlist: PASS 6 parts, 5 nets; 5 expected rows, 0 TODO rows skipped
+pin-map: PASS 1 constrained part(s); 0 error(s), 0 warning(s)
+single-source: PASS 1 constrained part(s); 0 error(s), 0 warning(s)
+passives: PASS 1 constrained part(s); 0 error(s), 0 warning(s)
+pullups: PASS 1 constrained part(s); 0 error(s), 0 warning(s)
+i2c-addr: PASS 1 constrained part(s); 0 error(s), 0 warning(s)
+readability: PASS 3 sheet(s): wired like datasheet figures, no overlaps, on grid
+bom-schema: WARN 5 row(s), 6 ref(s)
+    row 2 (J1): no second source / approved alternate
+    row 3 (U1): no second source / approved alternate
+    row 4 (C1 C2): no second source / approved alternate
+    row 5 (R1): no second source / approved alternate
+    row 6 (D1): no second source / approved alternate
+bom-lock: PASS 5 row(s) locked; matches the schematic (6 part(s))
+    row 2 (J1): no second source / approved alternate
+    row 3 (U1): no second source / approved alternate
+    row 4 (C1 C2): no second source / approved alternate
+    row 5 (R1): no second source / approved alternate
+    row 6 (D1): no second source / approved alternate
+constraints: WARN 1 file(s), 0 error(s), 2 warning(s)
+    AP2112K-3.3.yaml: review.status is not 'reviewed' (a human must review it before phase 7)
+    AP2112K-3.3.yaml: datasheet datasheets/AP2112.pdf not in repo

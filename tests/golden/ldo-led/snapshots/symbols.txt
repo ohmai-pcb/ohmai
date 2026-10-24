@@ -1,0 +1,9 @@
+# embedded library symbols: lib_id sha256[:16] (a change = the library symbol changed)
+Connector_Generic:Conn_01x02 e66e72eaaff3b932
+Device:C aa4c9e46008c6137
+Device:LED b2f4467ee4ff4eab
+Device:R b44ac69eb193ee11
+Regulator_Linear:AP2112K-3.3 b6943472f8c0f72a
+power:+3V3 d77819c7427faa7c
+power:GND b90a80528f358f1d
+power:PWR_FLAG ff77ca579a944bee

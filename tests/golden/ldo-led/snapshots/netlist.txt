@@ -1,0 +1,13 @@
+# components: ref | value | symbol | footprint | MPN | flags
+C1 | 1u | Device:C | Capacitor_SMD:C_0603_1608Metric | FICT-C-1U-0603 | 
+C2 | 1u | Device:C | Capacitor_SMD:C_0603_1608Metric | FICT-C-1U-0603 | 
+D1 | LED green | Device:LED | LED_SMD:LED_0603_1608Metric | FICT-LED-GRN-0603 | 
+J1 | VIN 5V | Connector_Generic:Conn_01x02 | Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical | FICT-HDR-1X02 | 
+R1 | 1k | Device:R | Resistor_SMD:R_0603_1608Metric | FICT-R-1K-0603 | 
+U1 | AP2112K-3.3 | Regulator_Linear:AP2112K-3.3 | Package_TO_SOT_SMD:SOT-23-5 | AP2112K-3.3TRG1 | 
+# nets: name: nodes (pin names from the symbol)
+3V3: C2.1 R1.1 U1.5(VOUT)
+GND: C1.2 C2.2 D1.1(K) J1.2(Pin_2) U1.2(GND)
+Net-(D1-A): D1.2(A) R1.2
+Net-(J1-Pin_1): C1.1 J1.1(Pin_1) U1.1(VIN) U1.3(EN)
+unconnected-(U1-NC-Pad4): U1.4(NC)

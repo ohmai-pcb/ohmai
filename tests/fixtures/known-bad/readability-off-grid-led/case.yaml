@@ -1,0 +1,7 @@
+check: readability
+bug: "LED D1 nudged 0.5 mm off the 1.27 mm grid: off-grid pins, its wires no longer reach them"
+detail: "grid"
+base: [ldo-led-sheets]
+name: ldo-led
+mutate:
+  - {file: hardware/led.kicad_sch, replace: '(symbol (lib_id "Device:LED") (at 127 91.44 90)', with: '(symbol (lib_id "Device:LED") (at 127.5 91.44 90)'}

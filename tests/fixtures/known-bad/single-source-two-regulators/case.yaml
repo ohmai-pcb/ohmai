@@ -1,0 +1,11 @@
+check: single-source
+bug: "a second LDO's output (U2.5) wired onto the 3V3 rail: two regulator outputs fight"
+detail: "3V3: 2 outputs tied"
+base: ["golden:ldo-led", ldo-led]
+opts: {netlist: board.net}
+prepare:
+  - {file: board.net.yaml, replace: "  U1: {", with: "  U2: {value: AP2112K-3.3, part: 'Regulator_Linear:AP2112K-3.3', mpn: AP2112K-3.3TRG1}\n  U1: {"}
+  - {file: board.net.yaml, append: "  3V3B: [U2.5]\n"}
+mutate:
+  - {file: board.net.yaml, replace: "  3V3B: [U2.5]\n", with: ""}
+  - {file: board.net.yaml, replace: "3V3: [C2.1, R1.1, U1.5]", with: "3V3: [C2.1, R1.1, U1.5, U2.5]"}

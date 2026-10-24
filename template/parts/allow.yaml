@@ -1,0 +1,5 @@
+# Nets allowed to hold more than one regulator/switch/driver output (checked by `ohmai check single-source`).
+# One source plus any number of sinks never needs an entry. Each entry needs a reason AND a source.
+allow: []
+# allow:
+#   - {net: VBUS, pins: [U3.5, U4.5], reason: "load-share mode", source: "vendor app note AN-123 p.4"}

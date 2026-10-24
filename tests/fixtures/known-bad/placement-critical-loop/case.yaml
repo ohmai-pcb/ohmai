@@ -1,0 +1,5 @@
+check: placement
+bug: "decoupler C1 placed 5.6 mm away from U1.2, exceeding the 2.5 mm critical loop limit"
+detail: 'critical-loop\] C1-U1\.2: distance 5\.\d+ mm > max 2\.50 mm'
+mutate:
+  - {file: hardware/kb.kicad_pcb, replace: "(at 107.15 110 90)", with: "(at 103.0 110 90)"}
