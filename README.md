@@ -1,10 +1,41 @@
-# OhmAI
+# ⚡ OhmAI
 
-**Structured, datasheet-checked KiCad 9 workflow for LLM agents and a human owner.**
+**Turn a one-line hardware idea into a datasheet-verified, DRC-clean KiCad 9 project — with an AI agent doing the legwork and you in the driver's seat.**
 
-OhmAI is an open-source workflow and CLI tool (`ohmai`) for running small-to-medium PCB projects in **KiCad 9** with an LLM agent doing the legwork and a **human owner** steering and approving every phase gate.
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![KiCad 9](https://img.shields.io/badge/KiCad-9.0+-314CB0.svg)](https://www.kicad.org/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB.svg)](https://www.python.org/)
+[![Status: v0.1 Experimental](https://img.shields.io/badge/Status-v0.1_Experimental-orange.svg)](#what-works-today-vs-current-limitations)
 
-Status: **v0.1 (experimental / early-stage).** Tested on a single reference-level dogfood board (`pico-k`: RP2350A + TPS63001 + MAX31856 through pre-fab dry-run; not yet physically fabricated). See [What works today vs. current limitations](#what-works-today-vs-current-limitations) and [ROADMAP](docs/ROADMAP.md).
+[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**CLI Reference**](#cli-overview) · [**Example Project (`pico-k`)**](https://github.com/ohmai-pcb/pico-k)
+
+---
+
+### What is OhmAI?
+
+Ask a raw LLM to design a PCB and it will happily hallucinate pin numbers, invent passive values, pick out-of-stock single-source parts, or declare victory with 40 unconnected nets.
+
+**OhmAI** fixes that by giving your coding agent (Cursor, Claude Code, Codex, or any LLM with shell access) a **12-phase hardware engineering harness (`skill/`)** backed by a **deterministic verification CLI (`ohmai`)** for **KiCad 9**:
+
+```bash
+ohmai new ~/hw/my-board --anonymous --idea "A solar-powered USB-C charger for 2 phones"
+cd ~/hw/my-board && ohmai status
+```
+
+Then tell your agent:
+> *"My idea is a solar-powered USB-C charger for 2 phones — use OhmAI to make it."*
+
+Your agent researches parts, extracts pin tables and layout rules with exact datasheet page citations, generates hierarchical KiCad 9 schematics, cross-checks multi-source BOM alternates against JLCPCB/LCSC stock, runs `kicad-cli` ERC/DRC and copper-pour checks, and prepares fabrication outputs and bring-up self-test code — pausing at every gate for **independent review** and **your sign-off**.
+
+---
+
+### ✨ Highlights
+
+- 📄 **Zero-Guesswork Datasheet Citations** — Before a single wire is drawn, every IC and connector gets a structured `parts/constraints/<PART>.yaml` where every pin, direction, decoupling rule, and keepout cites an exact PDF page verified against `datasheets/manifest.yaml`.
+- 🔍 **Deterministic KiCad 9 & Netlist Checks** — `ohmai check <phase> --gate` wraps `kicad-cli` (ERC, DRC, Gerber/drill/3D export), diffs your schematic netlist against `expected_nets.csv`, and verifies voltage dividers, capacitor DC-bias derating, I²C pull-ups, critical switching loops, and copper pour neck widths.
+- 🛡️ **3-Rule BOM Sourcing & `jlcparts` Verification** — Automatically enforces multi-manufacturer drop-in alternates, cross-checks every LCSC `C#` code and package against an offline `jlcparts` database, and flags any single-source component until rejected alternatives and an owner decision (`D-xxx`) are documented.
+- 🤝 **Multi-Agent Independent Review Gates** — Built-in review briefs (`ohmai review start <phase>`) require a separate reviewer identity (a second model, reviewer agent, or human engineer — never the authoring session) locked to a cryptographic `files_hash`.
+- 🧪 **Ready-to-Run Bring-Up Code & Compliance Docs** — Generates pre-board bench test plans, target-market safety/compliance manuals (`CE` / `FCC` / `WEEE`), and self-test firmware verified against `hardware/gen/pinmap.yaml` before you ever power on a board.
 
 ---
 
@@ -23,6 +54,8 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 ---
 
 ## What works today vs. current limitations
+
+> **Status: v0.1 (experimental / early-stage).** Tested end-to-end on our first reference-level dogfood board ([`pico-k`](https://github.com/ohmai-pcb/pico-k): RP2350A + TPS63001 + MAX31856 Type-K thermocouple board through Phase 11 fab dry-run and Phase 12 bring-up prep; not yet physically fabricated). See [ROADMAP](docs/ROADMAP.md).
 
 ### Works well in v0.1
 - **Datasheet constraint extraction & citation checking (`ohmai check constraints`, `ohmai datasheets`):** Catching pinout/direction mistakes, missing pull-ups, and unverified datasheet claims before schematic capture begins. Tracking datasheet URLs, SHA-256 digests, and cited pages in `datasheets/manifest.yaml` without committing binary `.pdf` blobs.
