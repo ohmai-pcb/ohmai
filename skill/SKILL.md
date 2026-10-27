@@ -38,7 +38,7 @@ read `AGENTS.md` and `STATUS.md` → "Next actions", and continue the current ph
 | # | Phase (`ohmai check <id>`) | Gate: the owner... |
 |---|----------------------------|--------------------|
 | 1 | requirements | locks the spec (must vs wish, units, environment, cost target) |
-| 2 | architecture | picks one option from the trade study |
+| 2 | architecture | reviews the inline Mermaid block diagram and picks one option from the trade study |
 | 3 | safety | approves the safety/compliance plan per target market, incl. required manual warnings (before parts freeze) |
 | 4 | parts | approves each part with a named second source |
 | 5 | constraints | reviews every per-part constraints file (datasheet pages cited) |
@@ -82,7 +82,7 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
 3. **With a GitHub remote** (owner approved): push the branch and open a PR from the template
    (`.github/pull_request_template.md`). The PR is the gate; CI posts checks, renders and diffs.
    **Without a remote**: post a gate summary in chat. Include what was done, the check summary
-   (`out/summary.md`), the options with your recommendation, and the exact question.
+   (`out/summary.md`), the options with your recommendation, and the exact question (at Phase 2, always render the Mermaid system block diagram inline in chat as part of the gate summary).
 4. **Stop and wait.** Do not start the next phase.
 5. When the owner approves, merge (or ask them to merge) into `main`. On the same day, record the
    decision in `docs/decisions.md` and in STATUS.md → Locked decisions. Set `phase: N+1`, `gate: open`,

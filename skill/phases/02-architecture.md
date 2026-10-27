@@ -20,4 +20,6 @@
    and the manual's safety section (`docs/manual.md`). The `manual-warnings` check enforces the link.
 
 ## Gate
+When presenting the Phase 2 sign-off in chat (or in the gate PR description), **always render the Mermaid system block diagram inline** alongside the options comparison table, power budget summary, and recommendation so the owner can visually verify every block, rail, and bus before signing off.
+
 The owner picks an option. Record it in decisions.md together with the options that were rejected.
