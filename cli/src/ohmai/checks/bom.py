@@ -21,7 +21,7 @@ FAB_DESC_COLS = ["description", "actual description", "comment", "value"]
 _DECISION_RE = re.compile(r"\bD-\d{3}\b")
 _LCSC_RE = re.compile(r"\bC\d{3,10}\b")
 _DISQUALIFIED_ALT_RE = re.compile(
-    r"\b(different\s+footprint|separate\s+footprint|own\s+footprint|out\s+of\s+stock|not\s+pin[-\s]compatible|needs\s+fb\s+divider)\b",
+    r"\b(different\s+footprint|separate\s+footprint|own\s+footprint|out\s+of\s+stock|not\s+pin[-\s]compatible|needs\s+fb\s+divider|white[-\s]?label|rebranded|same\s+(?:single[-\s]source\s+)?(?:silicon|die|core|oem))\b",
     re.I,
 )
 _EXHAUSTED_SEARCH_RE = re.compile(

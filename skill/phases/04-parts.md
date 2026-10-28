@@ -18,13 +18,34 @@ Branch `phase/parts`. Check `ohmai check parts`.
    - **Rule 1 — Generic components**: It is fine to write `generic: any maker <spec>...`, **but** the row must
      also list **at least 2 concrete alternatives** (`MPN (Manufacturer, LCSC Cxxxx, $price)`) from **different
      manufacturers** so there are multiple verified low-cost sources across unique manufacturers.
-   - **Rule 2 — Non-generic components**: A row may list a same-manufacturer alternate if useful, **but the
-     "at least two different manufacturers" rule applies** — every non-single-source fitted part must have at
-     least 2 unique manufacturers across primary + drop-in alternates (alternates flagged `different footprint`,
-     `separate footprint`, or `out of stock` do not count as drop-in second manufacturers).
+   - **Rule 2 — Non-generic components (true independent core/silicon manufacturer required)**: A row may list a
+     same-manufacturer alternate if useful, **but the "at least two different manufacturers" rule applies** —
+     every non-single-source fitted part must have at least 2 unique manufacturers across primary + drop-in
+     alternates:
+     - **No white-label / rebranded / same-core alternates as the sole second manufacturer:** An alternate only
+       counts as a second manufacturer if the underlying active silicon, sensor element, or core component is made
+       by an independent manufacturer. White-label, rebadged, repackaged, or module-wrapped parts that still depend
+       on the same single-source core/silicon manufacturer (e.g., a third-party module built around the same OEM's
+       IC die, or a distributor house-brand rebadge of the same OEM component) do **not** count as an independent
+       second manufacturer and must be classified under **Rule 3 (`single-source`)** (while still noting the
+       secondary module/packager in `notes` if useful for PCBA assembly).
+     - **Cross-distributor second sources count:** Do not mark a component `single-source` merely because only one
+       manufacturer is stocked at JLCPCB (`jlcparts`). If a true pin-for-pin drop-in from a second independent
+       manufacturer is available from Mouser, DigiKey, Farnell, or RS (`MPN (Manufacturer, Mouser/DigiKey PN)`),
+       record it as a valid Rule 2 second source.
+     - Alternates flagged `different footprint`, `separate footprint`, `out of stock`, `white-label`, or
+       `same silicon` do not count as drop-in second manufacturers.
    - **Rule 3 — Single-source components (strictly gated & highlighted)**: Don't make single-source an easy
-     decision — verify other options first! A component may only be marked `single-source` if `second_source` /
-     `notes` explicitly documents:
+     decision — verify other options first!
+     - **Commodity / standard-category smell test:** Standard categories (RJ45 MagJacks, USB-C receptacles,
+       board-to-board/wire headers, crystals, tactile switches, standard buck/LDO regulators, ESD/TVS diodes,
+       bridge rectifiers) almost always have drop-in second sources. Before claiming `single-source` on any such
+       part, search `jlcparts` and major distributors by **footprint + pin count + function** (not just MPN prefix).
+     - **Phase 4 datasheet schematic verification:** For every connector with integrated magnetics (e.g., PoE
+       RJ45 MagJacks), transformer, power module, or IC, render the PDF datasheet schematic and footprint pages
+       (`pdftoppm -png -r 150`) during Phase 4 to verify the internal circuit (e.g., confirming true PoE center-tap
+       / bridge pins vs. non-PoE internal Bob Smith termination) before presenting the Phase 4 gate.
+     - A component may only be marked `single-source` if `second_source` / `notes` explicitly documents:
      (a) `single-source (D-xxx)` citing the owner decision, AND
      (b) `checked: ...` listing the concrete candidate MPNs / manufacturers searched and the specific technical,
          footprint, or spec reason each was rejected (or why the IC is architecture-defining with no pin-compatible
