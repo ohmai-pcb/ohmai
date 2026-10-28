@@ -9,10 +9,18 @@ Branch `phase/parts`. Check `ohmai check parts`.
    lifecycle (active/NRND/EOL), **second source**, and datasheet revision.
 2. Only live data. Copy prices from distributor pages or APIs (Nexar/Octopart, LCSC/JLC, DigiKey, Mouser)
    and give the URL and date. Never make one up. When there is no data, write that.
-3. Download each chosen part's datasheet to `datasheets/<PART>.pdf` and record its provenance (`mpn`, `lcsc`,
-   `filename`, `url`, `sha256`, `cited_pages`) in `datasheets/manifest.yaml` via `ohmai datasheets manifest`.
-   Verify with `ohmai datasheets check` (or fetch missing PDFs with `ohmai datasheets fetch --verify`). Raw binary
-   `.pdf` files are gitignored when `datasheets/manifest.yaml` is active and blocked by the `pre-push` hook.
+3. Download each chosen part's datasheet (and each non-simple second-source alternate's datasheet) to
+   `datasheets/<PART>.pdf` and record its provenance (`mpn`, `lcsc`, `filename`, `url`, `sha256`, `cited_pages`) in
+   `datasheets/manifest.yaml` via `ohmai datasheets manifest`. Verify with `ohmai datasheets check` (or fetch missing
+   PDFs with `ohmai datasheets fetch --verify`). Raw binary `.pdf` files are gitignored when `datasheets/manifest.yaml`
+   is active and blocked by the `pre-push` hook.
+   - **Mandatory Phase 4 datasheet & parameter verification for all non-simple parts:** For every non-simple part
+     (anything beyond standard R/C/L passives — all ICs, modules, sensors, power converters, protection devices,
+     crystals, switches, magnetics, and connectors), verify **both the primary part and its second-source alternate(s)**
+     directly against their PDF datasheets and parametric specifications (rendering schematic, pinout, and mechanical
+     footprint pages with `pdftoppm -png -r 150` when graphical) **during Phase 4**, before asking for gate sign-off.
+     Never trust distributor summary strings alone, and never limit part or second-source selection to the `jlcparts`
+     list (search Mouser, DigiKey, Farnell, RS, LCSC, and manufacturer catalogs by parameters, pinout, and footprint).
 4. Put the chosen parts in `bom/bom.csv` with status `candidate`. When the owner approves, set `approved`
    and fill `approved_alternates` and `second_source` following the **3 BOM Sourcing Rules**:
    - **Rule 1 — Generic components**: It is fine to write `generic: any maker <spec>...`, **but** the row must
@@ -41,10 +49,10 @@ Branch `phase/parts`. Check `ohmai check parts`.
        board-to-board/wire headers, crystals, tactile switches, standard buck/LDO regulators, ESD/TVS diodes,
        bridge rectifiers) almost always have drop-in second sources. Before claiming `single-source` on any such
        part, search `jlcparts` and major distributors by **footprint + pin count + function** (not just MPN prefix).
-     - **Phase 4 datasheet schematic verification:** For every connector with integrated magnetics (e.g., PoE
-       RJ45 MagJacks), transformer, power module, or IC, render the PDF datasheet schematic and footprint pages
-       (`pdftoppm -png -r 150`) during Phase 4 to verify the internal circuit (e.g., confirming true PoE center-tap
-       / bridge pins vs. non-PoE internal Bob Smith termination) before presenting the Phase 4 gate.
+     - **Phase 4 datasheet & parameter verification across all non-simple parts:** For every non-simple component
+       (and its proposed second source), verify the actual PDF datasheet parameters, internal schematic/topology,
+       pinout, and footprint during Phase 4 (rendering graphical diagrams with `pdftoppm -png -r 150`) rather than
+       relying on catalog description strings or limiting searches to JLCPCB's list.
      - A component may only be marked `single-source` if `second_source` / `notes` explicitly documents:
      (a) `single-source (D-xxx)` citing the owner decision, AND
      (b) `checked: ...` listing the concrete candidate MPNs / manufacturers searched and the specific technical,
