@@ -29,3 +29,4 @@ Branch `phase/constraints`. Check `ohmai check constraints`.
 3. Resolve every issue in `reviews/constraints/resolutions.md`; after fixes, re-run `ohmai review start` and
    get a re-verification. `ohmai check constraints` (incl. `review:constraints`) must pass.
 4. The owner approves; then each file gets `review.status: reviewed` with reviewer and date.
+5. Once the approval is recorded, continue straight into phase 6 (SKILL.md section 3, step 6). Do not wait for another message.

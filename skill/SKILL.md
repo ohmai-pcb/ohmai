@@ -83,10 +83,23 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
    (`.github/pull_request_template.md`). The PR is the gate; CI posts checks, renders and diffs.
    **Without a remote**: post a gate summary in chat. Include what was done, the check summary
    (`out/summary.md`), the options with your recommendation, and the exact question (at Phase 2, always render the Mermaid system block diagram inline in chat as part of the gate summary).
-4. **Stop and wait.** Do not start the next phase.
+4. **Stop and wait** for explicit owner approval. Never skip or self-grant the owner sign-off, and do not start
+   the next phase before it is recorded.
 5. When the owner approves, merge (or ask them to merge) into `main`. On the same day, record the
    decision in `docs/decisions.md` and in STATUS.md → Locked decisions. Set `phase: N+1`, `gate: open`,
    then create `phase/<next-id>`.
+6. **Auto-continue after approval (no second poke).** The approval is recorded when all of these are
+   true: the owner review file exists (`reviews/<id>/owner.md` with `files_hash`), `ohmai check <id>`
+   passes including the gate, and the decision `D-00x` is logged in `docs/decisions.md` and STATUS.md.
+   In the same session, without waiting for another message from the owner:
+   1. Lock the phase: commit, merge `phase/<id>` into `main` locally, and set STATUS.md to `phase: N+1`, `gate: open`.
+   2. Open `phase/<next-id>` and follow the next phase doc. Draft its artifacts and commit as you go.
+   3. Run that phase's checks until they are clean or only reviewer/owner items are left.
+   4. Then run steps 1-3 of this protocol (`ohmai review start <id>`, `gate: in_review`, gate summary).
+   Stop again only at the next owner gate, or when blocked on an independent reviewer (3a), an unresolved
+   owner decision, the same failure 3 times, or a usage limit (commit `wip:` and update Next actions first).
+   When you stop, say why in chat and in STATUS.md → Next actions. All other rules still apply: anonymous
+   mode, the `OhmAI-Author` trailer, file-safety backups, and no push or remote PR without the owner's explicit OK.
 
 ## 3a. Independent review (gates: safety, constraints, schematic, layout, bom, bringup)
 
