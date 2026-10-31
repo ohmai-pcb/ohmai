@@ -1,0 +1,10 @@
+check: lib-refs
+bug: "schematic places a charger symbol from a project library that is not in sym-lib-table"
+detail: "not in sym-lib-table"
+fake_kicad_libs: true
+prepare:
+  - {file: hardware/lib/KB.kicad_sym, write: "(kicad_symbol_lib (version 20241209)\n  (symbol \"CHG\"\n    (symbol \"CHG_1_1\"))\n)\n"}
+  - {file: hardware/sym-lib-table, replace: "  (version 7)\n", with: "  (version 7)\n  (lib (name \"KB\")(type \"KiCad\")(uri \"${KIPRJMOD}/lib/KB.kicad_sym\")(options \"\")(descr \"\"))\n"}
+  - {file: hardware/kb.kicad_sch, write: "(kicad_sch (version 20250114)\n  (symbol (lib_id \"KB:CHG\") (at 0 0 0))\n)\n"}
+mutate:
+  - {file: hardware/sym-lib-table, replace: "(name \"KB\")", with: "(name \"KB_old\")"}

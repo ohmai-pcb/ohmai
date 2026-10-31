@@ -14,7 +14,11 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
   `ohmai kicad-libs install` and `ohmai kicad-libs tables` (per-project `hardware/sym-lib-table` /
   `fp-lib-table`; never rely on the user's global tables). `kicad-libs` check: installed + tables match.
 - Use **vetted library symbols only**: KiCad official libraries, or `hardware/lib/` after review. Never
-  generate a symbol or footprint, and never edit one to pass a check.
+  hand-draw or guess a symbol or footprint, and never edit one to pass a check. A part the KiCad libraries
+  lack is imported by you (Phase 4 "Missing KiCad library parts"), never handed to the owner.
+- `lib-refs` (after `kicad-libs`): every schematic `lib_id` must resolve through `hardware/sym-lib-table`
+  (FAIL); every schematic/BOM footprint through `fp-lib-table` (WARN here, FAIL as `lib-refs-strict` in
+  layout and BOM lock). SKIP while there is no schematic and no BOM footprint.
 - Library pin names or numbers differ from the datasheet? Write `parts/symbol-maps/<constraints stem>.yaml`
   (`symbol:`, `pins: {"<symbol pin>": {datasheet: "<ds pin>" | [..], symbol_name: <library name>, cite:
   {page: N}}}`). Never edit the reviewed constraints to match a symbol. Check polarity parts (LED, diode)

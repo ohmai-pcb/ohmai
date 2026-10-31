@@ -1,0 +1,10 @@
+check: lib-refs-strict
+bug: "BOM names a footprint that does not exist in the pinned KiCad footprint library"
+detail: "EP2.65x2.65mm"
+fake_kicad_libs: true
+prepare:
+  - {file: hardware/lib/KB.pretty/QFN32.kicad_mod, write: "(footprint \"QFN32\")\n"}
+  - {file: hardware/fp-lib-table, replace: "  (version 7)\n", with: "  (version 7)\n  (lib (name \"KB\")(type \"KiCad\")(uri \"${KIPRJMOD}/lib/KB.pretty\")(options \"\")(descr \"\"))\n"}
+  - {file: bom/bom.csv, write: "refs,qty,value,footprint\nU1,1,TPS63001RSNR,KB:QFN32\n"}
+mutate:
+  - {file: bom/bom.csv, replace: "KB:QFN32", with: "Package_DFN_QFN:VQFN-32-1EP_4x4mm_P0.4mm_EP2.65x2.65mm"}

@@ -73,6 +73,14 @@ def table_paths(project: Project) -> tuple[Path, Path]:
     return hw / "sym-lib-table", hw / "fp-lib-table"
 
 
+def local_rows(table: Path) -> str:
+    """Project-local rows (${KIPRJMOD}/lib/..., vetted imports) that a table rewrite must keep."""
+    if not table.is_file():
+        return ""
+    return "".join(ln + "\n" for ln in table.read_text(encoding="utf-8").splitlines()
+                   if ln.strip().startswith("(lib ") and "${KIPRJMOD}" in ln)
+
+
 def write_tables(project: Project) -> tuple[Path, Path]:
     tag = pinned(project)
     if not tag:
@@ -81,14 +89,15 @@ def write_tables(project: Project) -> tuple[Path, Path]:
     if not sym.is_dir() or not fp.is_dir():
         raise SystemExit(f"ohmai kicad-libs: {tag} not installed in {base_dir()} (run `ohmai kicad-libs install`)")
     st, ft = table_paths(project)
+    keep_s, keep_f = local_rows(st), local_rows(ft)
     libs = sorted(p.name[:-10] for p in sym.glob("*.kicad_sym"))
     fps = sorted(p.name[:-7] for p in fp.glob("*.pretty"))
     st.write_text("(sym_lib_table\n  (version 7)\n" + "".join(
         f'  (lib (name "{n}")(type "KiCad")(uri "${{{SYM_VAR}}}/{n}.kicad_sym")(options "")(descr "KiCad {tag}"))\n'
-        for n in libs) + ")\n", encoding="utf-8")
+        for n in libs) + keep_s + ")\n", encoding="utf-8")
     ft.write_text("(fp_lib_table\n  (version 7)\n" + "".join(
         f'  (lib (name "{n}")(type "KiCad")(uri "${{{FP_VAR}}}/{n}.pretty")(options "")(descr "KiCad {tag}"))\n'
-        for n in fps) + ")\n", encoding="utf-8")
+        for n in fps) + keep_f + ")\n", encoding="utf-8")
     return st, ft
 
 

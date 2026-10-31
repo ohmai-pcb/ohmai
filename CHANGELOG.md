@@ -1,6 +1,12 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- `ohmai check lib-refs` (phase 7, new) and `lib-refs-strict` (phases 8 and 10): every schematic `lib_id` and every
+  schematic/BOM footprint must resolve through the project `sym-lib-table` / `fp-lib-table` (symbols FAIL;
+  footprints WARN in phase 7, FAIL when strict). SKIP with no references or with the pinned libraries not
+  installed. `ohmai kicad-libs tables` now keeps project-local `${KIPRJMOD}` rows. Skill: missing KiCad parts are
+  a tool problem; vetted import path in phases/04-parts.md (stock by land pattern, manufacturer/Ultra Librarian,
+  datasheet-verified symbol generator as a marked interim).
 - `ohmai check escape-room` (phase 8, new): the 7 escape-room placement rules around fine-pitch QFNs (toe gap,
   flash facing, edge lanes, ring vias before routing, inductor facing, ring fill <= 60 %, per-side capacity),
   configured in `hardware/layout.yaml` `escape_room:`; SKIP without that section. `ohmai layout fit` (new):

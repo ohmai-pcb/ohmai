@@ -68,6 +68,7 @@ from ohmai.checks import (  # noqa: E402,F401
     escape,
     fab,
     layout,
+    librefs,
     manual,
     mcubudget,
     pinmap,
