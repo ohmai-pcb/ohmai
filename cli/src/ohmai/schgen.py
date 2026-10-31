@@ -497,6 +497,15 @@ class Sheet:
                 wp = [(snap(P[0] + x), snap(P[1] + y)) for x, y in it["route"]]
                 self.route(P, oP, wp[-1], wp[:-1])
                 P = wp[-1]
+            if it.get("side") == "on":  # net-name label sitting on the wire itself (no stub, no junction)
+                if net in self.power or net in self.ports:
+                    raise SystemExit(f"{self.name}: symbols {it['to']}: side 'on' is for local net names only")
+                if not self.on_wire(P):
+                    raise SystemExit(f"{self.name}: symbols {it['to']}: side 'on' point {P} is not on a wire")
+                self.out.append(f'\t(label "{net}" (at {q(P[0])} {q(P[1])} 0) (effects (font (size 1.27 1.27)) '
+                                f'(justify left bottom)) (uuid "{U(self.name, "l", net, P)}"))')
+                self.netcomp_has[net].append(_pt(*P))
+                continue
             d = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[it.get("side", "up")]
             if net in self.power:
                 self.power_symbol(net, P, d, (r, n))
