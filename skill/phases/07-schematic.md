@@ -6,6 +6,8 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
 ## Before drawing
 1. Write `expected_nets.csv` from the architecture and constraints files. Cite the pin source per part
    in a comment. The owner approves changes to it in the PR diff.
+2. Re-run `ohmai check mcu-pin-budget`. If the MCU nets in `expected_nets.csv` outnumber `required_nets`
+   in `parts/mcu_pin_budget.yaml`, update the budget first; a shortfall sends you back to Phase 4 (owner decision).
 
 ## Libraries and symbol maps
 - Pin the official KiCad libraries in `ohmai.yaml` → `kicad.libraries` (e.g. `"9.0.9.1"`), then

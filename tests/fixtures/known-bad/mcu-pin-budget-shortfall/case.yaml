@@ -1,0 +1,7 @@
+check: mcu-pin-budget
+bug: "TSSOP-20 MCU has 11 free GPIO after power/ground/SWD/serial, design needs 16 nets"
+detail: "SHORTFALL"
+prepare:
+  - {file: parts/mcu_pin_budget.yaml, write: "mcu: MCU-TSSOP20\npackage: TSSOP-20\ntotal_pins: 20\nreserved:\n  power: [VDD, VDDA]\n  ground: [VSS]\n  reset: [NRST]\n  boot: [BOOT0]\n  swd: [PA13, PA14]\n  fixed_serial: [PA9, PA10]\nrequired_nets: [N1, N2, N3, N4, N5, N6, N7, N8, N9, N10]\n"}
+mutate:
+  - {file: parts/mcu_pin_budget.yaml, replace: "N10]", with: "N10, N11, N12, N13, N14, N15, N16]"}

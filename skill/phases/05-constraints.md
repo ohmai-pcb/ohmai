@@ -19,6 +19,9 @@ Branch `phase/constraints`. Check `ohmai check constraints`.
    layout notes (each with a page).
 6. Set `review.status: draft`. Only a human sets `reviewed` (with reviewer and date).
 
+7. For the MCU, cross-check its constraints pin table against `parts/mcu_pin_budget.yaml` (reserved pins,
+   ADC-capable pins for `adc` nets). `ohmai check mcu-pin-budget` runs in this phase too and must not FAIL.
+
 ## Gate
 1. `ohmai review start constraints` → `reviews/constraints/BRIEF.md`. Ask the owner for the highest feasible
    independent reviewer (other vendor > other model > other agent/instructions > human; never yourself) and

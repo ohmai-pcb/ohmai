@@ -69,6 +69,7 @@ from ohmai.checks import (  # noqa: E402,F401
     fab,
     layout,
     manual,
+    mcubudget,
     pinmap,
     placement,
     readability,

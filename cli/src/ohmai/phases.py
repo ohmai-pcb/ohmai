@@ -16,12 +16,12 @@ class Phase:
 
 PHASES: tuple[Phase, ...] = (
     Phase(1, "requirements", "Requirements", ("docs:docs/requirements.md", "questions"), "Owner locks the spec"),
-    Phase(2, "architecture", "Architecture & trade study", ("docs:docs/architecture.md", "questions", "manual-warnings"),
+    Phase(2, "architecture", "Architecture & trade study", ("docs:docs/architecture.md", "questions", "manual-warnings", "mcu-pin-budget"),
           "Owner picks an architecture"),
     Phase(3, "safety", "Safety & compliance plan", ("docs:docs/safety.md", "questions", "manual-warnings", "review:safety"), "Owner approves the plan"),
-    Phase(4, "parts", "Part selection & costed BOM", ("docs:parts/selection.md", "bom-schema"),
+    Phase(4, "parts", "Part selection & costed BOM", ("docs:parts/selection.md", "bom-schema", "mcu-pin-budget"),
           "Owner approves parts with a named second source"),
-    Phase(5, "constraints", "Per-part constraints", ("constraints", "review:constraints"), "Independent review of every constraints file + owner approval"),
+    Phase(5, "constraints", "Per-part constraints", ("constraints", "mcu-pin-budget", "review:constraints"), "Independent review of every constraints file + owner approval"),
     Phase(6, "rfq", "Supplier questions / RFQs", ("rfq",), "Owner sends the RFQs"),
     Phase(7, "schematic", "Schematic", ("kicad-app", "kicad-libs", "toolchain", "sheet-load", "erc", "netlist", "skidl-netlist", "pin-map", "single-source", "passives", "pullups",
            "i2c-addr", "evb-compare", "readability", "render", "review:schematic"),

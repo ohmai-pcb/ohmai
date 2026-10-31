@@ -60,6 +60,28 @@ Branch `phase/parts`. Check `ohmai check parts`.
          clone). Lazy `"none named"` or `"single source"` without naming searched candidates FAILS `ohmai check bom-schema`.
      `ohmai check bom-schema` and `ohmai check bom-lock` always emit a **`SINGLE-SOURCE COMPONENTS (N)`** highlight
      block so single-source risks are visible at every gate.
+4b. **MCU pin budget (hard gate, like the BOM sourcing rules).** Once the MCU MPN and package are picked,
+   update `parts/mcu_pin_budget.yaml` from the datasheet pinout (cite the page in `parts/selection.md`):
+   ```yaml
+   mcu: MCU-TSSOP20        # `none` if the board has no MCU
+   package: TSSOP-20
+   total_pins: 20
+   reserved:                 # counts or pin lists; power, ground and swd are required keys
+     power: [VDD, VDDA]
+     ground: [VSS]
+     reset: [NRST]
+     boot: [BOOT0]
+     swd: [PA13, PA14]
+     fixed_serial: [PA9, PA10]
+   required_nets:            # kind: control | adc | ui | debug | comm | pwm | io | other
+     - {net: AMP_EN, kind: control}
+     - {net: VBUS_SENSE, kind: adc}
+   min_spare: 1              # optional
+   # free_gpio: 11           # optional override when pins are multi-function (explain in selection.md)
+   ```
+   `ohmai check mcu-pin-budget` FAILs on a shortfall or an incomplete budget, WARNs if an MCU is mentioned
+   but the file is missing, and SKIPs when no MCU is mentioned. Also check that ADC nets land on ADC-capable
+   pins. Lesson: a small TSSOP-20 MCU has ~11 free GPIO; a ~16-net design was only caught in Phase 7.
 5. Give a total BOM cost at the target quantity, with each estimate marked as one.
 
 ## Optional: parametric search (jlcparts)
@@ -74,7 +96,7 @@ older partLib schema, pointed to by `OHMAI_JLCPARTS_DB` or `--db`). Delisted par
 
 ## Gate
 The owner approves each part under the 3 BOM sourcing rules (including any highlighted single-source parts).
-`ohmai check bom-schema` must pass.
+`ohmai check bom-schema` must pass, and `ohmai check mcu-pin-budget` must PASS (or SKIP for a board with no MCU).
 
 ## Autonomous passive package adjustments (Phases 7–8)
 Standard passives (`R`, `C`, `L` in `0402`–`0805` / `2016`–`3030`) approved in Phase 4 may be resized autonomously
