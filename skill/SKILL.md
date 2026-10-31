@@ -82,7 +82,7 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
 3. **With a GitHub remote** (owner approved): push the branch and open a PR from the template
    (`.github/pull_request_template.md`). The PR is the gate; CI posts checks, renders and diffs.
    **Without a remote**: post a gate summary in chat. Include what was done, the check summary
-   (`out/summary.md`), the options with your recommendation, and the exact question (at Phase 2, always render the Mermaid system block diagram inline in chat as part of the gate summary).
+   (`out/summary.md`), the options with your recommendation, and the exact question written per section 3b (at Phase 2, always render the Mermaid system block diagram inline in chat as part of the gate summary).
 4. **Stop and wait** for explicit owner approval. Never skip or self-grant the owner sign-off, and do not start
    the next phase before it is recorded.
 5. When the owner approves, merge (or ask them to merge) into `main`. On the same day, record the
@@ -100,6 +100,38 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
    owner decision, the same failure 3 times, or a usage limit (commit `wip:` and update Next actions first).
    When you stop, say why in chat and in STATUS.md → Next actions. All other rules still apply: anonymous
    mode, the `OhmAI-Author` trailer, file-safety backups, and no push or remote PR without the owner's explicit OK.
+
+## 3b. Writing owner-facing questions (gates, STATUS open questions, review OQs)
+
+Owners read questions quickly. A short label can look like it reverses a decision that is already locked.
+Every owner-facing question, and especially any that touches or seems to touch the architecture, must have:
+
+1. **Context:** one sentence naming the locked decision(s) it does *not* change (cite `D-00x`).
+2. **What this is / is not:** explain any jargon in plain words (a pin, a derating %, a cable feature) and say
+   which product-level behaviour stays the same.
+3. **Options with consequences:** your recommendation, and what each option means for cost, parts, behaviour
+   and risk. A bare label such as "A or B?" is not enough.
+4. **No negative product-level wording** for subsystem topics. Do not write "sink-only", "charger only",
+   "no Ethernet" and the like when the question is really about one pin or accessory feature.
+
+Template:
+
+```
+### OQ-<n>: <plain-language title>
+- Context: Does not change <locked decision, D-00x>.
+- What this is: <plain explanation>. What this is not: <the product-level reading to rule out>.
+- Options:
+  - A (recommended): <choice> - consequence: <...>
+  - B: <choice> - consequence: <...>
+- Needed by: <phase/gate>. Blocking: yes/no.
+```
+
+Bad: "FUSB302B: sink-only (no VCONN)?" This reads like dropping the locked bidirectional 45 W USB-C PD.
+Good: "OQ-3: Supply VCONN to e-marked cables? Context: does not change D-002 (USB-C PD sink + source, 45 W).
+What this is: VCONN is a ~5 V supply on the unused CC pin that powers the small ID chip in e-marked
+cables. What this is not: it has nothing to do with the PD power role. Options: A (recommended) no VCONN -
+fewer parts; cables over 3 A cannot be identified, so source current is capped at 3 A (45 W at 15 V is
+still met). B VCONN switch - one more load switch, enables 5 A cables."
 
 ## 3a. Independent review (gates: safety, constraints, schematic, layout, bom, bringup)
 

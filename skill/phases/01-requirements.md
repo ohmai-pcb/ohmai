@@ -29,3 +29,5 @@ The idea in STATUS.md, plus the owner's answers.
 ## Gate
 The owner reads the must/wish tables and **locks the spec**. Record it as D-001. Later changes need a new
 decision.
+
+Owner-facing open questions (STATUS, review OQs, gate summary) follow SKILL.md section 3b: context naming the locked decision not changed, what it is / is not, options with consequences, and no negative product-level wording for subsystem topics.
