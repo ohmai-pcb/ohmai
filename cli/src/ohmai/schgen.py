@@ -98,21 +98,43 @@ class Lib:
             raise SystemExit(f"schematic build: symbol {lib}:{name} not in library {lib}")
         return self._block(t, m.start() + 1)  # keep the line's own indent (golden-stable)
 
+    # KiCad 9 MANDATORY_FIELDS (template_fieldnames.h)
+    MANDATORY = ("Reference", "Value", "Footprint", "Datasheet", "Description")
+    _PROP = re.compile(r'\n[ \t]+\(property "([^"]+)" "((?:[^"\\]|\\.)*)"')
+
+    def flat(self, lib: str, name: str) -> str:
+        """Library text of `name` with `extends` resolved the way LIB_SYMBOL::Flatten() (KiCad 9) does it,
+        so the sheet copy matches the library and ERC reports no lib_symbol_mismatch:
+        - the parent's units/graphics/pins (recursively flattened), renamed to the child;
+        - a mandatory field the child leaves EMPTY keeps the parent's whole field (position, effects);
+        - any other child field replaces the parent's field of that name, or is added if the parent lacks it."""
+        t = self.raw(lib, name)
+        m = re.search(r'\(extends "([^"]+)"\)', t[:500])
+        if not m:
+            return t
+        par = m.group(1)
+        p = self.flat(lib, par)
+        child = [(mm.group(1), mm.group(2), self._block(t, mm.start() + 1)) for mm in self._PROP.finditer(t)]
+        parent = {mm.group(1): self._block(p, mm.start() + 1) for mm in self._PROP.finditer(p)}
+        extra = []
+        for k, val, blk in child:
+            if k in self.MANDATORY and val == "" and k in parent:
+                continue
+            if k in parent:
+                p = p.replace(parent[k], blk, 1)
+            else:
+                extra.append(blk)
+        if extra:
+            ends = [mm.start() + 1 + len(self._block(p, mm.start() + 1)) for mm in self._PROP.finditer(p)]
+            last = max(ends) if ends else p.index("\n")
+            p = p[:last] + "".join(extra) + p[last:]
+        p = p.replace(f'(symbol "{par}_', f'(symbol "{name}_').replace(f'(symbol "{par}"', f'(symbol "{name}"', 1)
+        return p
+
     def embedded(self, lib_id: str) -> str:
         """Flattened copy for lib_symbols (what eeschema writes when placing the symbol)."""
         lib, name = lib_id.split(":", 1)
-        t = self.raw(lib, name)
-        m = re.search(r'\(extends "([^"]+)"\)', t[:500])
-        if m:
-            par = m.group(1)
-            p = self.raw(lib, par)
-            child = {mm.group(1): self._block(t, mm.start() + 1) for mm in re.finditer(r'\n[ \t]+\(property "([^"]+)"', t)}
-            parent = [(mm.group(1), self._block(p, mm.start() + 1)) for mm in re.finditer(r'\n[ \t]+\(property "([^"]+)"', p)]
-            for k, blk in parent:
-                if k in child:
-                    p = p.replace(blk, child[k], 1)
-            p = p.replace(f'(symbol "{par}_', f'(symbol "{name}_').replace(f'(symbol "{par}"', f'(symbol "{name}"', 1)
-            t = p
+        t = self.flat(lib, name)
         t = t.replace(f'(symbol "{name}"', f'(symbol "{lib_id}"', 1)
         return "\n".join("\t" + ln for ln in t.split("\n"))
 

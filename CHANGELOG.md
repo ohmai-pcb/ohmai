@@ -1,6 +1,10 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- `schematic build` embeds derived (`extends`) symbols the way KiCad 9 `LIB_SYMBOL::Flatten()` does: an empty
+  mandatory child field keeps the parent's whole field, child-only fields are added, and extends chains are
+  resolved recursively. Fixes ERC `lib_symbol_mismatch` on e.g. Sensor_Temperature:LM75B (extends LM75C).
+  Rebuild sheets (`ohmai schematic build`) to re-embed.
 - `scripts/restore-toolchain.sh` + docs/TOOLCHAIN.md: KiCad 9 + durable `~/ohmai-venv` restore with HTTPS
   Debian mirror fallback and a single-installer flock; skill rules: `/tmp` and `out/` are not durable,
   commit generated artifacts every step.
