@@ -43,6 +43,20 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
   junction (it reads as that node's name), text on pin lines / pin numbers or over a DNP cross, a part's text
   touching a power symbol's name, and titles longer than the title-block field (ESTIMATE of the font). The reviewer judges the PNGs against the datasheet figures.
 
+## Readability is a hard gate (not debt)
+- `ohmai check readability` must PASS with **0 problems** before the review and the owner gate. It is part of
+  `review:schematic` (that check FAILs while readability FAILs) and is not waivable, not "accepted debt", and
+  never an owner-decision item. Fix the drawing; do not loosen `checks.readability` allow-lists to pass.
+- Human-readable means: one functional block per sheet; circuits grouped (IC with its passives around it, like the
+  datasheet figure); signal flow left to right, power top, ground bottom; real orthogonal wires for every
+  local connection; hierarchical labels only at the sheet edge for nets that leave the sheet; aligned rails and
+  even spacing; no text on wires, pins or other text. A grid of parts joined only by net labels is not a schematic.
+- **Common minimal sheet size:** root and every sub-sheet use the same paper size (`paper:` in each
+  `hardware/gen/layout/*.yaml`), the smallest standard size (A4 before A3 before A2) on which every sheet
+  fits cleanly. Mixed sizes FAIL `readability`. Record the chosen size in STATUS.md.
+- Background: the previous project (pico-k) required a clean readability pass; a dogfood board first reached its
+  review gate with 167 readability problems recorded as debt. That was a skill/process failure, now closed.
+
 ## Checks, in this order (`ohmai check schematic` runs them)
 0. `kicad-app`: `kicad-cli version` is inside ohmai.yaml `kicad.app` (e.g. `">=9.0.2,<9.1"` or `"9.0.x"`);
    FAIL outside the range, WARN when not pinned. Also run in phases 8 and 11.

@@ -421,6 +421,13 @@ def readability(project: Project, opts: dict) -> Result:
                          allow_labels=allow, allow_crossings=bool(cfg.get("allow_crossings")))
         fails += fl
         warns += wn
+    papers = {}
+    for f in files:
+        m = re.search(r'\(paper\s+"([^"]+)"(\s+portrait)?', f.read_text(encoding="utf-8"))
+        papers[f.name] = (m.group(1) + (" portrait" if m.group(2) else "")) if m else "?"
+    if len(set(papers.values())) > 1:
+        fails.append("sheet size: all sheets must share one common paper size (the smallest that fits every "
+                     "sheet cleanly); found " + ", ".join(f"{k}={v}" for k, v in sorted(papers.items())))
     out = project.out / "readability.txt"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(["FAIL " + x for x in fails] + ["WARN " + x for x in warns]) + "\n", encoding="utf-8")

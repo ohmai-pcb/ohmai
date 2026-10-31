@@ -47,6 +47,12 @@ def _post_review_ok(project, phase, r, rp, who, cur, nit_files, res_rows, errs, 
     return True
 
 
+# Work checks that are a hard part of a phase's review gate: a FAIL here can never be accepted as debt, waived,
+# or carried past the gate (a dogfood board's Phase 7 reached "review PASS" with 167 readability problems accepted as
+# debt, while the previous project, pico-k, had to be drawn clean). Fix the drawing, then re-review.
+HARD_GATE_CHECKS: dict[str, tuple[str, ...]] = {"schematic": ("readability",)}
+
+
 def check_review(project: Project, phase_name: str | None) -> Result:
     from ohmai import review as rv
     from ohmai.status import load
@@ -76,6 +82,13 @@ def check_review(project: Project, phase_name: str | None) -> Result:
         errs += [f"commits: {d}" for d in cr.details[:10]]
     elif cr.status == WARN:
         warns.append(f"commits: {cr.summary}")
+    for hc in HARD_GATE_CHECKS.get(phase, ()):
+        from ohmai.checks import run as run_check
+
+        hr = run_check(project, hc, {})
+        if hr.status == FAIL:
+            errs.append(f"{hc}: {hr.summary}: hard gate, not waivable or acceptable as debt; fix the sheets "
+                        f"(`ohmai check {hc}` must PASS before the {phase} gate)")
     if not auths:
         warns.append("no author identity recorded (STATUS.md `authors:` or `OhmAI-Author:` commit trailers); "
                      "reviewer independence cannot be checked")

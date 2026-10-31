@@ -1,0 +1,65 @@
+"""Schematic readability is a hard part of the review gate, and all sheets share one paper size."""
+
+from __future__ import annotations
+
+import ohmai.checks as checks
+from ohmai.checks import FAIL, Result
+from ohmai.checks import review as review_check
+from ohmai.checks.readability import readability
+
+from test_cli import _review_proj, _write_review, proj  # noqa: F401  (fixture)
+
+
+def _with_readability(monkeypatch, status):
+    real = checks.run
+
+    def fake(p, name, opts):
+        if name == "readability":
+            return Result("readability", status, "3 problem(s)" if status == FAIL else "ok")
+        return real(p, name, opts)
+
+    monkeypatch.setattr(checks, "run", fake)
+    monkeypatch.setitem(review_check.HARD_GATE_CHECKS, "constraints", ("readability",))
+
+
+def test_review_gate_fails_on_readability_fail(proj, monkeypatch):
+    from ohmai.review import start
+
+    p = _review_proj(proj)
+    start(p, "constraints")
+    _write_review(p)
+    _with_readability(monkeypatch, FAIL)
+    r = review_check.check_review(p, "constraints")
+    assert r.status == FAIL
+    assert any("hard gate" in d and "not waivable" in d for d in r.details), r.details
+
+
+def test_review_gate_passes_when_readability_passes(proj, monkeypatch):
+    from ohmai.review import start
+
+    p = _review_proj(proj)
+    start(p, "constraints")
+    _write_review(p)
+    _with_readability(monkeypatch, "PASS")
+    assert review_check.check_review(p, "constraints").status == "PASS"
+
+
+def test_schematic_hard_gate_includes_readability():
+    assert "readability" in review_check.HARD_GATE_CHECKS["schematic"]
+
+
+def test_mixed_sheet_sizes_fail(tmp_path, monkeypatch):
+    class P:
+        pass
+
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    root = hw / "top.kicad_sch"
+    root.write_text('(kicad_sch (version 20250114) (paper "A4")\n (sheet (at 10 10) (size 20 20)\n'
+                    '  (property "Sheetname" "a" (at 10 9 0)) (property "Sheetfile" "a.kicad_sch" (at 10 31 0))))\n')
+    (hw / "a.kicad_sch").write_text('(kicad_sch (version 20250114) (paper "A3"))\n')
+    p = P()
+    p.schematic, p.config, p.out = root, {}, tmp_path / "out"
+    r = readability(p, {})
+    assert r.status == FAIL
+    assert any("common paper size" in d for d in r.details), r.details
