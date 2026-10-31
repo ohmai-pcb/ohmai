@@ -191,6 +191,9 @@ Details: `docs/REVIEWS.md` in OhmAI. Configured per gate in `ohmai.yaml` → `re
 - RFQs are standalone vendor documents. The owner sends them; you never do.
 - Never send email, order, push, tag a release or spend money without the owner's explicit go-ahead.
 - GPL/AGPL tools (Freerouting, KiBot, and SKiDL because it loads GPL InSpice) run as separate processes only.
+- The toolchain is machine-local and the box is shared. After `ohmai check toolchain` FAILs or kicad-cli/ohmai
+  vanish, run `scripts/restore-toolchain.sh` (docs/TOOLCHAIN.md), don't hand-install. Don't assume `/tmp`
+  or `out/` survive. Commit generated sheets and libs every step; never rely on an uncommitted ohmai patch.
 - Never hand-edit tier-1 pins in `toolchain.lock.yaml`. Move one only with `ohmai upgrade` and the owner's
   go-ahead.
 
@@ -206,6 +209,8 @@ ohmai review check <phase>        = ohmai check review:<phase>
 ohmai release rev-A --dry-run     preflight + fab outputs in out/release/ (never pushes)
 ohmai lock [--check]              write/verify toolchain.lock.yaml (tier 1 exact, tier 2 ranges); commit it
 ohmai check toolchain             installed tools vs the lock (also in phases 7, 8, 11)
+scripts/restore-toolchain.sh      after a toolchain FAIL: KiCad 9 + durable ~/ohmai-venv (docs/TOOLCHAIN.md);
+                                  one agent restores (flock), others wait; never keep state in /tmp
 ohmai upgrade <tool> <version>    move one tier-1 pin: known-bad + golden suites first, own commit
           [--path P] [--install] [--explain "why diffs are fine"] [--dry-run]
 ohmai kicad-libs install|tables|status|models   pinned official KiCad libraries + per-project 3D .step models

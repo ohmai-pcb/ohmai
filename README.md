@@ -94,6 +94,7 @@ Details: [`skill/phases/`](skill/phases/), [`docs/ARCHITECTURE.md`](docs/ARCHITE
 
 ### Requirements
 - **Python ≥ 3.10**, **git**, and **KiCad 9** (`kicad-cli` on `PATH`; KiCad checks report `SKIP` without it).
+- Shared or ephemeral agent boxes: restore with `scripts/restore-toolchain.sh` (KiCad 9 + durable `~/ohmai-venv`, HTTPS-mirror fallback, single-installer lock); see [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md).
 - Optional external helpers: `rsvg-convert` (`librsvg2-bin` for PNG schematic renders), Java + `freerouting.jar` (for `ohmai layout autoroute`), and a local `jlcparts` SQLite database (`OHMAI_JLCPARTS_DB` or `~/.cache/ohmai/jlcparts/cache.sqlite3`).
 
 ### Install & Create a Project

@@ -1,6 +1,9 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- `scripts/restore-toolchain.sh` + docs/TOOLCHAIN.md: KiCad 9 + durable `~/ohmai-venv` restore with HTTPS
+  Debian mirror fallback and a single-installer flock; skill rules: `/tmp` and `out/` are not durable,
+  commit generated artifacts every step.
 - `schematic build` falls back to the project `hardware/lib/*.kicad_sym` (imported parts) and accepts
   space-indented symbols. Imported footprints get `${KIPRJMOD}/lib/<lib>.3dshapes/...` model paths and
   never absolute temp paths. Based on a parallel agent's patch.

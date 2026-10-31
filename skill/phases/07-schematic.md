@@ -109,3 +109,9 @@ datasheet-recommended HF decoupling caps** (e.g., `100 nF` HF bypass next to an 
 ask the owner, provided `ohmai check constraints`, `erc`, `netlist`, and `passives` all pass and the update is logged
 in `bom/bom.csv`, `expected_nets.csv`, and `STATUS.md`. Reserve owner prompts strictly for active ICs, connectors,
 switches, crystals, board outline, or waiving a hard `R-xx` / datasheet requirement.
+
+## Toolchain loss between turns
+If `kicad-cli`, the ohmai venv or `out/` vanish, the shared box lost machine-local state; nothing was
+uninstalled. Run `scripts/restore-toolchain.sh` (one agent; others wait on its lock), `source
+~/ohmai-venv/env.sh`, then rebuild with `ohmai schematic build` and re-run checks. Commit the regenerated
+sheets, `gen/layout/` and `hardware/lib/` before ending each turn, so a wipe never loses work.
