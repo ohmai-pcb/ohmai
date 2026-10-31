@@ -54,15 +54,20 @@ def q(v: float) -> str:
 
 # ---------------------------------------------------------------- library access (verbatim text)
 class Lib:
-    def __init__(self, sym_dir: Path):
+    def __init__(self, sym_dir: Path, project_dir: Path | None = None):
         self.dir = sym_dir
+        self.project_dir = project_dir  # hardware/lib: symbols imported by `ohmai kicad-libs fetch` (vetted)
         self._text: dict[str, str] = {}
 
     def _t(self, lib: str) -> str:
         if lib not in self._text:
             f = self.dir / f"{lib}.kicad_sym"
+            if not f.is_file() and self.project_dir is not None:
+                f = self.project_dir / f"{lib}.kicad_sym"
             if not f.is_file():
-                raise SystemExit(f"schematic build: library {lib} not in {self.dir}")
+                raise SystemExit(f"schematic build: library {lib} not in {self.dir}"
+                                 + (f" or {self.project_dir}" if self.project_dir else "")
+                                 + " (missing part: ohmai kicad-libs fetch <MPN>)")
             self._text[lib] = f.read_text(encoding="utf-8")
         return self._text[lib]
 
@@ -88,10 +93,10 @@ class Lib:
 
     def raw(self, lib: str, name: str) -> str:
         t = self._t(lib)
-        m = re.search(r'\n\t\(symbol "' + re.escape(name) + r'"\n', t)
+        m = re.search(r'\n[ \t]*(\(symbol "' + re.escape(name) + r'"\s*\n)', t)
         if not m:
-            raise SystemExit(f"schematic build: symbol {lib}:{name} not in the official library")
-        return self._block(t, m.start() + 1)
+            raise SystemExit(f"schematic build: symbol {lib}:{name} not in library {lib}")
+        return self._block(t, m.start() + 1)  # keep the line's own indent (golden-stable)
 
     def embedded(self, lib_id: str) -> str:
         """Flattened copy for lib_symbols (what eeschema writes when placing the symbol)."""
@@ -101,8 +106,8 @@ class Lib:
         if m:
             par = m.group(1)
             p = self.raw(lib, par)
-            child = {mm.group(1): self._block(t, mm.start() + 1) for mm in re.finditer(r'\n\t\t\(property "([^"]+)"', t)}
-            parent = [(mm.group(1), self._block(p, mm.start() + 1)) for mm in re.finditer(r'\n\t\t\(property "([^"]+)"', p)]
+            child = {mm.group(1): self._block(t, mm.start() + 1) for mm in re.finditer(r'\n[ \t]+\(property "([^"]+)"', t)}
+            parent = [(mm.group(1), self._block(p, mm.start() + 1)) for mm in re.finditer(r'\n[ \t]+\(property "([^"]+)"', p)]
             for k, blk in parent:
                 if k in child:
                     p = p.replace(blk, child[k], 1)
@@ -645,8 +650,8 @@ def build(project: Project, layout_dir: Path | None = None) -> list[Path]:
     if not tag:
         raise SystemExit("ohmai schematic build: pin kicad.libraries in ohmai.yaml (ohmai kicad-libs)")
     sym_dir, _fp = kicadlibs.dirs(tag)
-    lib = Lib(sym_dir)
     hw = project.schematic.parent
+    lib = Lib(sym_dir, hw / "lib")
     ld = layout_dir or hw / "gen" / "layout"
     root = yaml.safe_load((ld / "_root.yaml").read_text(encoding="utf-8")) or {}
     names = root.get("sheets") or []

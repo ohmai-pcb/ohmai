@@ -1,6 +1,9 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- `schematic build` falls back to the project `hardware/lib/*.kicad_sym` (imported parts) and accepts
+  space-indented symbols. Imported footprints get `${KIPRJMOD}/lib/<lib>.3dshapes/...` model paths and
+  never absolute temp paths. Based on a parallel agent's patch.
 - `ohmai kicad-libs fetch` is now agent end-to-end, no owner steps: LCSC/EasyEDA via easyeda2kicad (LCSC number
   from bom.csv, title must match the MPN), `--url` direct manufacturer files, footprint upgrade to KiCad 9,
   auto datasheet pin check, `--pin-types` from the datasheet I/O column, footprint pad summary. Ultra

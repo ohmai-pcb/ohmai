@@ -165,6 +165,21 @@ def _rel(project: Project, f: Path) -> str:
         return str(f)
 
 
+_MODEL = re.compile(r'\(model\s+"([^"]+)"')
+
+
+def fix_model_paths(text: str, lib: str) -> str:
+    """Point every footprint (model ...) at ${KIPRJMOD}/lib/<lib>.3dshapes/<file>; never an absolute/temp path.
+    Paths already using ${KICAD*_3DMODEL_DIR} (stock models) are kept."""
+    def sub(m):
+        path = m.group(1)
+        if path.startswith("${KICAD"):
+            return m.group(0)
+        name = re.split(r"[\\/]", path)[-1]
+        return f'(model "${{KIPRJMOD}}/lib/{lib}.3dshapes/{name}"'
+    return _MODEL.sub(sub, text)
+
+
 def _sha(f: Path) -> str:
     return hashlib.sha256(f.read_bytes()).hexdigest()
 
@@ -343,11 +358,11 @@ def import_part(project: Project, mpn: str, source: Path, *, package: str | None
             names = []
             for f in mods:
                 dst = pretty / f.name
-                if dst.exists() and not replace and dst.read_bytes() != f.read_bytes():
+                if dst.exists() and not replace and dst.read_text(encoding="utf-8") != fix_model_paths(f.read_text(encoding="utf-8"), lib):
                     raise SystemExit(f"ohmai kicad-libs import: {dst.name} exists and differs (use --replace)")
                 if dst.exists():
                     _backup(dst)
-                shutil.copy2(f, dst)
+                dst.write_text(fix_model_paths(f.read_text(encoding="utf-8"), lib), encoding="utf-8")
                 names.append(f"{lib}:{f.stem}")
             entry["footprints"] = names
             ensure_row(project.schematic.parent / "fp-lib-table", "fp", lib,

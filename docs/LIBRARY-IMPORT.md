@@ -33,3 +33,12 @@ Statuses: `imported`, `verified`, `provisional` (stopgap until `fetch --replace`
 Limits: the pin check is a line-pairing heuristic on `pdftotext -layout` (BGA ball maps and multi-column
 tables may need narrower `--pages`); `--pin-types` maps datasheet `O` to `output` (review open-drain pins);
 land patterns are not yet compared numerically with the datasheet.
+
+## Using imported parts in generated sheets
+- `ohmai schematic build` resolves a `lib_id` from the pinned stock libraries first. If the library isn't
+  there, it falls back to the project's `hardware/lib/<lib>.kicad_sym`, for example
+  `OhmAI_Project:TPS63001`.
+- Symbols indented with spaces (easyeda2kicad style) are accepted as well as tab-indented ones.
+- 3D model paths in imported footprints are always rewritten to
+  `${KIPRJMOD}/lib/<lib>.3dshapes/<file>`. Absolute paths and temp paths such as `/tmp/...` are never kept.
+  Stock `${KICAD*_3DMODEL_DIR}` paths stay as they are.

@@ -124,7 +124,7 @@ def _fake_easyeda(monkeypatch, title="FAKE1X"):
         out.with_suffix(".kicad_sym").write_text(sym)
         out.with_suffix(".pretty").mkdir()
         out.with_suffix(".pretty").joinpath("FAKE_PKG.kicad_mod").write_text(
-            '(footprint "FAKE_PKG"\n  (pad "1" smd rect (at 0 0) (size 0.2 0.7))\n  (pad "2" smd rect (at 1 0) (size 2.8 2.8))\n)\n')
+            '(footprint "FAKE_PKG"\n  (model "/tmp/x/ee.3dshapes/FAKE.wrl")\n  (pad "1" smd rect (at 0 0) (size 0.2 0.7))\n  (pad "2" smd rect (at 1 0) (size 2.8 2.8))\n)\n')
         return __import__("subprocess").CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(libimport, "_easyeda2kicad", lambda: ["easyeda2kicad"])
@@ -144,6 +144,8 @@ def test_fetch_easyeda_agent_only_uses_bom_lcsc_verifies_and_types(tmp_path, mon
     assert e["footprint_check"][0]["pads"] == 2 and e["footprint_check"][0]["largest_pad_mm"] == "2.8x2.8"
     t = (p.schematic.parent / "lib" / "OhmAI_Project.kicad_sym").read_text()
     assert "(pin input" in t and "(pin passive" in t and "unspecified" not in t
+    fp = (p.schematic.parent / "lib" / "OhmAI_Project.pretty" / "FAKE_PKG.kicad_mod").read_text()
+    assert "${KIPRJMOD}/lib/OhmAI_Project.3dshapes/FAKE.wrl" in fp and "/tmp/" not in fp
 
 
 def test_fetch_easyeda_refuses_wrong_part(tmp_path, monkeypatch):
