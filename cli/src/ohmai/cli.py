@@ -163,6 +163,8 @@ def cmd_kicad_libs(a) -> int:
     from ohmai import kicadlibs
 
     p = _project()
+    if a.action in ("import", "fetch", "verify", "list"):
+        return _cmd_lib_import(p, a)
     tag = kicadlibs.pinned(p)
     if a.action == "install":
         if not tag:
@@ -205,6 +207,47 @@ def cmd_kicad_libs(a) -> int:
     for d in details:
         print(f"        {d}")
     return 0 if st != "FAIL" else 1
+
+
+def _cmd_lib_import(p, a) -> int:
+    from ohmai import libimport as li
+
+    if a.action == "list":
+        parts = li.load_manifest(p)["parts"]
+        if not parts:
+            print("no project-local parts (hardware/lib/manifest.yaml)")
+        for mpn, e in parts.items():
+            sym = (e.get("symbol") or {}).get("lib_id", "-")
+            v = e.get("verification") or {}
+            ver = f"{len(v.get('mismatches') or [])} mismatch(es)" if v else "no datasheet check"
+            print(f"{e.get('status', '?'):16} {mpn:20} {sym:28} {', '.join(e.get('footprints') or []) or '-'}  [{ver}]")
+        return 0
+    if not a.mpn:
+        raise SystemExit(f"ohmai kicad-libs {a.action}: MPN required")
+    if a.action == "fetch":
+        print(li.fetch_steps(p, a.mpn, vendor=a.vendor, package=a.package, pins_count=a.pins, base=a.base))
+        return 0
+    if a.action == "verify":
+        if not a.datasheet:
+            raise SystemExit("ohmai kicad-libs verify: --datasheet PDF required")
+        errs = li.verify_part(p, a.mpn, Path(a.datasheet), a.pages)
+        print(("FAIL " if errs else "PASS ") + f"{a.mpn}: {len(errs)} pin mismatch(es) vs {a.datasheet}")
+        for e in errs:
+            print(f"        {e}")
+        return 1 if errs else 0
+    if not a.source:
+        raise SystemExit("ohmai kicad-libs import: --from <vetted .zip | dir | .kicad_sym | .kicad_mod> required "
+                         f"(no file yet? run `ohmai kicad-libs fetch {a.mpn}` for the download steps)")
+    e = li.import_part(p, a.mpn, Path(a.source), package=a.package, source_url=a.source_url, lib=a.lib,
+                       symbol=a.symbol, name=a.name, footprint=a.footprint,
+                       datasheet=Path(a.datasheet) if a.datasheet else None, pages=a.pages,
+                       status=a.status, replace=a.replace, note=a.note)
+    print(f"{e['status']:9} {a.mpn}: symbol {(e.get('symbol') or {}).get('lib_id', '-')}, "
+          f"footprints {', '.join(e.get('footprints') or []) or '-'} -> hardware/lib/ (manifest.yaml)")
+    for m in (e.get("verification") or {}).get("mismatches") or []:
+        print(f"        {m}")
+    print("next: ohmai check lib-refs")
+    return 1 if (e.get("verification") or {}).get("mismatches") else 0
 
 
 def cmd_schematic(a) -> int:
@@ -492,7 +535,26 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("kicad-libs", help="pinned official KiCad libraries: install the tag, write project lib tables, or fetch project 3D models",
                        description="Uses kicad.libraries from ohmai.yaml; symbol/footprint libs go to $OHMAI_KICAD_LIBS "
                                    "(default ~/.cache/ohmai/kicad-libs); 3D .step models are fetched per project into out/3dmodels/.")
-    s.add_argument("action", choices=["install", "tables", "status", "models"])
+    s.add_argument("action", choices=["install", "tables", "status", "models", "import", "fetch", "verify", "list"],
+                   help="import/fetch/verify/list: vetted project-local parts the pinned libraries lack "
+                        "(hardware/lib/, manifest.yaml; see skill/phases/04-parts.md)")
+    s.add_argument("mpn", nargs="?", help="import/fetch/verify: manufacturer part number")
+    s.add_argument("--from", dest="source", help="import: vetted UL/manufacturer .zip, directory, .kicad_sym or .kicad_mod")
+    s.add_argument("--source-url", help="import: where the vetted file was downloaded (required)")
+    s.add_argument("--package", help="import/fetch: package code, e.g. RSN")
+    s.add_argument("--lib", default="OhmAI_Project", help="import: project library name (default OhmAI_Project)")
+    s.add_argument("--symbol", help="import: symbol to take when the source has several")
+    s.add_argument("--name", help="import: name of the symbol in the project library (default: source name)")
+    s.add_argument("--footprint", help="import: Footprint field for the symbol, e.g. Package_DFN_QFN:... (stock KiCad)")
+    s.add_argument("--datasheet", help="import/verify: datasheet PDF; every symbol pin number+name must appear on one line")
+    s.add_argument("--pages", help="import/verify: datasheet pin-table pages, e.g. 6-8")
+    s.add_argument("--status", choices=["provisional"], help="import: mark a stopgap source provisional")
+    s.add_argument("--replace", action="store_true", help="import: replace an existing symbol/footprint (backed up)")
+    s.add_argument("--note", help="import: free-text provenance note")
+    s.add_argument("--vendor", default="ul", choices=["ti", "ul", "analog", "st", "microchip", "nxp", "snapeda"],
+                   help="fetch: where the human downloads the KiCad export")
+    s.add_argument("--base", help="fetch: base part number for the vendor page (e.g. TPS63001 for TPS63001RSNR)")
+    s.add_argument("--pins", help="fetch: pin count for the vendor page")
     s.add_argument("--no-dummy", action="store_true", help="models: flag missing 3D models without generating dummy .step blocks")
     s.add_argument("--stage-pcb", help="models: write a temporary .kicad_pcb with (model ...) entries injected for footprints lacking one")
     s.add_argument("--json", action="store_true", help="models: print manifest JSON")

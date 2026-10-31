@@ -123,6 +123,7 @@ Then tell your agent: *"My idea is a solar-powered USB-C charger for 2 phones, u
 | `ohmai passives swap <REF> --package <0402\|0603\|0805>` | Swap a passive package across schematic/layout specs while keeping BOM parity |
 | `ohmai datasheets {manifest,fetch,check}` | Manage `datasheets/manifest.yaml` (SHA-256 digests + cited pages) and fetch PDFs on demand |
 | `ohmai kicad-libs {install,tables,models,status}` | Manage pinned KiCad libraries and fetch/generate project-scoped 3D `.step` models |
+| `ohmai kicad-libs {fetch,import,verify,list} <MPN>` | Vetted import of parts the pinned libraries lack: vendor download steps (human captcha), import from a UL/manufacturer KiCad export into `hardware/lib/` + lib tables + `manifest.yaml`, datasheet pin check |
 | `ohmai commit -m "..." [-a]` / `ohmai hooks {install,status}` | Commit with `OhmAI-Author:` trailers and manage `commit-msg` / `pre-push` hooks |
 | `ohmai lock` / `ohmai upgrade` / `ohmai release <tag>` | Manage `toolchain.lock.yaml` or build a fabrication release (`--dry-run` supported) |
 | `ohmai golden` / `ohmai known-bad` | Run golden reference projects and the 25 planted-bug mutation fixtures (`tests/known-bad/`) |

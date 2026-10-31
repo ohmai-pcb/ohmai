@@ -1,6 +1,13 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- `ohmai kicad-libs fetch|import|verify|list <MPN>` (new): the supported library tool for parts the pinned KiCad
+  libraries lack. `fetch` prints vendor (TI/Ultra Librarian/ST/ADI/Microchip/NXP/SnapEDA) download steps and
+  records `pending-download`; `import` takes a vetted zip/dir/.kicad_sym/.kicad_mod, merges into
+  `hardware/lib/OhmAI_Project.*`, adds `${KIPRJMOD}` table rows (backed up) and writes provenance to
+  `hardware/lib/manifest.yaml`; `verify` checks every symbol pin number+name against the datasheet pin table;
+  `--status provisional` registers a stopgap. Skill phases 4/7 and SKILL.md: agents run the tool, never
+  hand-write one-off symbol scripts. `lib-refs` hint points at the tool.
 - `ohmai check lib-refs` (phase 7, new) and `lib-refs-strict` (phases 8 and 10): every schematic `lib_id` and every
   schematic/BOM footprint must resolve through the project `sym-lib-table` / `fp-lib-table` (symbols FAIL;
   footprints WARN in phase 7, FAIL when strict). SKIP with no references or with the pinned libraries not

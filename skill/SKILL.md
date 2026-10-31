@@ -174,8 +174,10 @@ Details: `docs/REVIEWS.md` in OhmAI. Configured per gate in `ohmai.yaml` → `re
 - Every design rule cites a datasheet page. Never guess a pin direction: use `unknown` and ask.
 - The spec wins over chat. If chat contradicts STATUS.md or a locked decision, ask before you act.
 - Use vetted library symbols and footprints only. Never hand-draw or guess one. A part missing from the KiCad
-  libraries is a tool problem for you to solve, not owner homework: import it the vetted way
-  (phases/04-parts.md "Missing KiCad library parts"); `ohmai check lib-refs` gates it.
+  libraries is a tool problem for you to solve, not owner homework: `ohmai kicad-libs fetch|import|verify
+  <MPN>` (vetted manufacturer / Ultra Librarian export, datasheet pin check, project-local lib + tables +
+  manifest; phases/04-parts.md "Missing KiCad library parts"). Never hand-write a one-off symbol script as
+  the fix. The owner only clicks a vendor captcha when asked. `ohmai check lib-refs` gates it.
 - Never silence ERC/DRC. Never edit constraints or expected nets just to make a check pass.
 - RFQs are standalone vendor documents. The owner sends them; you never do.
 - Never send email, order, push, tag a release or spend money without the owner's explicit go-ahead.

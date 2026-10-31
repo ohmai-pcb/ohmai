@@ -1,7 +1,7 @@
 """lib-refs: every symbol (lib_id) and footprint the schematic or BOM names must resolve through the
 project's sym-lib-table / fp-lib-table. Missing libraries are a tool problem, not owner homework: import a
-vetted part (manufacturer or Ultra Librarian download, or a datasheet-verified generator) into hardware/lib/
-and add a ${KIPRJMOD} row to the table (skill/phases/04-parts.md "Missing KiCad library parts").
+vetted part with `ohmai kicad-libs import` (manufacturer or Ultra Librarian export) into hardware/lib/,
+which adds the ${KIPRJMOD} table row and hardware/lib/manifest.yaml (skill/phases/04-parts.md "Missing KiCad library parts").
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ def _check(project: Project, name: str, strict: bool) -> Result:
         elif not (ftab[lib] / f"{item}.kicad_mod").is_file():
             fp_problems.append(f"footprint {ref} ({where}): {item}.kicad_mod not in {ftab[lib]}")
     n = len({r for r, _ in syms}) + len({r for r, _ in fps})
-    hint = "(import a vetted part into hardware/lib/, see skill phase 04 'Missing KiCad library parts')"
+    hint = "(run `ohmai kicad-libs fetch|import <MPN>`, skill phase 04 'Missing KiCad library parts')"
     if problems or (strict and fp_problems):
         bad = problems + fp_problems
         return Result(name, FAIL, f"{len(bad)} of {n} library reference(s) unresolved {hint}", bad)
