@@ -89,7 +89,7 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
    decision in `docs/decisions.md` and in STATUS.md → Locked decisions. Set `phase: N+1`, `gate: open`,
    then create `phase/<next-id>`.
 6. **Auto-continue after approval (no second poke).** The approval is recorded when all of these are
-   true: the owner review file exists (`reviews/<id>/owner.md` with `files_hash`), `ohmai check <id>`
+   true: the owner review file exists (`reviews/<id>/owner.md` with `files_hash`; it is the owner sign-off and `ohmai check review:<id>` does not count it as an independent review), `ohmai check <id>`
    passes including the gate, and the decision `D-00x` is logged in `docs/decisions.md` and STATUS.md.
    In the same session, without waiting for another message from the owner:
    1. Lock the phase: commit, merge `phase/<id>` into `main` locally, and set STATUS.md to `phase: N+1`, `gate: open`.

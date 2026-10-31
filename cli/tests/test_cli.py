@@ -336,6 +336,22 @@ def test_review_check_missing_then_pass(proj):
     assert r.status == "PASS", r.details
 
 
+def test_review_ignores_owner_signoff(proj):
+    from ohmai.review import start
+
+    p = _review_proj(proj)
+    start(p, "constraints")
+    _write_review(p)
+    for fn in ("owner.md", "OWNER.md"):
+        _write_review(p, name="owner", vendor="n/a", model="n/a", indep=4,
+                      rows=["| F1 | parts/constraints/OTHER.yaml | OK | | |"],
+                      path=p.root / "reviews" / "constraints" / fn)
+        r = run(p, "review:constraints", {})
+        assert r.status == "PASS", r.details
+        assert not any("owner.md" in d.lower() for d in r.details)
+        (p.root / "reviews" / "constraints" / fn).unlink()
+
+
 def test_review_same_identity_fails(proj):
     p = _review_proj(proj)
     _write_review(p, name="OhmAI", vendor="VendorA", model="m1")

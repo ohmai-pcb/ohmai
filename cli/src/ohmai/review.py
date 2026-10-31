@@ -82,7 +82,8 @@ CHECKLISTS: dict[str, list[str]] = {
 }
 
 REVIEWER_KEYS = ("reviewer", "kind", "vendor", "model", "instructions", "independence", "files_hash", "date")
-SPECIAL = {"BRIEF.md", "resolutions.md", "README.md"}
+# owner.md is the owner sign-off for the gate (skill section 3), not an independent review.
+SPECIAL = {"BRIEF.md", "resolutions.md", "README.md", "owner.md"}
 _HEX = re.compile(r"^[0-9a-f]{7,40}$")
 
 
@@ -280,7 +281,7 @@ class Review:
 
 def load_reviews(project: Project, gate: Gate) -> list[Review]:
     d = review_dir(project, gate.phase)
-    paths = sorted(p for p in d.glob("*.md") if p.name not in SPECIAL) if d.is_dir() else []
+    paths = sorted(p for p in d.glob("*.md") if p.name.lower() not in {n.lower() for n in SPECIAL}) if d.is_dir() else []
     paths += [project.root / p for p in gate.extra_paths if (project.root / p).is_file()]
     out, seen = [], set()
     for p in paths:
