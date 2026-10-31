@@ -360,14 +360,23 @@ def cmd_release(a) -> int:
 
 def cmd_review(a) -> int:
     from ohmai.checks.review import check_review
-    from ohmai.review import start
+    from ohmai.review import phase_id, start
 
     p = _project()
     if a.action == "start":
         path = start(p, a.phase)
         print(f"Wrote {path.relative_to(p.root)} (and resolutions.md if missing).")
+        pk = p.root / "out" / "review-pack" / phase_id(a.phase)
+        print(f"Review pack: {pk.relative_to(p.root)}/ (MANIFEST.md, BRIEF, resolutions, every files_hash input"
+              + (", hi-res sheet PNGs" if phase_id(a.phase) == "schematic" else "") + ").")
+        print("Give the whole pack to the reviewer (a human must be handed these files, not a repo path).")
         print("Give the brief to an independent reviewer (highest feasible level: other vendor > other model >")
         print("other agent/instructions > human; never the author's own session). Commit the brief now.")
+        return 0
+    if a.action == "pack":
+        from ohmai.review import pack
+        out = pack(p, phase_id(a.phase))
+        print(f"Wrote {out.relative_to(p.root)}/ (see MANIFEST.md).")
         return 0
     r = check_review(p, a.phase)
     print(f"{STATUS_ICON[r.status]:5} {r.name:14} {r.summary}")
@@ -695,7 +704,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("review", help="independent review gate: write the reviewer brief, or check reviews",
                        description="start: write reviews/<phase>/BRIEF.md (scope, sources, decisions, checklist, "
                                    "output format, content hash). check: same as `ohmai check review:<phase>`.")
-    s.add_argument("action", choices=["start", "check"])
+    s.add_argument("action", choices=["start", "check", "pack"])
     s.add_argument("phase", help="phase id or number, e.g. constraints or 5")
     s.set_defaults(fn=cmd_review)
 

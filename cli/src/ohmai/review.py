@@ -520,4 +520,59 @@ def start(project: Project, phase_name: str, today: str | None = None) -> Path:
             "reviewer's own [nit] issues: the files they name may change after the review without re-verification).\n\n"
             "| ID | Reviewer | Resolution | Ref | By | Reason |\n|----|----------|------------|-----|----|--------|\n",
             encoding="utf-8")
+    pack(project, phase, files)
     return p
+
+
+def _render_pngs(project: Project, dest: Path, width: int = 3508) -> list[str]:
+    """Best effort: hi-res PNG of every schematic sheet (kicad-cli + rsvg-convert). Returns notes."""
+    import shutil, subprocess, tempfile
+    sch = getattr(project, "schematic", None)
+    kc, rs = shutil.which("kicad-cli"), shutil.which("rsvg-convert")
+    if not sch or not Path(sch).is_file():
+        return ["no schematic found; no sheet PNGs"]
+    if not kc or not rs:
+        return [f"sheet PNGs not rendered (missing {'kicad-cli' if not kc else 'rsvg-convert'}); "
+                "render them and add to this pack before sending it"]
+    with tempfile.TemporaryDirectory() as td:
+        r = subprocess.run([kc, "sch", "export", "svg", "-o", td, str(sch)], capture_output=True, text=True)
+        if r.returncode:
+            return [f"kicad-cli svg export failed: {r.stderr.strip()[:200]}"]
+        dest.mkdir(parents=True, exist_ok=True)
+        for svg in sorted(Path(td).glob("*.svg")):
+            subprocess.run([rs, "-w", str(width), "-b", "white", "-o", str(dest / (svg.stem + ".png")), str(svg)], check=False)
+    return []
+
+
+def pack(project: Project, phase: str, files: list[Path] | None = None) -> Path:
+    """Copy everything a (human) reviewer needs into out/review-pack/<phase>/ with a MANIFEST.md:
+    BRIEF.md, resolutions.md, every files_hash input (scope files, repo-relative paths kept) and, for the
+    schematic gate, hi-res PNGs of every sheet. A reviewer must never have to hunt the repo."""
+    import shutil
+    gate = gates(project)[phase]
+    files = files if files is not None else scope_files(project, gate)
+    d = review_dir(project, phase)
+    out = project.root / "out" / "review-pack" / phase
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    listed = []
+    for name in ("BRIEF.md", "resolutions.md"):
+        if (d / name).is_file():
+            shutil.copy2(d / name, out / name); listed.append(name)
+    for f in files:
+        f = Path(f)
+        rel = f.relative_to(project.root) if f.is_absolute() else f
+        tgt = out / "files" / rel
+        tgt.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(project.root / rel, tgt); listed.append(f"files/{rel.as_posix()}")
+    notes = _render_pngs(project, out / "sheets") if phase == "schematic" else []
+    listed += [f"sheets/{p.name}" for p in sorted((out / "sheets").glob("*.png"))] if (out / "sheets").is_dir() else []
+    M = [f"# Review pack: `{phase}`", "",
+         "Give the reviewer this whole folder (or attach every file below). Read BRIEF.md first; the",
+         "`files/` tree is exactly the files_hash input set, at the hashed revision.", "", "## Contents"]
+    M += [f"- {x}" for x in listed]
+    if notes:
+        M += ["", "## Notes"] + [f"- {n}" for n in notes]
+    (out / "MANIFEST.md").write_text("\n".join(M) + "\n", encoding="utf-8")
+    return out

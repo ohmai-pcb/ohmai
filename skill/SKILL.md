@@ -135,6 +135,12 @@ still met). B VCONN switch - one more load switch, enables 5 A cables."
 
 ## 3a. Independent review (gates: safety, constraints, schematic, layout, bom, bringup)
 
+**Hand the reviewer the files.** `ohmai review start <phase>` also writes `out/review-pack/<phase>/`
+(`ohmai review pack <phase>` refreshes it): MANIFEST.md, BRIEF.md, resolutions.md, a copy of every files_hash
+input (constraints YAMLs, BOM, expected nets, symbol maps, sheets, ...) and, for the schematic gate, hi-res
+PNGs of every sheet. When a human reviews, attach that pack (or every file in its MANIFEST); never send
+only a repo path or ask them to find the files.
+
 Details: `docs/REVIEWS.md` in OhmAI. Configured per gate in `ohmai.yaml` → `reviews:`.
 1. Record your identity: a trailer on **every** commit (last paragraph of the message):
    `OhmAI-Author: name=<you>; kind=agent; vendor=<v>; model=<m>; instructions=<skill>` (people:

@@ -63,3 +63,15 @@ def test_mixed_sheet_sizes_fail(tmp_path, monkeypatch):
     r = readability(p, {})
     assert r.status == FAIL
     assert any("common paper size" in d for d in r.details), r.details
+
+
+def test_review_start_writes_pack(proj):
+    from ohmai.review import start
+
+    p = _review_proj(proj)
+    start(p, "constraints")
+    pk = p.root / "out" / "review-pack" / "constraints"
+    m = (pk / "MANIFEST.md").read_text()
+    assert (pk / "BRIEF.md").is_file() and (pk / "resolutions.md").is_file()
+    files = [x for x in pk.rglob("*") if x.is_file() and "files" in x.relative_to(pk).parts[:1]]
+    assert files and all(f"files/{f.relative_to(pk / 'files').as_posix()}" in m for f in files)
