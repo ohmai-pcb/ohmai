@@ -1,6 +1,11 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- `ohmai kicad-libs fetch` is now agent end-to-end, no owner steps: LCSC/EasyEDA via easyeda2kicad (LCSC number
+  from bom.csv, title must match the MPN), `--url` direct manufacturer files, footprint upgrade to KiCad 9,
+  auto datasheet pin check, `--pin-types` from the datasheet I/O column, footprint pad summary. Ultra
+  Librarian / SnapEDA / vendor portals (`--source portal`) and HTML walls exit 75 (agent-retryable). The
+  `pending-download` status and the human captcha handoff are removed.
 - `ohmai kicad-libs fetch|import|verify|list <MPN>` (new): the supported library tool for parts the pinned KiCad
   libraries lack. `fetch` prints vendor (TI/Ultra Librarian/ST/ADI/Microchip/NXP/SnapEDA) download steps and
   records `pending-download`; `import` takes a vetted zip/dir/.kicad_sym/.kicad_mod, merges into

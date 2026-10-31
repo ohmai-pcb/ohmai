@@ -84,35 +84,32 @@ Branch `phase/parts`. Check `ohmai check parts`.
    pins. Lesson: a small TSSOP-20 MCU has ~11 free GPIO; a ~16-net design was only caught in Phase 7.
 5. Give a total BOM cost at the target quantity, with each estimate marked as one.
 
-## Missing KiCad library parts (the OhmAI library tool; you run it, not the owner)
-A part missing from the pinned KiCad libraries is a tool problem. `ohmai check lib-refs` lists it; you fix it
-with `ohmai kicad-libs` before Phase 7 draws the sheet. Never ask the owner to draw, edit or supply a symbol or
-footprint, and never hand-write one (no one-off `gen_<part>.py` as the deliverable). Order:
+## Missing KiCad library parts (the OhmAI library tool; agent-only, no owner steps)
+A part missing from the pinned KiCad libraries is a tool problem. `ohmai check lib-refs` lists it; you fetch
+and import it with `ohmai kicad-libs` before Phase 7 draws the sheet. The owner does nothing: no downloads,
+no captchas, no vendor terms, no drawing. Never hand-write a symbol or a one-off `gen_<part>.py`.
 1. **Stock first, by package drawing, not by name.** The footprint must exist in the pinned tag and match the
-   datasheet land pattern (pitch, pad size, row span, exposed pad); note the page in the BOM `notes`
-   (e.g. TI RSN0032B -> `Package_DFN_QFN:VQFN-32-1EP_4x4mm_P0.4mm_EP2.8x2.8mm`).
-2. **Vetted export.** Sources: the manufacturer's KiCad files, or Ultra Librarian / SnapEDA *manufacturer-
-   verified* parts. Nothing else (no random GitHub libraries, no hand-drawn pin maps).
-   - `ohmai kicad-libs fetch <MPN> --vendor ti|ul|st|analog|microchip|nxp|snapeda [--base B] [--package P] [--pins N]`
-     prints the download steps and records `pending-download` in `hardware/lib/manifest.yaml`. Terms and
-     captchas are a human click: ask the owner for that one step (link + "save the zip to
-     `hardware/lib/downloads/`") and keep working. Never accept terms for them.
-   - `ohmai kicad-libs import <MPN> --from <zip|dir|.kicad_sym|.kicad_mod> --source-url <URL> [--package P]
-     [--name SYMBOL] [--footprint LIB:FP] [--datasheet datasheets/<pdf> --pages a-b] [--replace]`
-     takes the KiCad v6+ files from the export, merges the symbol into `hardware/lib/OhmAI_Project.kicad_sym`,
-     copies footprints to `OhmAI_Project.pretty/` and 3D models to `OhmAI_Project.3dshapes/`, adds the
-     `${KIPRJMOD}` rows to `sym-lib-table` / `fp-lib-table` (backed up), and writes provenance (URL, sha256,
-     date, package, pin count) to `hardware/lib/manifest.yaml`. It refuses to overwrite without `--replace`
-     and keeps a `.bak-<stamp>` copy.
-3. **Verify against the datasheet.** `--datasheet` on import, or `ohmai kicad-libs verify <MPN> --datasheet
-   <pdf> --pages a-b`, requires every symbol pin number + name on one line of the pin-functions table
-   (pdftotext). Clean -> status `verified`; any mismatch -> exit 1, fix the source, never the check.
-4. **Stopgap only while the download waits:** an existing datasheet-transcribed symbol may be registered with
-   `import ... --status provisional --note "stopgap: <script>"`. It stays `provisional` (shown by
-   `ohmai kicad-libs list`) until a vetted export replaces it with `import --replace`. Footprints are never
-   generated: stock (step 1) or the vendor file only.
-5. `ohmai check lib-refs` (and `kicad-cli sym export svg hardware/lib/OhmAI_Project.kicad_sym`) must pass
-   before the sheet that uses the part is drawn. `ohmai kicad-libs tables` keeps the `${KIPRJMOD}` rows.
+   datasheet land pattern (pitch, pad size, row span, exposed pad); note the page in the BOM `notes`.
+2. **Fetch (agent end-to-end):**
+   `ohmai kicad-libs fetch <MPN> [--lcsc C…] --name <SYMBOL> --package <P> --pages <pin-table pages>
+   --pin-types [--footprint <stock LIB:FP>] [--replace]`
+   - Default source is LCSC/EasyEDA via `easyeda2kicad` (no login, no captcha). The LCSC number comes from
+     `bom/bom.csv` `supplier_pn` (or `--lcsc`); the EasyEDA title must equal the MPN or it refuses.
+   - Footprints are upgraded to KiCad 9 (`kicad-cli fp upgrade`); 3D models go to `OhmAI_Project.3dshapes/`.
+   - The datasheet PDF in `datasheets/` (name contains the MPN or `_<LCSC>`) is found automatically; every
+     symbol pin number + name must appear on one pin-table line. Clean -> `verified`; mismatch -> exit 1.
+   - `--pin-types` fills `unspecified` pin types from the datasheet I/O column (power/ground -> passive),
+     logged in `manifest.yaml`. Review open-drain pins (datasheet `O` maps to `output`).
+   - `--url <direct .zip/.kicad_sym/.kicad_mod>` fetches a manufacturer file or mirror instead.
+   - A source behind a bot wall (Ultra Librarian, SnapEDA, vendor portals: `--source portal`) exits **75**
+     (`RETRY ...`): try another source. That is never an owner task.
+3. Keep the **stock footprint** when it matches the land pattern better (`--footprint`); the imported footprint
+   stays in the project library for comparison (`footprint_check` in the manifest: pad count, EP size).
+4. `ohmai kicad-libs import <MPN> --from <file|zip|dir> --source-url <URL>` imports files already on disk;
+   `--status provisional --note "stopgap: …"` registers a stopgap until `fetch --replace` supersedes it.
+5. `ohmai kicad-libs list`, `ohmai check lib-refs` and
+   `kicad-cli sym export svg hardware/lib/OhmAI_Project.kicad_sym` must pass before the sheet is drawn.
+   Commit `hardware/lib/` (with `manifest.yaml`) and both lib tables together.
 
 ## Optional: parametric search (jlcparts)
 `ohmai parts search <words> [--category C] [--package P] [--basic] [--min-stock N] [--qty Q]` searches a

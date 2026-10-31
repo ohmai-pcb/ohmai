@@ -225,8 +225,15 @@ def _cmd_lib_import(p, a) -> int:
     if not a.mpn:
         raise SystemExit(f"ohmai kicad-libs {a.action}: MPN required")
     if a.action == "fetch":
-        print(li.fetch_steps(p, a.mpn, vendor=a.vendor, package=a.package, pins_count=a.pins, base=a.base))
-        return 0
+        try:
+            e = li.fetch(p, a.mpn, source=a.source_kind, lcsc=a.lcsc, url=a.url, vendor=a.vendor, base=a.base,
+                         pins_count=a.pins, package=a.package, lib=a.lib, symbol=a.symbol, name=a.name,
+                         footprint=a.footprint, datasheet=Path(a.datasheet) if a.datasheet else None,
+                         pages=a.pages, replace=a.replace, note=a.note, pin_types=a.pin_types)
+        except li.FetchBlocked as b:
+            print(f"RETRY {a.mpn}: {b.msg}", file=sys.stderr)
+            return li.EX_RETRY
+        return _report_import(a.mpn, e)
     if a.action == "verify":
         if not a.datasheet:
             raise SystemExit("ohmai kicad-libs verify: --datasheet PDF required")
@@ -237,15 +244,27 @@ def _cmd_lib_import(p, a) -> int:
         return 1 if errs else 0
     if not a.source:
         raise SystemExit("ohmai kicad-libs import: --from <vetted .zip | dir | .kicad_sym | .kicad_mod> required "
-                         f"(no file yet? run `ohmai kicad-libs fetch {a.mpn}` for the download steps)")
+                         f"(no file? `ohmai kicad-libs fetch {a.mpn}` downloads it)")
     e = li.import_part(p, a.mpn, Path(a.source), package=a.package, source_url=a.source_url, lib=a.lib,
                        symbol=a.symbol, name=a.name, footprint=a.footprint,
                        datasheet=Path(a.datasheet) if a.datasheet else None, pages=a.pages,
-                       status=a.status, replace=a.replace, note=a.note)
-    print(f"{e['status']:9} {a.mpn}: symbol {(e.get('symbol') or {}).get('lib_id', '-')}, "
+                       status=a.status, replace=a.replace, note=a.note, pin_types=a.pin_types)
+    return _report_import(a.mpn, e)
+
+
+def _report_import(mpn, e) -> int:
+    print(f"{e['status']:9} {mpn}: symbol {(e.get('symbol') or {}).get('lib_id', '-')}, "
           f"footprints {', '.join(e.get('footprints') or []) or '-'} -> hardware/lib/ (manifest.yaml)")
-    for m in (e.get("verification") or {}).get("mismatches") or []:
+    v = e.get("verification")
+    if not v:
+        print("        WARN no datasheet pin check (pass --datasheet, or put the PDF in datasheets/)")
+    for m in (v or {}).get("mismatches") or []:
         print(f"        {m}")
+    for fp in e.get("footprint_check") or []:
+        print(f"        footprint {fp['file']}: {fp['pads']} pads, largest {fp['largest_pad_mm']} mm "
+              "(compare with the datasheet land pattern)")
+    for w in e.get("warnings") or []:
+        print(f"        WARN {w}")
     print("next: ohmai check lib-refs")
     return 1 if (e.get("verification") or {}).get("mismatches") else 0
 
@@ -551,10 +570,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--status", choices=["provisional"], help="import: mark a stopgap source provisional")
     s.add_argument("--replace", action="store_true", help="import: replace an existing symbol/footprint (backed up)")
     s.add_argument("--note", help="import: free-text provenance note")
+    s.add_argument("--pin-types", dest="pin_types", action="store_const", const=True, default=False,
+                   help="import/fetch: fill 'unspecified' pin types from the datasheet I/O column (needs --datasheet "
+                        "or a PDF in datasheets/); logged in manifest.yaml")
+    s.add_argument("--source", dest="source_kind", default="auto", choices=["auto", "easyeda", "url", "portal"],
+                   help="fetch: auto (= --url if given, else LCSC/EasyEDA), easyeda, url, portal (UL/vendor probe; "
+                        "walls exit 75 = retry another source)")
+    s.add_argument("--lcsc", help="fetch: LCSC number (default: bom/bom.csv supplier_pn for the MPN)")
+    s.add_argument("--url", help="fetch: direct manufacturer/mirror CAD file URL (.zip/.kicad_sym/.kicad_mod)")
     s.add_argument("--vendor", default="ul", choices=["ti", "ul", "analog", "st", "microchip", "nxp", "snapeda"],
-                   help="fetch: where the human downloads the KiCad export")
-    s.add_argument("--base", help="fetch: base part number for the vendor page (e.g. TPS63001 for TPS63001RSNR)")
-    s.add_argument("--pins", help="fetch: pin count for the vendor page")
+                   help="fetch --source portal: which portal to probe")
+    s.add_argument("--base", help="fetch --source portal: base part number (e.g. TPS63001)")
+    s.add_argument("--pins", help="fetch --source portal: pin count")
     s.add_argument("--no-dummy", action="store_true", help="models: flag missing 3D models without generating dummy .step blocks")
     s.add_argument("--stage-pcb", help="models: write a temporary .kicad_pcb with (model ...) entries injected for footprints lacking one")
     s.add_argument("--json", action="store_true", help="models: print manifest JSON")

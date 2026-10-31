@@ -12,8 +12,9 @@ Layout (project-local, ${KIPRJMOD} = hardware/):
 Table rows `${KIPRJMOD}/lib/...` are added to hardware/sym-lib-table / fp-lib-table (backed up first);
 `ohmai kicad-libs tables` keeps them. `ohmai check lib-refs` is the gate.
 
-Statuses: pending-download (fetch steps written, waiting on a human captcha/terms click),
-imported (vetted file in place, no datasheet check), verified (pin table matched the datasheet PDF),
+Fetch is agent-only (LCSC/EasyEDA via easyeda2kicad, or a direct --url); walled sources raise
+FetchBlocked (exit 75, retry another source). No owner steps.
+Statuses: imported (vetted file in place, no datasheet check), verified (pin table matched the datasheet PDF),
 provisional (stopgap source such as a datasheet-transcribed generator; must be replaced by an import).
 """
 
@@ -33,9 +34,11 @@ import yaml
 from ohmai.project import Project
 
 DEFAULT_LIB = "OhmAI_Project"
-STATUSES = ("pending-download", "imported", "verified", "provisional")
+STATUSES = ("imported", "verified", "provisional")
+EX_RETRY = 75  # EX_TEMPFAIL: agent-retryable (bot wall, network); try another --source
 
-# Where a human fetches a vetted KiCad export. {mpn}/{base}/{package}/{pins} are filled in.
+# Interactive vendor portals (terms/captcha walls). `fetch` probes them and fails agent-retryable; it never
+# hands the download to the owner. {mpn}/{base}/{package}/{pins} are filled in.
 VENDORS = {
     "ti": ("Texas Instruments -> Ultra Librarian",
            "https://www.ti.com/product/{base}#design-development (CAD/CAE symbols) or "
@@ -155,6 +158,13 @@ def ensure_row(table: Path, kind: str, lib: str, uri: str, descr: str) -> bool:
 
 
 # --------------------------------------------------------------------------- sources
+def _rel(project: Project, f: Path) -> str:
+    try:
+        return str(f.resolve().relative_to(project.root.resolve()))
+    except ValueError:
+        return str(f)
+
+
 def _sha(f: Path) -> str:
     return hashlib.sha256(f.read_bytes()).hexdigest()
 
@@ -224,11 +234,48 @@ def verify_pins(symbol_pins: list[tuple[str, str, str]], text: str) -> list[str]
     return errs
 
 
+IO_TYPES = {"I": "input", "O": "output", "I/O": "bidirectional", "IO": "bidirectional", "OD": "open_collector",
+            "PWR": "passive", "P": "passive", "G": "passive", "GND": "passive", "A": "passive", "NC": "no_connect"}
+
+
+def datasheet_pin_types(symbol_text: str, text: str) -> tuple[str, list[str]]:
+    """Fill `unspecified` pin electrical types from the datasheet I/O column (token right after the pin number).
+
+    Only unspecified pins change; power/ground/analog map to passive (no invented drivers). Returns the new
+    symbol text and a change log. Pins whose line or I/O token is not found stay unspecified.
+    """
+    lines = text.splitlines()
+    has_pad = re.search(r"(thermal|exposed|power)\s*pad", text, re.I) is not None
+    log = []
+
+    def sub(m: re.Match) -> str:
+        whole, et, name, num = m.group(0), m.group(1), m.group(2), m.group(3)
+        if et != "unspecified":
+            return whole
+        n = _clean(name)
+        if has_pad and n.upper() in ("PAD", "EP", "EPAD", "TP", "THERMAL_PAD", "EXPOSED_PAD"):
+            log.append(f"pin {num} {name}: unspecified -> passive (datasheet thermal/exposed pad row)")
+            return whole.replace("(pin unspecified", "(pin passive", 1)
+        pat = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(n) + r"\s+" + re.escape(num) +
+                         r"\s+(I/O|IO|OD|PWR|GND|NC|I|O|P|G|A)\b", re.I)
+        for ln in lines:
+            k = pat.search(ln)
+            if k:
+                new = IO_TYPES[k.group(1).upper()]
+                log.append(f"pin {num} {name}: unspecified -> {new} (datasheet I/O '{k.group(1)}')")
+                return whole.replace("(pin unspecified", f"(pin {new}", 1)
+        return whole
+
+    out = re.sub(r'\(pin\s+(\w+)\s+\w+.*?\(name\s+"([^"]*)".*?\(number\s+"([^"]*)"', sub, symbol_text, flags=re.S)
+    return out, log
+
+
 # --------------------------------------------------------------------------- commands
 def import_part(project: Project, mpn: str, source: Path, *, package: str | None = None, source_url: str | None = None,
                 lib: str = DEFAULT_LIB, symbol: str | None = None, name: str | None = None,
                 footprint: str | None = None, datasheet: Path | None = None, pages: str | None = None,
-                status: str | None = None, replace: bool = False, note: str | None = None) -> dict:
+                status: str | None = None, replace: bool = False, note: str | None = None,
+                pin_types: bool = False) -> dict:
     """Import a vetted symbol and/or footprint into the project library. Returns the manifest entry."""
     if not (source_url or status == "provisional"):
         raise SystemExit("ohmai kicad-libs import: --source-url is required (where the vetted file came from)")
@@ -261,6 +308,9 @@ def import_part(project: Project, mpn: str, source: Path, *, package: str | None
                                  f"{', '.join(found)}")
             new = name or pick
             block = _rename(found[pick], pick, new)
+            type_log: list[str] = []
+            if pin_types and datasheet:
+                block, type_log = datasheet_pin_types(block, datasheet_text(datasheet, pages))
             target = ld / f"{lib}.kicad_sym"
             txt = target.read_text(encoding="utf-8") if target.is_file() else \
                 '(kicad_symbol_lib (version 20241209) (generator "ohmai_libimport") (generator_version "1")\n)\n'
@@ -276,6 +326,13 @@ def import_part(project: Project, mpn: str, source: Path, *, package: str | None
             target.write_text(txt, encoding="utf-8")
             ps = pins(block)
             sym_entry = {"lib_id": f"{lib}:{new}", "source_symbol": pick, "pins": len(ps)}
+            if type_log:
+                sym_entry["pin_types_from_datasheet"] = type_log
+            unspec = sum(1 for p in ps if p[2] == "unspecified")
+            if unspec:
+                entry.setdefault("warnings", []).append(
+                    f"{unspec} of {len(ps)} pins have electrical type 'unspecified' (ERC cannot check them; "
+                    "re-import with --pin-types)")
             entry["symbol"] = sym_entry
             ensure_row(project.schematic.parent / "sym-lib-table", "sym", lib,
                        f"${{KIPRJMOD}}/lib/{lib}.kicad_sym", "Project-local vetted symbols (lib/manifest.yaml)")
@@ -314,7 +371,7 @@ def import_part(project: Project, mpn: str, source: Path, *, package: str | None
     if datasheet and sym_entry:
         t = (ld / f"{lib}.kicad_sym").read_text(encoding="utf-8")
         errs = verify_pins(pins(symbols_in(t)[sym_entry["lib_id"].split(":", 1)[1]]), datasheet_text(datasheet, pages))
-        entry["verification"] = {"datasheet": str(datasheet), "datasheet_sha256": _sha(datasheet), "pages": pages,
+        entry["verification"] = {"datasheet": _rel(project, datasheet), "datasheet_sha256": _sha(datasheet), "pages": pages,
                                  "date": _dt.date.today().isoformat(), "mismatches": errs}
         if not errs and st == "imported":
             st = "verified"
@@ -335,7 +392,7 @@ def verify_part(project: Project, mpn: str, datasheet: Path, pages: str | None =
     if nm not in syms:
         raise SystemExit(f"ohmai kicad-libs verify: {e['symbol']['lib_id']} missing from the library file")
     errs = verify_pins(pins(syms[nm]), datasheet_text(datasheet, pages))
-    e["verification"] = {"datasheet": str(datasheet), "datasheet_sha256": _sha(datasheet), "pages": pages,
+    e["verification"] = {"datasheet": _rel(project, datasheet), "datasheet_sha256": _sha(datasheet), "pages": pages,
                          "date": _dt.date.today().isoformat(), "mismatches": errs}
     if e.get("status") == "imported" and not errs:
         e["status"] = "verified"
@@ -343,29 +400,182 @@ def verify_part(project: Project, mpn: str, datasheet: Path, pages: str | None =
     return errs
 
 
-def fetch_steps(project: Project, mpn: str, *, vendor: str = "ul", package: str | None = None,
-                pins_count: str | None = None, base: str | None = None, record: bool = True) -> str:
-    """Human steps to download a vetted KiCad export (captcha/terms need a person). Records pending-download."""
+class FetchBlocked(SystemExit):
+    """Agent-retryable fetch failure (bot wall, captcha page, network). Exit code 75. Never owner homework."""
+
+    def __init__(self, msg: str):
+        super().__init__(EX_RETRY)
+        self.msg = msg
+
+    def __str__(self) -> str:
+        return self.msg
+
+
+EASYEDA_API = "https://easyeda.com/api/products/{lcsc}/components?version=6.4.19.5"
+UA = "Mozilla/5.0 (X11; Linux x86_64) OhmAI-kicad-libs"
+
+
+def _http(url: str, timeout: int = 30) -> tuple[bytes, str]:
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 (https URLs from vendors/args)
+            return r.read(), r.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as e:
+        raise FetchBlocked(f"{url}: HTTP {e.code} (bot wall or login). Retry with --source easyeda / --url") from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise FetchBlocked(f"{url}: {e} (network; retry later or another --source)") from e
+
+
+def lcsc_for(project: Project, mpn: str) -> str | None:
+    """LCSC number for mpn from bom/bom.csv (supplier LCSC, supplier_pn C...)."""
+    import csv
+
+    f = project.root / "bom" / "bom.csv"
+    if not f.is_file():
+        return None
+    for row in csv.DictReader(f.open(encoding="utf-8")):
+        if (row.get("mpn") or "").strip().upper() == mpn.upper():
+            pn = (row.get("supplier_pn") or "").strip()
+            if re.fullmatch(r"C\d+", pn):
+                return pn
+    return None
+
+
+def find_datasheet(project: Project, mpn: str, lcsc: str | None) -> Path | None:
+    d = project.root / "datasheets"
+    if not d.is_dir():
+        return None
+    for pdf in sorted(d.glob("*.pdf")):
+        n = pdf.name.upper()
+        if mpn.upper() in n or (lcsc and f"_{lcsc.upper()}" in n):
+            return pdf
+    return None
+
+
+def easyeda_meta(lcsc: str) -> dict:
+    import json
+
+    body, _ = _http(EASYEDA_API.format(lcsc=lcsc))
+    try:
+        data = json.loads(body)
+    except ValueError as e:
+        raise FetchBlocked(f"EasyEDA API for {lcsc}: not JSON (bot wall?)") from e
+    if not data.get("success") or not data.get("result"):
+        raise SystemExit(f"ohmai kicad-libs fetch: EasyEDA has no CAD data for {lcsc}")
+    return data["result"]
+
+
+def _easyeda2kicad() -> list[str]:
+    exe = shutil.which("easyeda2kicad")
+    if exe:
+        return [exe]
+    import importlib.util
+    import sys
+
+    if importlib.util.find_spec("easyeda2kicad"):
+        return [sys.executable, "-m", "easyeda2kicad"]
+    raise SystemExit("ohmai kicad-libs fetch: easyeda2kicad not installed (pip install easyeda2kicad; MIT, "
+                     "run as a subprocess)")
+
+
+def upgrade_footprints(pretty: Path) -> list[str]:
+    """Convert legacy (module ...) footprints to KiCad 9 format with `kicad-cli fp upgrade` when available."""
+    legacy = [f for f in pretty.glob("*.kicad_mod") if f.read_text(errors="replace").lstrip().startswith("(module")]
+    if not legacy:
+        return []
+    cli = shutil.which("kicad-cli")
+    if not cli:
+        return [f"{f.name}: legacy KiCad 5 format kept (kicad-cli not found for `fp upgrade`)" for f in legacy]
+    subprocess.run([cli, "fp", "upgrade", "--force", str(pretty)], capture_output=True, text=True, check=False)
+    return [f"{f.name}: legacy KiCad 5 format left after kicad-cli fp upgrade" for f in legacy
+            if f.read_text(errors="replace").lstrip().startswith("(module")]
+
+
+def footprint_summary(mod: Path) -> dict:
+    t = mod.read_text(errors="replace")
+    pads = re.findall(r'\(pad\s+"?([^"\s)]+)"?\s+\w+\s+\w+.*?\(size\s+([\d.]+)\s+([\d.]+)\)', t, re.S)
+    nums = sorted({p[0] for p in pads if p[0]}, key=lambda x: (len(x), x))
+    big = max(pads, key=lambda p: float(p[1]) * float(p[2]), default=None)
+    return {"file": mod.name, "pads": len(pads), "pad_numbers": len(nums),
+            "largest_pad_mm": f"{float(big[1]):g}x{float(big[2]):g}" if big else None}
+
+
+def fetch_easyeda(project: Project, mpn: str, lcsc: str | None = None, **kw) -> dict:
+    """Agent-only fetch: LCSC/EasyEDA CAD via easyeda2kicad (no login, no captcha), then import + verify."""
+    lcsc = lcsc or lcsc_for(project, mpn)
+    if not lcsc:
+        raise SystemExit(f"ohmai kicad-libs fetch: no LCSC number for {mpn} (pass --lcsc C123 or set supplier_pn "
+                         "in bom/bom.csv; `ohmai parts search` finds it)")
+    meta = easyeda_meta(lcsc)
+    title = str(meta.get("title") or "")
+    if title.upper().replace("-", "") != mpn.upper().replace("-", "") and not kw.pop("allow_title_mismatch", False):
+        raise SystemExit(f"ohmai kicad-libs fetch: EasyEDA {lcsc} is {title!r}, not {mpn} (check the LCSC number)")
+    kw.pop("allow_title_mismatch", None)
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / "ee"
+        r = subprocess.run(_easyeda2kicad() + ["--full", f"--lcsc_id={lcsc}", "--output", str(out)],
+                           capture_output=True, text=True, check=False)
+        pretty = out.with_suffix(".pretty")
+        if r.returncode != 0 or not (out.with_suffix(".kicad_sym").is_file() or pretty.is_dir()):
+            raise FetchBlocked(f"easyeda2kicad {lcsc} failed: {(r.stderr or r.stdout).strip()[-400:]}")
+        notes = upgrade_footprints(pretty) if pretty.is_dir() else []
+        fps = [footprint_summary(f) for f in sorted(pretty.glob("*.kicad_mod"))] if pretty.is_dir() else []
+        ds = kw.pop("datasheet", None) or find_datasheet(project, mpn, lcsc)
+        e = import_part(project, mpn, Path(td), source_url=EASYEDA_API.format(lcsc=lcsc), datasheet=ds, **kw)
+    e["source"] = {"kind": "easyeda", "lcsc": lcsc, "title": title, "tool": "easyeda2kicad"}
+    e["footprint_check"] = fps
+    if notes:
+        e["warnings"] = (e.get("warnings") or []) + notes
+    data = load_manifest(project)
+    data["parts"][mpn] = e
+    save_manifest(project, data)
+    return e
+
+
+def fetch_url(project: Project, mpn: str, url: str, **kw) -> dict:
+    """Agent-only fetch of a direct manufacturer / mirror file (.zip, .kicad_sym, .kicad_mod)."""
+    body, ctype = _http(url)
+    if "html" in ctype.lower() or body[:200].lstrip().lower().startswith((b"<!doctype", b"<html")):
+        raise FetchBlocked(f"{url}: got an HTML page, not a CAD file (login/captcha wall). "
+                           "Retry with --source easyeda or a direct file URL")
+    name = Path(url.split("?")[0]).name or "download.zip"
+    if not name.endswith((".zip", ".kicad_sym", ".kicad_mod")):
+        name += ".zip" if body[:2] == b"PK" else ".kicad_sym"
+    dl = lib_dir(project) / "downloads"
+    dl.mkdir(parents=True, exist_ok=True)
+    f = dl / name
+    f.write_bytes(body)
+    if kw.get("datasheet") is None:
+        kw["datasheet"] = find_datasheet(project, mpn, None)
+    return import_part(project, mpn, f, source_url=url, **kw)
+
+
+def probe_portal(vendor: str, mpn: str, base: str | None, package: str | None, pins_count: str | None) -> None:
+    """UL/SnapEDA/vendor portals: try the page; a wall raises FetchBlocked (retryable), never owner homework."""
     who, url = VENDORS[vendor]
-    b = base or mpn  # orderable suffixes differ per vendor: pass --base (e.g. TPS63001) rather than guess
-    url = url.format(mpn=mpn, base=b, package=package or "", pins=pins_count or "")
-    dl = project.root / "hardware" / "lib" / "downloads"
-    steps = (f"Vetted KiCad export for {mpn} ({who})\n"
-             f"  1. Open {url}\n"
-             f"  2. Choose the exact package{f' ({package})' if package else ''} and export format "
-             "'KiCad' (v6 or newer).\n"
-             "  3. Accept the terms / solve the captcha (a human step: the agent never accepts terms for the owner).\n"
-             f"  4. Save the zip into {dl.relative_to(project.root)}/ (any name).\n"
-             f"  5. The agent then runs: ohmai kicad-libs import {mpn} --from {dl.relative_to(project.root)}/<zip> "
-             f"--source-url '{url.split(' ')[0]}'"
-             + (f" --package {package}" if package else "") + " --datasheet datasheets/<pdf> [--replace]\n")
-    if record:
-        data = load_manifest(project)
-        e = data["parts"].setdefault(mpn, {"mpn": mpn})
-        e.setdefault("status", "pending-download")
-        e["fetch"] = {"vendor": who, "url": url, "requested": _dt.date.today().isoformat(), "needs_human": True}
-        if package:
-            e.setdefault("package", package)
-        save_manifest(project, data)
-        dl.mkdir(parents=True, exist_ok=True)
-    return steps
+    u = url.format(mpn=mpn, base=base or mpn, package=package or "", pins=pins_count or "").split(" ")[0]
+    body, ctype = _http(u)
+    if "html" in ctype.lower():
+        raise FetchBlocked(f"{who} ({u}) serves an interactive page (terms/captcha), no agent download. "
+                           "Use --source easyeda (LCSC) or --url <direct CAD file>")
+    raise FetchBlocked(f"{who}: unexpected {ctype} response; use --url with the direct file")
+
+
+def fetch(project: Project, mpn: str, *, source: str = "auto", lcsc: str | None = None, url: str | None = None,
+          vendor: str | None = None, base: str | None = None, pins_count: str | None = None, **kw) -> dict:
+    """Agent end-to-end: download a vetted KiCad part and import + verify it. source: auto|easyeda|url|portal.
+
+    auto = --url if given, else EasyEDA/LCSC (bom.csv supplier_pn or --lcsc). Blocked sources raise
+    FetchBlocked (exit 75) so the agent retries another source; no step is handed to the owner.
+    """
+    if source == "url" or (source == "auto" and url):
+        if not url:
+            raise SystemExit("ohmai kicad-libs fetch --source url: --url required")
+        return fetch_url(project, mpn, url, **kw)
+    if source in ("auto", "easyeda"):
+        return fetch_easyeda(project, mpn, lcsc, **kw)
+    probe_portal(vendor or "ul", mpn, base, kw.get("package"), pins_count)
+    raise AssertionError("unreachable")

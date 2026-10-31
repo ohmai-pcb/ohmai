@@ -115,12 +115,64 @@ def test_verify_cli_marks_verified(tmp_path, monkeypatch):
     assert libimport.load_manifest(p)["parts"]["FAKE1X"]["status"] == "verified"
 
 
-def test_fetch_records_pending_and_prints_human_steps(tmp_path, monkeypatch, capsys):
+def _fake_easyeda(monkeypatch, title="FAKE1X"):
+    monkeypatch.setattr(libimport, "easyeda_meta", lambda lcsc: {"title": title})
+
+    def fake_run(cmd, **kw):
+        out = __import__("pathlib").Path(cmd[cmd.index("--output") + 1])
+        sym = SYM.replace("(pin input", "(pin unspecified").replace("(pin power_in", "(pin unspecified")
+        out.with_suffix(".kicad_sym").write_text(sym)
+        out.with_suffix(".pretty").mkdir()
+        out.with_suffix(".pretty").joinpath("FAKE_PKG.kicad_mod").write_text(
+            '(footprint "FAKE_PKG"\n  (pad "1" smd rect (at 0 0) (size 0.2 0.7))\n  (pad "2" smd rect (at 1 0) (size 2.8 2.8))\n)\n')
+        return __import__("subprocess").CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(libimport, "_easyeda2kicad", lambda: ["easyeda2kicad"])
+    monkeypatch.setattr(libimport.subprocess, "run", fake_run)
+    monkeypatch.setattr(libimport, "datasheet_text", lambda pdf, pages=None: "EN 1 I Enable\nGND 2 GND Ground\n")
+
+
+def test_fetch_easyeda_agent_only_uses_bom_lcsc_verifies_and_types(tmp_path, monkeypatch):
     p = _proj(tmp_path, monkeypatch)
-    assert main(["kicad-libs", "fetch", "TPS63001RSNR", "--vendor", "ti", "--base", "TPS63001",
-                 "--package", "RSN", "--pins", "32"]) == 0
-    out = capsys.readouterr().out
-    assert "gpn=TPS63001&package=RSN&pin=32" in out and "captcha" in out
-    e = libimport.load_manifest(p)["parts"]["TPS63001RSNR"]
-    assert e["status"] == "pending-download" and e["fetch"]["needs_human"]
+    (p.root / "bom" / "bom.csv").write_text("refs,mpn,supplier,supplier_pn\nU1,FAKE1X,LCSC,C999\n", encoding="utf-8")
+    (p.root / "datasheets").mkdir(exist_ok=True)
+    (p.root / "datasheets" / "FAKE1X_C999.pdf").write_bytes(b"%PDF-fake")
+    _fake_easyeda(monkeypatch)
+    assert main(["kicad-libs", "fetch", "FAKE1X", "--pin-types"]) == 0
+    e = libimport.load_manifest(p)["parts"]["FAKE1X"]
+    assert e["status"] == "verified" and e["source"]["lcsc"] == "C999" and "easyeda.com" in e["source_url"]
+    assert e["footprint_check"][0]["pads"] == 2 and e["footprint_check"][0]["largest_pad_mm"] == "2.8x2.8"
+    t = (p.schematic.parent / "lib" / "OhmAI_Project.kicad_sym").read_text()
+    assert "(pin input" in t and "(pin passive" in t and "unspecified" not in t
+
+
+def test_fetch_easyeda_refuses_wrong_part(tmp_path, monkeypatch):
+    _proj(tmp_path, monkeypatch)
+    _fake_easyeda(monkeypatch, title="OTHER")
+    with pytest.raises(SystemExit, match="not FAKE1X"):
+        main(["kicad-libs", "fetch", "FAKE1X", "--lcsc", "C1"])
+
+
+def test_fetch_without_lcsc_is_a_clear_agent_error(tmp_path, monkeypatch):
+    _proj(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit, match="no LCSC number"):
+        main(["kicad-libs", "fetch", "NOPE"])
+
+
+def test_blocked_sources_exit_retryable_never_owner_steps(tmp_path, monkeypatch, capsys):
+    _proj(tmp_path, monkeypatch)
+    monkeypatch.setattr(libimport, "_http", lambda url, timeout=30: (b"<!doctype html><p>captcha", "text/html"))
+    assert main(["kicad-libs", "fetch", "X1", "--url", "https://example.invalid/x.zip"]) == libimport.EX_RETRY
+    assert main(["kicad-libs", "fetch", "X1", "--source", "portal", "--vendor", "ti"]) == libimport.EX_RETRY
+    err = capsys.readouterr().err
+    assert "RETRY" in err and "owner" not in err.lower()
+
+
+def test_fetch_url_downloads_zip_and_imports(tmp_path, monkeypatch):
+    p = _proj(tmp_path, monkeypatch)
+    body = _zip(tmp_path).read_bytes()
+    monkeypatch.setattr(libimport, "_http", lambda url, timeout=30: (body, "application/zip"))
+    assert main(["kicad-libs", "fetch", "FAKE1X", "--url", "https://example.invalid/FAKE1.zip"]) == 0
+    assert (p.schematic.parent / "lib" / "downloads" / "FAKE1.zip").is_file()
+    assert libimport.load_manifest(p)["parts"]["FAKE1X"]["status"] == "imported"
     assert main(["kicad-libs", "list"]) == 0

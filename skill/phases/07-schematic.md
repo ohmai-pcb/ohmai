@@ -15,7 +15,7 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
   `fp-lib-table`; never rely on the user's global tables). `kicad-libs` check: installed + tables match.
 - Use **vetted library symbols only**: KiCad official libraries, or `hardware/lib/` after review. Never
   hand-draw or guess a symbol or footprint, and never edit one to pass a check. A part the KiCad libraries
-  lack is imported by you with `ohmai kicad-libs import <MPN>` (Phase 4 "Missing KiCad library parts"),
+  lack is fetched by you with `ohmai kicad-libs fetch <MPN>` (Phase 4 "Missing KiCad library parts"),
   never handed to the owner and never hand-drawn. A `provisional` part (`ohmai kicad-libs list`) may be placed
   but must be replaced by a vetted import before the schematic review gate.
 - `lib-refs` (after `kicad-libs`): every schematic `lib_id` must resolve through `hardware/sym-lib-table`
