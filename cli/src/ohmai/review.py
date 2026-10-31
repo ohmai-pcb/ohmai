@@ -524,24 +524,69 @@ def start(project: Project, phase_name: str, today: str | None = None) -> Path:
     return p
 
 
+def _run(cmd) -> bool:
+    import subprocess
+    return subprocess.run(cmd, capture_output=True, text=True).returncode == 0
+
+
+def _svg_to_png(svgs, dest: Path, width: int) -> list[str]:
+    import shutil
+    rs = shutil.which("rsvg-convert")
+    if not rs:
+        return ["rsvg-convert missing: SVGs copied instead of PNGs"] if [shutil.copy2(s, dest / s.name) for s in svgs] else []
+    for s in svgs:
+        _run([rs, "-w", str(width), "-b", "white", "-o", str(dest / (s.stem + ".png")), str(s)])
+    return []
+
+
 def _render_pngs(project: Project, dest: Path, width: int = 3508) -> list[str]:
     """Best effort: hi-res PNG of every schematic sheet (kicad-cli + rsvg-convert). Returns notes."""
-    import shutil, subprocess, tempfile
+    import shutil, tempfile
     sch = getattr(project, "schematic", None)
-    kc, rs = shutil.which("kicad-cli"), shutil.which("rsvg-convert")
     if not sch or not Path(sch).is_file():
         return ["no schematic found; no sheet PNGs"]
-    if not kc or not rs:
-        return [f"sheet PNGs not rendered (missing {'kicad-cli' if not kc else 'rsvg-convert'}); "
-                "render them and add to this pack before sending it"]
+    kc = shutil.which("kicad-cli")
+    if not kc:
+        return ["sheet PNGs not rendered (kicad-cli missing); render them and add to this pack before sending it"]
     with tempfile.TemporaryDirectory() as td:
-        r = subprocess.run([kc, "sch", "export", "svg", "-o", td, str(sch)], capture_output=True, text=True)
-        if r.returncode:
-            return [f"kicad-cli svg export failed: {r.stderr.strip()[:200]}"]
+        if not _run([kc, "sch", "export", "svg", "-o", td, str(sch)]):
+            return ["kicad-cli sch export svg failed"]
         dest.mkdir(parents=True, exist_ok=True)
-        for svg in sorted(Path(td).glob("*.svg")):
-            subprocess.run([rs, "-w", str(width), "-b", "white", "-o", str(dest / (svg.stem + ".png")), str(svg)], check=False)
-    return []
+        return _svg_to_png(sorted(Path(td).glob("*.svg")), dest, width)
+
+
+PCB_VIEWS = {"front": "F.Cu,F.Paste,F.Silkscreen,F.Fab,Edge.Cuts", "back": "B.Cu,B.Silkscreen,B.Fab,Edge.Cuts",
+             "copper": "F.Cu,In1.Cu,In2.Cu,B.Cu,Edge.Cuts"}
+
+
+def _render_pcb(project: Project, dest: Path, width: int = 3508) -> list[str]:
+    """Best effort: board PNGs (front, back, all copper) and, if present, 3D renders."""
+    import shutil, tempfile
+    pcb = getattr(project, "pcb", None)
+    if not pcb or not Path(pcb).is_file():
+        return ["no .kicad_pcb found; no board renders"]
+    kc = shutil.which("kicad-cli")
+    if not kc:
+        return ["board renders not made (kicad-cli missing); render them and add to this pack before sending it"]
+    dest.mkdir(parents=True, exist_ok=True)
+    notes = []
+    with tempfile.TemporaryDirectory() as td:
+        svgs = []
+        for view, layers in PCB_VIEWS.items():
+            s = Path(td) / f"pcb-{view}.svg"
+            if _run([kc, "pcb", "export", "svg", "--layers", layers, "--mode-single", "--fit-page-to-board",
+                     "--exclude-drawing-sheet", "-o", str(s), str(pcb)]) and s.is_file():
+                svgs.append(s)
+            else:
+                notes.append(f"pcb {view} render failed")
+        notes += _svg_to_png(svgs, dest, width)
+    for side in ("top", "bottom"):
+        _run([kc, "pcb", "render", "--side", side, "-w", "2000", "-h", "1500", "-o", str(dest / f"3d-{side}.png"), str(pcb)])
+    return notes
+
+
+# phase -> renderers for the reviewer pack (`visuals/`); other phases are documents only
+VISUALS = {"schematic": (_render_pngs,), "layout": (_render_pcb,), "fab": (_render_pcb,)}
 
 
 def pack(project: Project, phase: str, files: list[Path] | None = None) -> Path:
@@ -560,17 +605,30 @@ def pack(project: Project, phase: str, files: list[Path] | None = None) -> Path:
     for name in ("BRIEF.md", "resolutions.md"):
         if (d / name).is_file():
             shutil.copy2(d / name, out / name); listed.append(name)
-    for f in files:
+    def put(f, sub):
         f = Path(f)
         rel = f.relative_to(project.root) if f.is_absolute() else f
-        tgt = out / "files" / rel
+        tgt = out / sub / rel
         tgt.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(project.root / rel, tgt); listed.append(f"files/{rel.as_posix()}")
-    notes = _render_pngs(project, out / "sheets") if phase == "schematic" else []
-    listed += [f"sheets/{p.name}" for p in sorted((out / "sheets").glob("*.png"))] if (out / "sheets").is_dir() else []
+        shutil.copy2(project.root / rel, tgt); listed.append(f"{sub}/{rel.as_posix()}")
+    for f in files:
+        put(f, "files")
+    srcs = [s for s in _glob(project, gate.sources, []) if s not in set(map(Path, files))] if gate.sources else []
+    for f in srcs:
+        put(f, "sources")
+    notes = []
+    for fn in VISUALS.get(phase, ()):
+        notes += fn(project, out / "visuals")
+    fab = project.root / "out" / phase   # anything the phase already rendered (e.g. out/fab/*.png, gerber zips)
+    for f in sorted(fab.glob("*.png")) + sorted(fab.glob("*.zip")) + sorted(fab.glob("*.pdf")) if fab.is_dir() else []:
+        (out / "visuals").mkdir(exist_ok=True); shutil.copy2(f, out / "visuals" / f.name)
+    if (out / "visuals").is_dir():
+        listed += [f"visuals/{p.name}" for p in sorted((out / "visuals").iterdir())]
     M = [f"# Review pack: `{phase}`", "",
          "Give the reviewer this whole folder (or attach every file below). Read BRIEF.md first; the",
-         "`files/` tree is exactly the files_hash input set, at the hashed revision.", "", "## Contents"]
+         "`files/` tree is exactly the files_hash input set, at the hashed revision; `sources/` holds the",
+         "reference inputs the brief cites; `visuals/` holds renders (sheet PNGs, board views) where the phase has them.",
+         "", "## Contents"]
     M += [f"- {x}" for x in listed]
     if notes:
         M += ["", "## Notes"] + [f"- {n}" for n in notes]

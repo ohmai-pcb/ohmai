@@ -368,7 +368,7 @@ def cmd_review(a) -> int:
         print(f"Wrote {path.relative_to(p.root)} (and resolutions.md if missing).")
         pk = p.root / "out" / "review-pack" / phase_id(a.phase)
         print(f"Review pack: {pk.relative_to(p.root)}/ (MANIFEST.md, BRIEF, resolutions, every files_hash input"
-              + (", hi-res sheet PNGs" if phase_id(a.phase) == "schematic" else "") + ").")
+              + (", renders under visuals/" if phase_id(a.phase) in ("schematic", "layout", "fab") else "") + ").")
         print("Give the whole pack to the reviewer (a human must be handed these files, not a repo path).")
         print("Give the brief to an independent reviewer (highest feasible level: other vendor > other model >")
         print("other agent/instructions > human; never the author's own session). Commit the brief now.")

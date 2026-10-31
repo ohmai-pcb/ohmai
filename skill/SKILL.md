@@ -135,11 +135,13 @@ still met). B VCONN switch - one more load switch, enables 5 A cables."
 
 ## 3a. Independent review (gates: safety, constraints, schematic, layout, bom, bringup)
 
-**Hand the reviewer the files.** `ohmai review start <phase>` also writes `out/review-pack/<phase>/`
-(`ohmai review pack <phase>` refreshes it): MANIFEST.md, BRIEF.md, resolutions.md, a copy of every files_hash
-input (constraints YAMLs, BOM, expected nets, symbol maps, sheets, ...) and, for the schematic gate, hi-res
-PNGs of every sheet. When a human reviews, attach that pack (or every file in its MANIFEST); never send
-only a repo path or ask them to find the files.
+**Hand the reviewer the files, for every review phase.** `ohmai review start <phase>` also writes
+`out/review-pack/<phase>/` (`ohmai review pack <phase>` refreshes it) for every gate (safety, constraints,
+schematic, layout, bom, fab, bringup, and any gate in `ohmai.yaml`): MANIFEST.md, BRIEF.md, resolutions.md,
+`files/` (every files_hash input), `sources/` (the gate's reference inputs) and `visuals/` (schematic: hi-res
+PNGs of every sheet; layout and fab: board front/back/copper PNGs and 3D renders, plus any PNG/PDF/zip
+already in `out/<phase>/`). A human reviewer always gets that pack (or every file in its MANIFEST), never only
+a repo path. Regenerate the pack whenever the brief is regenerated.
 
 Details: `docs/REVIEWS.md` in OhmAI. Configured per gate in `ohmai.yaml` → `reviews:`.
 1. Record your identity: a trailer on **every** commit (last paragraph of the message):

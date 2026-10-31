@@ -75,3 +75,32 @@ def test_review_start_writes_pack(proj):
     assert (pk / "BRIEF.md").is_file() and (pk / "resolutions.md").is_file()
     files = [x for x in pk.rglob("*") if x.is_file() and "files" in x.relative_to(pk).parts[:1]]
     assert files and all(f"files/{f.relative_to(pk / 'files').as_posix()}" in m for f in files)
+
+
+def test_pack_works_for_every_gate(proj, monkeypatch):
+    """Every reviewable phase gets a pack: MANIFEST, BRIEF, resolutions, files_hash inputs, sources."""
+    import shutil as _sh
+    from ohmai.review import DEFAULT_GATES, gates, pack, start
+
+    monkeypatch.setattr(_sh, "which", lambda name: None)   # no renderers: packs must still be written
+    p = _review_proj(proj)
+    for ph, g in gates(p).items():
+        for pat in list(g.scope) + list(g.sources):
+            if "*" in pat:
+                f = p.root / pat.replace("*.", "x.").replace("*", "x")
+            else:
+                f = p.root / pat
+            if not f.exists():
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_text("{}\n" if f.suffix in (".yaml", ".yml") else "x\n")
+    for ph in DEFAULT_GATES:
+        if ph not in gates(p) or gates(p)[ph].required < 1:
+            continue
+        start(p, ph)
+        pk = p.root / "out" / "review-pack" / ph
+        m = (pk / "MANIFEST.md").read_text()
+        assert (pk / "BRIEF.md").is_file() and "files/" in m, ph
+        if gates(p)[ph].sources:
+            assert "sources/" in m, ph
+        out = pack(p, ph)
+        assert out == pk
