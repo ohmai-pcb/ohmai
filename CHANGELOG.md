@@ -1,6 +1,13 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- Schematic gate reworked from owner feedback: load before ERC (an ERC on an unloaded or 0-symbol sheet set is
+  FAIL "ERC result invalid"); per-sheet gate `ohmai check schematic --sheet <name>`; project gate = all sheets
+  + `cross-sheet` + review. New checks `gen-netlist` (generator intent vs KiCad netlist), `wire-ends`
+  (truncated wires, pins mid-wire), `cross-sheet`; `netlist` counts unlabeled nets and FAILs one without a
+  row (named nets without a row WARN). Label policy `checks.readability.labels: allowlist|rail-and-label`;
+  datasheet-figure renders are an optional reviewer reference. `ohmai adopt` + `checks.na` (N/A with reason)
+  for foreign repos; `checks.lib_refs.allow_embedded` for generator-embedded symbols bound to pin-map.
 - `schematic build` embeds derived (`extends`) symbols the way KiCad 9 `LIB_SYMBOL::Flatten()` does: an empty
   mandatory child field keeps the parent's whole field, child-only fields are added, and extends chains are
   resolved recursively. Fixes ERC `lib_symbol_mismatch` on e.g. Sensor_Temperature:LM75B (extends LM75C).

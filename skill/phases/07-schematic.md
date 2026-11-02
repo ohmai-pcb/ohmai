@@ -18,6 +18,9 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
   lack is fetched by you with `ohmai kicad-libs fetch <MPN>` (Phase 4 "Missing KiCad library parts"),
   never handed to the owner and never hand-drawn. A `provisional` part (`ohmai kicad-libs list`) may be placed
   but must be replaced by a vetted import before the schematic review gate.
+- Exception (adopted repos, generator-embedded symbols): with `checks.lib_refs.allow_embedded: true` a symbol
+  that lives only in the sheet's embedded cache passes `lib-refs` **only** when a constraints file binds it
+  (`match.lib_symbol`), so `pin-map` checks every pin against the datasheet table. No constraints file: FAIL.
 - `lib-refs` (after `kicad-libs`): every schematic `lib_id` must resolve through `hardware/sym-lib-table`
   (FAIL); every schematic/BOM footprint through `fp-lib-table` (WARN here, FAIL as `lib-refs-strict` in
   layout and BOM lock). SKIP while there is no schematic and no BOM footprint.
@@ -29,8 +32,12 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
 - Bind constraints to parts by `MPN` field (`match.mpn`) or reference (`match.refs`), never by value text.
 
 ## Drawing: datasheet-figure style
-- Root sheet plus **one functional block per sheet**. Hierarchical labels only for nets that leave the
-  block; long buses may use labels (allow-list). No global labels, no local labels by default.
+- Root sheet plus **one functional block per sheet**. Labels are tools, not banned: hierarchical (or global)
+  labels carry nets between sheets; local labels may join blocks inside a sheet. The hard rule from
+  dogfooding: **passives wired to their IC pins, labels between blocks/sheets, power symbols for rails.**
+  `checks.readability.labels`: `allowlist` (default; local labels only by name in `allow_local_labels`) or
+  `rail-and-label` (local labels free; the passive-to-IC wire path stays a FAIL). Pick it in Phase 7 yourself;
+  it is not an owner question.
 - Draw like the datasheet's application figure: each IC with its passives **wired** (orthogonal wires on
   the 1.27 mm grid), decoupling caps next to their pins, power symbols at the part.
 - Write the placement as `hardware/gen/layout/<sheet>.yaml` (+ `_root.yaml`) and draw it with
@@ -41,7 +48,8 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
   `checks.readability.allow_local_labels`, wire crossings / ambiguous junctions, overlapping text or
   symbols, wires through bodies, off-grid items, a power symbol's net name next to another node's wire or
   junction (it reads as that node's name), text on pin lines / pin numbers or over a DNP cross, a part's text
-  touching a power symbol's name, and titles longer than the title-block field (ESTIMATE of the font). The reviewer judges the PNGs against the datasheet figures.
+  touching a power symbol's name, and titles longer than the title-block field (ESTIMATE of the font). Renders of the datasheet application figures
+  are an optional reference for the reviewer, not a gate; 0 readability problems is the gate.
 
 ## Readability is a hard gate (not debt)
 - `ohmai check readability` must PASS with **0 problems** before the review and the owner gate. It is part of
@@ -57,6 +65,24 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
 - Background: the previous project (pico-k) required a clean readability pass; a dogfood board first reached its
   review gate with 167 readability problems recorded as debt. That was a skill/process failure, now closed.
 
+## Per-sheet gate, then the project gate
+Draw and close **one sheet at a time**: `ohmai check schematic --sheet <name>` (name, path `/1-power/`, file or
+stem; `root` for the root) runs, scoped to that sheet: sheet-load, erc, netlist, gen-netlist, wire-ends,
+pin-map, passives, readability, render. The sheet is done when that RESULT is PASS. The project gate is then
+`ohmai check schematic`: every sheet passing **plus** `cross-sheet` (every net that leaves a sheet has an exact
+pin in `expected_nets.csv` on each sheet it reaches) **plus** the separate `review:schematic`.
+
+Ordered rules (do not reorder, do not skip):
+1. LOAD before ERC. A 0-violation ERC on a sheet that did not load, or on 0 placed symbols, is a FAIL
+   (`erc` reports "ERC result invalid" unless `sheet-load` passed and ERC covered every sheet instance).
+2. Hold the pin-to-net map: `expected_nets.csv` lists every multi-node net, **unlabeled ones included**
+   (`Net-(...)` with no row FAILs `netlist`); `gen-netlist` compares the generator's intent pin by pin with
+   the KiCad export (split, merged, missing, unconnected, NC).
+3. No truncated wires: `wire-ends` FAILs an end that touches nothing and a pin sitting mid-wire (it looks
+   connected in the render but is not; a wire must end on the pin or on a junction).
+4. Convergence: when a drawing step does not converge (the same check fails 3 times after fixes, or a
+   fix re-breaks another check), **stop and report** with the failing check output; do not keep redrawing.
+
 ## Checks, in this order (`ohmai check schematic` runs them)
 0. `kicad-app`: `kicad-cli version` is inside ohmai.yaml `kicad.app` (e.g. `">=9.0.2,<9.1"` or `"9.0.x"`);
    FAIL outside the range, WARN when not pinned. Also run in phases 8 and 11.
@@ -64,10 +90,14 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
    `toolchain`: installed tools vs `toolchain.lock.yaml` (`ohmai lock` once, commit it). Tier 1 (KiCad,
    libraries, Freerouting, KiKit, KiBot, iBOM, kipy, SKiDL, jlcparts, Python deps) must equal the lock; move a pin only with
    `ohmai upgrade <tool> <version>`. kicad-app/kicad-libs also FAIL when they differ from the lock.
-1. `sheet-load`: every sheet loads. ERC silently drops a sheet that fails to load, so this runs first.
-2. `erc`: kicad-cli ERC, all severities. Never silence it.
+1. `sheet-load`: every sheet loads and the set has placed symbols (records `out/load/result.json`). ERC
+   silently drops a sheet that fails to load, so this runs first.
+2. `erc`: kicad-cli ERC, all severities. Never silence it. Invalid (FAIL) without a valid load record.
 3. `netlist`: netlist against `expected_nets.csv` (missing, split, merged, extra, name, nc). A net wired
-   inside one block without a label (KiCad name `Net-(...)`) passes the name rule; its nodes still must match.
+   inside one block without a label (KiCad name `Net-(...)`) passes the name rule; its nodes still must match,
+   and it needs a row (unlabeled nets are counted; one without a row FAILs). A named net without a row WARNs.
+   `gen-netlist`: generator intent (`hardware/gen/layout/*.yaml` nets, or `checks.gen_netlist.intent` CSV
+   `ref.pin,net` for a foreign generator) vs the KiCad netlist. `wire-ends`: see ordered rule 3.
    `skidl-netlist` (optional, WARN without SKiDL): SKiDL builds a second netlist from `expected_nets.csv`
    with the pinned KiCad symbols (a pin the symbol lacks is an error) and it must equal the KiCad export
    net-by-net. SKiDL runs as a separate process (it loads GPL InSpice); `OHMAI_SKIDL_PYTHON` selects a
@@ -85,11 +115,19 @@ Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schemati
    (`docs/evb-compare/<PART>.md`).
 10. `readability`: datasheet-figure style (above). Writes `out/readability.txt`.
 11. `render`: PNG per sheet in `out/render/png/`. Look at every changed sheet yourself.
+11b. `cross-sheet`: project gate only (above). FAIL with `checks.cross_sheet_strict: true` (template), else WARN.
 12. `commits`: every commit on the branch carries an `OhmAI-Author:` trailer (skill section 3a).
 The review gate `review:schematic` is reported separately (not in RESULT) so the work can pass and be
 committed before the review exists; `--gate` counts it.
 
-Commit after each pass. Same error 3 times: stop and ask.
+Commit after each pass. Same error 3 times: stop and report (ordered rule 4).
+
+## Adopting a foreign repo
+`ohmai adopt` in an existing KiCad repo writes `ohmai.yaml` and an `expected_nets.csv` baseline from the
+current netlist (never overwriting: an existing file gets `*.adopted.*` beside it). The baseline is the
+current design, not verified intent: check rows against datasheets (`pin-map`) before trusting them.
+Checks that cannot apply go in `checks.na: {<check>: <reason>}`; they report `SKIP N/A: <reason>`, an empty
+reason FAILs. Minimum without the command: the same two files by hand, plus the N/A map.
 
 ## Gate
 A human reviews the PR: the schematic diff, the PNG renders, and the netlist and BOM diffs posted by CI.

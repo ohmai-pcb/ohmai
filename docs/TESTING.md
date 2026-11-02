@@ -26,6 +26,12 @@ every registered check (or an entry in `ohmai.knownbad.NOT_COVERED` with a reaso
 `_base/` copies equal a fresh build of the golden project. Format: the docstring of `ohmai/knownbad.py`.
 Fictional parts are marked FICTIONAL / `FICT-`.
 
+Schematic-gate cases (2026-11): `gen-netlist-wire-moved` (generator intent vs drawn sheet),
+`wire-ends-truncated` (a stub ending in empty space), `cross-sheet-unpinned` (a net leaving a sheet with no
+exact pin there), `sheet-load-broken-subsheet` (load before ERC). Unit tests for split/merged/NC intent,
+mid-wire pins, unlabeled-net coverage, the label policy, `ohmai adopt`, `checks.na` and `--sheet` are in
+`cli/tests/test_sheet_gate.py`.
+
 Adding a check: add a case in the same commit. A check that cannot catch its case is a bug in the check.
 Fix the check; never weaken the fixture.
 
