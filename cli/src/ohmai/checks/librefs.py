@@ -91,11 +91,22 @@ def _check(project: Project, name: str, strict: bool) -> Result:
     fp_problems: list[str] = []
     cache: dict = {}
     seen = set()
+    emb = embedded_policy(project)
+    embedded_ok: list[str] = []
     for ref, where in syms:
         if (ref, "s") in seen:
             continue
         seen.add((ref, "s"))
         lib, _, item = ref.partition(":")
+        if emb is not None and (lib not in stab or not stab[lib].is_file() or item not in _sym_names(stab[lib], cache)):
+            why = emb.get(ref) or emb.get(item)
+            if why:
+                embedded_ok.append(f"symbol {ref} ({where}): embedded, verified by pin-map against {why}")
+                continue
+            problems.append(f"symbol {ref} ({where}): embedded symbol with no constraints file "
+                            "(match.lib_symbol) to verify its pins; add parts/constraints/<MPN>.yaml so pin-map "
+                            "checks it against the datasheet, or import a vetted symbol")
+            continue
         if lib not in stab:
             problems.append(f"symbol {ref} ({where}): library '{lib}' not in sym-lib-table")
         elif not stab[lib].is_file():
@@ -119,4 +130,30 @@ def _check(project: Project, name: str, strict: bool) -> Result:
     if fp_problems:
         return Result(name, WARN, f"symbols resolve; {len(fp_problems)} footprint reference(s) unresolved "
                       f"(FAIL from layout / BOM lock) {hint}", fp_problems)
+    if embedded_ok:
+        return Result(name, PASS, f"{n} reference(s) resolve; {len(embedded_ok)} generator-embedded symbol(s) "
+                      "allowed (checks.lib_refs.allow_embedded) and bound to pin-map", embedded_ok)
     return Result(name, PASS, f"{n} symbol/footprint reference(s) resolve through the project lib tables")
+
+
+def embedded_policy(project: Project) -> dict[str, str] | None:
+    """checks.lib_refs.allow_embedded: true -> {lib_symbol: constraints file} for parts pin-map can verify.
+    None when embedded symbols are not allowed (the default: symbols come from vetted libraries)."""
+    cfg = ((project.config.get("checks") or {}).get("lib_refs") or {})
+    if not cfg.get("allow_embedded"):
+        return None
+    import yaml
+
+    out: dict[str, str] = {}
+    d = project.constraints_dir
+    for f in sorted(d.glob("*.yaml")) if d.is_dir() else []:
+        if f.name.endswith(".example.yaml"):
+            continue
+        try:
+            c = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        m = c.get("match") or {}
+        if isinstance(m, dict) and m.get("lib_symbol"):
+            out.setdefault(str(m["lib_symbol"]), f.name)
+    return out

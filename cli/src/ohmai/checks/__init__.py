@@ -46,6 +46,12 @@ def run(project: Project, name: str, opts: dict) -> Result:
         from ohmai.checks.review import check_review
 
         return check_review(project, name.split(":", 1)[1] if ":" in name else None)
+    na = (project.config.get("checks") or {}).get("na") or {}
+    if name in na:
+        why = str(na[name] or "").strip()
+        if not why:
+            return Result(name, FAIL, f"checks.na.{name} has no reason: an N/A check needs a written reason")
+        return Result(name, SKIP, f"N/A: {why}")
     from ohmai import kicadlibs
 
     kicadlibs.activate(project)

@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+import pytest
+import yaml
+
 from helpers import good_tps63001, netlist
 
 from ohmai import sheets
@@ -99,3 +102,79 @@ def test_sheet_instances_and_resolve(tmp_path):
     assert sheets.resolve(root, "power").path == "/1-power/"
     assert sheets.symbol_count(root.read_text()) == 1           # root with only a sheet symbol is not empty
     assert sheets.symbol_count((tmp_path / "power.kicad_sch").read_text()) == 0
+
+
+# ---------- adopt mode, N/A, embedded symbols, --sheet ----------
+
+@pytest.fixture
+def proj(tmp_path, monkeypatch):
+    from ohmai.cli import main
+    from ohmai.project import find_project
+
+    d = tmp_path / "demo"
+    assert main(["new", str(d), "--idea", "test board", "--no-git"]) == 0
+    monkeypatch.chdir(d)
+    return find_project(d)
+
+
+def test_na_needs_a_reason(proj):
+    from ohmai.checks import run
+    from ohmai.project import find_project
+
+    cfg = proj.root / "ohmai.yaml"
+    cfg.write_text(cfg.read_text().replace("checks:\n", "checks:\n  na: {erc: 'adopted: legacy sheet', passives: ''}\n", 1))
+    p = find_project(proj.root)
+    r = run(p, "erc", {})
+    assert r.status == "SKIP" and r.summary == "N/A: adopted: legacy sheet"
+    assert run(p, "passives", {}).status == "FAIL"
+
+
+def test_adopt_writes_baseline_and_never_overwrites(tmp_path):
+    from ohmai.adopt import adopt
+
+    root = tmp_path / "foreign"
+    (root / "hw").mkdir(parents=True)
+    (root / "hw" / "b.kicad_pro").write_text("{}")
+    (root / "hw" / "b.kicad_sch").write_text("(kicad_sch (version 20250114))")
+    comps, nets, lib = good_tps63001()
+    nets["Net-(U1-FB)"] = nets.pop("/FB")
+    nets["unconnected-(U1-EN-Pad1)"] = nets.pop("/N1")
+    nl = tmp_path / "x.net"
+    nl.write_text(netlist(comps, nets, lib))
+    (root / "expected_nets.csv").write_text("net,nodes\nKEEP,U1.10,C1.1\n")
+    log = adopt(root, netlist=nl)
+    cfg = yaml.safe_load((root / "ohmai.yaml").read_text())
+    assert cfg["hardware"]["schematic"] == "hw/b.kicad_sch"
+    assert all(v for v in cfg["checks"]["na"].values()) and "gen-netlist" in cfg["checks"]["na"]
+    assert (root / "expected_nets.csv").read_text() == "net,nodes\nKEEP,U1.10,C1.1\n"      # untouched
+    new = (root / "expected_nets.adopted.csv").read_text()
+    assert "Net-(U1-FB),R2.2,R3.1,U1.4" in new and "\nNC,U1.1" in new, new
+    assert any("left untouched" in line for line in log)
+    with pytest.raises(SystemExit):
+        adopt(root, netlist=nl)                    # both files exist: refuse rather than overwrite
+
+
+def test_lib_refs_embedded_only_with_pin_map(proj, monkeypatch):
+    from ohmai.checks import librefs
+    from ohmai.project import find_project
+
+    cfg = proj.root / "ohmai.yaml"
+    assert librefs.embedded_policy(find_project(proj.root)) is None          # default: vetted libraries only
+    cfg.write_text(cfg.read_text().replace("checks:\n", "checks:\n  lib_refs: {allow_embedded: true}\n", 1))
+    c = proj.root / "parts" / "constraints"
+    c.mkdir(parents=True, exist_ok=True)
+    (c / "W5500.yaml").write_text("part: W5500\nmatch: {mpn: W5500, lib_symbol: W5500}\n")
+    pol = librefs.embedded_policy(find_project(proj.root))
+    assert pol == {"W5500": "W5500.yaml"}
+
+
+def test_cli_sheet_unknown_name_exits(proj, monkeypatch):
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, "-m", "ohmai", "check", "schematic", "--sheet", "nope"], cwd=proj.root,
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "nope" in (r.stderr + r.stdout)
+    r = subprocess.run([sys.executable, "-m", "ohmai", "check", "layout", "--sheet", "root"], cwd=proj.root,
+                       capture_output=True, text=True)
+    assert r.returncode != 0

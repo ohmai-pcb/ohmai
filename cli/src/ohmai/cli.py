@@ -30,6 +30,22 @@ def cmd_new(a) -> int:
     return 0
 
 
+def cmd_adopt(a) -> int:
+    from ohmai.adopt import adopt
+
+    na = {}
+    for item in a.na or []:
+        k, sep, v = item.partition("=")
+        if not sep or not v.strip():
+            print(f"ohmai adopt: --na needs check=reason, got {item!r}", file=sys.stderr)
+            return 2
+        na[k.strip()] = v.strip()
+    for line in adopt(Path(a.path), Path(a.schematic) if a.schematic else None, na,
+                      Path(a.netlist) if a.netlist else None):
+        print(f"  {line}")
+    return 0
+
+
 def _project():
     from ohmai.project import NotAProject, find_project
 
@@ -554,6 +570,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="enable anonymous mode in ohmai.yaml (role labels, repo-relative paths, YYYY-MM-DD dates)")
     s.add_argument("--no-git", action="store_true", help="do not git init / commit")
     s.set_defaults(fn=cmd_new)
+
+    s = sub.add_parser("adopt", help="put an existing KiCad repo under OhmAI checks (ohmai.yaml with N/A reasons, "
+                                     "expected_nets.csv baseline from the current netlist); never overwrites")
+    s.add_argument("path", nargs="?", default=".", help="repo root (default: .)")
+    s.add_argument("--schematic", help="root .kicad_sch, relative to the repo (default: the one next to the .kicad_pro)")
+    s.add_argument("--na", action="append", metavar="CHECK=REASON", help="mark a check N/A with a reason (repeatable)")
+    s.add_argument("--netlist", help=argparse.SUPPRESS)
+    s.set_defaults(fn=cmd_adopt)
 
     s = sub.add_parser("status", help="show phase, gate, decisions, open questions from STATUS.md")
     s.add_argument("--json", action="store_true")
