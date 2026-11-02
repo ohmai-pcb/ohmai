@@ -70,6 +70,7 @@ from ohmai.checks import (  # noqa: E402,F401
     bringup,
     commits,
     constraints,
+    decisions,
     docs,
     escape,
     gencheck,

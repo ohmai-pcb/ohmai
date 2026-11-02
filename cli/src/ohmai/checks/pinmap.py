@@ -106,7 +106,8 @@ def _context(project: Project, name: str, opts: dict):
         on = nl.refs_on(sh.path)
         pairs, unmatched = [x for x in pairs if x[0] in on], []
         if not pairs:
-            return Result(name, PASS, f"sheet {sh.name}: no constrained part on this sheet")
+            ub = unbound(nl, set(), sh) if name == "pin-map" else []
+            return Result(name, WARN if ub else PASS, f"sheet {sh.name}: no constrained part on this sheet", ub)
     if not pairs:
         return Result(name, SKIP, f"no netlist part matches a constraints file ({len(files)} file(s))", unmatched)
     bound = [(r, f, c, PinMap(r, c, nl.pins_of(r), _load_map(project, f))) for r, f, c in pairs]
@@ -164,7 +165,22 @@ def pin_map(project: Project, opts: dict) -> Result:
         for s in sym:
             if s not in pm.explicit and s not in pm.ds_pins:
                 errors.append(f"{ref}: symbol pin {s} ('{sym[s]}') not in {fname} and not in its symbol map")
+    warns = list(warns) + unbound(nl, {r for r, *_ in bound}, (opts or {}).get("sheet"))
     return _finish("pin-map", len(bound), errors, warns)
+
+
+def unbound(nl: Netlist, bound: set[str], sheet=None) -> list[str]:
+    """ICs (U), modules (M) and connectors (J) with 3+ pins and no constraints binding: pin-map, passives and
+    pull-ups silently skip them (on a dogfood board a header's numbering and an unbound module were only caught by a reviewer)."""
+    on = nl.refs_on(sheet.path) if sheet is not None else None
+    out = []
+    for ref in sorted(nl.comps):
+        if ref in bound or ref.startswith("#") or (on is not None and ref not in on):
+            continue
+        if re.match(r"^(U|M|J)\d", ref) and len(nl.pins_of(ref)) >= 3:
+            out.append(f"unbound: {ref} ({nl.comps[ref]['part']}) has no constraints file (match.mpn/refs/lib_symbol);"
+                       " its pins are not checked against a datasheet")
+    return out
 
 
 @register("single-source", "At most one regulator/switch/driver output per net (exceptions in parts/allow.yaml)")

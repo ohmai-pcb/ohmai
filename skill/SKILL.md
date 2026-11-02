@@ -182,6 +182,23 @@ Details: `docs/REVIEWS.md` in OhmAI. Configured per gate in `ohmai.yaml` → `re
   project gate (all sheets + `cross-sheet` + review). A clean ERC on an unloaded or empty sheet is a FAIL. A step
   that does not converge after 3 tries is stopped and reported, never redrawn indefinitely.
 - **MCU pin budget is a hard gate at Phases 2 and 4** (`parts/mcu_pin_budget.yaml`, `ohmai check mcu-pin-budget`): required nets vs free GPIO after power, ground, SWD and fixed serials. A shortfall fails the gate; never discover it in Phase 7.
+- **Decide these yourself, do not ask** (lessons from dogfooding): decoupling
+  and bulk caps wired to the pin they serve (GND may be a power symbol); the label policy; a name for every
+  multi-pin net (no auto `Net-(...)` names at the gate); one common paper size; unused IC pins handled per the
+  datasheet (NC flag or the stated pull); refdes unique project-wide and identical in constraints notes, BOM
+  and schematic; pinouts of the design's own debug/UI headers; resistor/capacitor MPN matching the value field.
+  Record each in STATUS.md as a default; the owner may override. **Ask the owner** only for: ICs, connectors
+  and their mechanical orientation (vertical/right-angle, which face; settle it at Phase 2/4 with the
+  enclosure, not at layout), waivers of a requirement, review independence or a datasheet limit, accepted
+  safety risks, and spend.
+- **Every decision id is logged.** Any `D-xxx` cited in STATUS.md or `reviews/*/resolutions.md` needs its own row
+  in `docs/decisions.md` the same day (`ohmai check decisions`, every phase). A waiver that spans review rounds
+  (e.g. review independence) is one decision scoped to the gate; each round's `accepted_independence` entry
+  cites it, no new decision per round.
+- **Every IC, module and connector is bound to a constraints file** (`pin-map` WARNs `unbound:` otherwise), and
+  connector constraints state the header numbering (row-wise vs odd/even) so the symbol/footprint pairing is
+  checked at Phase 5, not found by the schematic reviewer. Constraints list every datasheet-required external
+  part (`required_external`); finding missing passives in Phase 7 is a Phase 5 miss.
 - Never invent specs, pins, values, ratings, prices or stock. Cite every source and mark estimates.
 - Every design rule cites a datasheet page. Never guess a pin direction: use `unknown` and ask.
 - The spec wins over chat. If chat contradicts STATUS.md or a locked decision, ask before you act.

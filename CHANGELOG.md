@@ -1,6 +1,9 @@
 # Changelog
 
 ## 0.1.0.dev0 (unreleased)
+- Lessons from dogfooding: new `decisions` check in every phase (each
+  `D-xxx` cited in STATUS.md or review resolutions has its own docs/decisions.md entry); `pin-map` WARNs on ICs,
+  modules and connectors with no constraints binding (`unbound:`); skill lists agent defaults vs owner decisions.
 - Schematic gate reworked from owner feedback: load before ERC (an ERC on an unloaded or 0-symbol sheet set is
   FAIL "ERC result invalid"); per-sheet gate `ohmai check schematic --sheet <name>`; project gate = all sheets
   + `cross-sheet` + review. New checks `gen-netlist` (generator intent vs KiCad netlist), `wire-ends`

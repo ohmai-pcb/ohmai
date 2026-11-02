@@ -33,9 +33,10 @@ PHASES: tuple[Phase, ...] = (
     Phase(12, "bringup", "Bring-up & test", ("docs:test/bringup-plan.md", "bringup-code", "manual", "review:bringup"), "Owner signs off results"),
 )
 
-# Every phase also checks commit trailers (`commits`, see ohmai/trailers.py), before its review gate.
+# Every phase also checks commit trailers (`commits`, see ohmai/trailers.py) and that every cited decision id is in
+# docs/decisions.md (`decisions`), before its review gate.
 PHASES = tuple(Phase(p.num, p.id, p.title,
-                     tuple(c for c in p.checks if not c.startswith("review:")) + ("commits",)
+                     tuple(c for c in p.checks if not c.startswith("review:")) + ("commits", "decisions")
                      + tuple(c for c in p.checks if c.startswith("review:")), p.gate) for p in PHASES)
 
 # Per-sheet gate (`ohmai check schematic --sheet <name>`): enough to commit one sheet. In order: load before

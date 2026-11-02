@@ -1,0 +1,8 @@
+check: decisions
+bug: "a waiver decision recorded only in STATUS.md, never in docs/decisions.md"
+detail: "D-002"
+prepare:
+  - {file: docs/decisions.md, write: "# Decisions\n| ID | Date | Phase | Decision | Rationale | Decided By |\n|---|---|---|---|---|---|\n| D-001 | 2026-10-27 | 1 | Lock requirements | owner | Owner |\n"}
+  - {file: STATUS.md, append: "\n| D-001 | 2026-10-27 | Lock requirements |\n"}
+mutate:
+  - {file: STATUS.md, append: "| D-002 | 2026-10-31 | Owner waives the review independence level |\n"}
