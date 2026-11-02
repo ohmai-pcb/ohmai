@@ -1,0 +1,9 @@
+check: wire-ends
+bug: "a wire stub on the power sheet ends in empty space (truncated wire, looks connected in the render)"
+detail: "truncated wire"
+needs: [kicad-cli, kicad-libs]
+base: ["golden:ldo-led"]
+name: ldo-led
+build: true
+mutate:
+  - {file: hardware/power.kicad_sch, replace: "\t(sheet_instances", with: "\t(wire (pts (xy 50.8 50.8) (xy 60.96 50.8)) (stroke (width 0) (type default)) (uuid \"0b1e5b4e-0000-4000-8000-0000000000a1\"))\n\t(sheet_instances", stage: built}

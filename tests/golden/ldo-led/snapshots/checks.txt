@@ -1,6 +1,6 @@
-sheet-load: PASS all 3 sheet(s) load
+sheet-load: PASS all 3 sheet(s) load, 8 symbol(s)
 erc: PASS 0 violation(s)
-netlist: PASS 6 parts, 5 nets; 5 expected rows, 0 TODO rows skipped
+netlist: PASS 6 parts, 5 nets; 5 expected rows, 0 TODO rows skipped; 2 unlabeled net(s), 0 not in expected_nets.csv
 pin-map: PASS 1 constrained part(s); 0 error(s), 0 warning(s)
 single-source: PASS 1 constrained part(s); 0 error(s), 0 warning(s)
 passives: PASS 1 constrained part(s); 0 error(s), 0 warning(s)

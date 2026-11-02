@@ -25,8 +25,12 @@ commits:
 checks:
   erc_allow_warnings: false   # owner decision only; record in docs/decisions.md
   png_width: 2400
+  cross_sheet_strict: true     # every net spanning sheets needs an exact expected_nets.csv pin on each sheet
+  # gen_netlist: {intent: hardware/gen/intent.csv}   # foreign generator: its own ref.pin,net map (gen-netlist check)
   readability:                 # `ohmai check readability` (phase 7): datasheet-figure style sheets
-    allow_local_labels: []     # local net labels allowed on block sheets (owner decision, with reason)
+    labels: allowlist          # allowlist (default) | rail-and-label: local labels may join blocks inside a sheet;
+                               # passives must still be wired to their IC pins (wire-path stays the hard gate)
+    allow_local_labels: []     # local net labels allowed on block sheets (allowlist mode; exact names)
     allow_crossings: false     # unjoined wire crossings
 # Pinned official KiCad libraries (`ohmai kicad-libs install|tables|status`); per-project lib tables.
 kicad:

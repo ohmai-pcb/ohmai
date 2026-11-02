@@ -6,7 +6,9 @@ expected_nets.csv: one net per row, '#' lines are comments.
   ...       open row: other nodes allowed
   NC        row name: every listed pin must be unconnected
   TODO      any cell containing TODO skips the row (counted)
-Errors: missing, split, merged, extra, ambiguous, name, nc, empty.
+Errors: missing, split, merged, extra, ambiguous, name, nc, empty, unlisted.
+coverage(): every multi-node net KiCad auto-names (unlabeled, 'Net-(...)') must be matched by a row
+(FAIL 'unlisted'); named multi-node nets without a row WARN. Unlabeled nets are never dropped.
 """
 
 from __future__ import annotations
@@ -99,3 +101,34 @@ def dump(nl: Netlist, path: Path) -> None:
         w.writerow(["net", "nodes..."])
         for name in sorted(nl.nets):
             w.writerow([base(name), *sorted(nl.nets[name])])
+
+
+def is_auto(name: str) -> bool:
+    b = base(name)
+    return b.startswith(("Net-(", "unconnected-("))
+
+
+def coverage(nl: Netlist, rows, refs: set[str] | None = None) -> dict:
+    """Nets in the netlist that no expected row accounts for. refs: only nets touching these parts."""
+    covered: set[str] = set()
+    for name, nodes, _open in rows:
+        if name == "NC":
+            continue
+        for n in nodes:
+            if n.endswith(".*"):
+                covered |= {nl.where[k] for k in nl.where if k.startswith(n[:-2] + ".")}
+            elif n in nl.where:
+                covered.add(nl.where[n])
+    errors, warns, auto, auto_missing = [], [], 0, 0
+    for name, nodes in sorted(nl.nets.items()):
+        if len(nodes) < 2 or (refs is not None and not any(n.split(".")[0] in refs for n in nodes)):
+            continue
+        if is_auto(name):
+            auto += 1
+            if name not in covered:
+                auto_missing += 1
+                errors.append(f"unlisted: unlabeled net {base(name)} ({', '.join(sorted(nodes)[:6])}) has no row in "
+                              "expected_nets.csv; add it (an unlabeled net is still a net)")
+        elif name not in covered:
+            warns.append(f"unlisted: net {base(name)} ({', '.join(sorted(nodes)[:6])}) has no expected_nets.csv row")
+    return {"errors": errors, "warns": warns, "auto": auto, "auto_missing": auto_missing}

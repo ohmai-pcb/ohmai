@@ -126,7 +126,8 @@ def test_netlist_diff(proj):
     (proj.root / "expected_nets.csv").write_text("net,nodes\nVCC,U1.10,C1.*\nGND,C1.*,U1.11,U1.12,U1.15,...\n")
     nl = _write(proj, *good_tps63001())
     r = run(proj, "netlist", {"netlist": nl})
-    assert r.status == "PASS", r.details
+    # named nets without a row WARN (unlisted), never silently dropped
+    assert r.status == "WARN" and all(d.startswith("unlisted: net ") for d in r.details), r.details
     (proj.root / "expected_nets.csv").write_text("net,nodes\nVCC,U1.10,U1.20\n")
     r = run(proj, "netlist", {"netlist": nl})
     assert r.status == "FAIL" and any("split" in d or "extra" in d for d in r.details)
@@ -281,7 +282,9 @@ def test_skill_install(tmp_path):
 
 @pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli missing")
 def test_sheet_load_catches_broken_sheet(proj):
-    assert run(proj, "sheet-load", {}).status == "PASS"
+    r = run(proj, "sheet-load", {})
+    # the template sheet is empty: a sheet set with 0 placed symbols is a FAIL (a zero ERC on it means nothing)
+    assert r.status == "FAIL" and "0 placed symbols" in (r.summary + " ".join(r.details)), (r.summary, r.details)
     (proj.root / "hardware" / "broken.kicad_sch").write_text('(kicad_sch (version 20250114) (paper "A4"')
     r = run(proj, "sheet-load", {})
     assert r.status == "FAIL" and any("broken.kicad_sch" in d for d in r.details)

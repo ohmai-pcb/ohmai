@@ -14,6 +14,7 @@ from ohmai.checks import FAIL, PASS, SKIP, WARN, Result, register
 from ohmai.checks import netdiff as nd
 from ohmai.netlist import load as load_netlist
 from ohmai.project import Project
+from ohmai.sheets import from_opts
 
 _SHEETFILE = re.compile(r'\(property\s+"Sheet ?[Ff]ile"\s+"([^"]+)"')
 
@@ -125,8 +126,29 @@ def kicad_app(project: Project, opts: dict) -> Result:
     return Result("kicad-app", PASS, f"kicad-cli {have} within {spec!r} (no {tc.LOCK_NAME} entry: run `ohmai lock`)")
 
 
-@register("sheet-load", "Every sheet loads on its own in kicad-cli (a broken sheet is silently dropped by ERC)")
+LOAD_RECORD = "load/result.json"
+
+
+def load_record(project: Project) -> dict | None:
+    """The last sheet-load result (out/load/result.json), or None when missing or older than a sheet file."""
+    f = project.out / LOAD_RECORD
+    if not f.is_file():
+        return None
+    try:
+        rec = json.loads(f.read_text(encoding="utf-8"))
+    except ValueError:
+        return None
+    files, _ = sheet_files(project.schematic.resolve()) if project.schematic.is_file() else ([], [])
+    if any(x.stat().st_mtime > f.stat().st_mtime for x in files):
+        return None
+    return rec
+
+
+@register("sheet-load", "Every sheet loads on its own in kicad-cli (a broken sheet is silently dropped by ERC); "
+                        "records loaded + symbol count per sheet in out/load/result.json (ERC is invalid without it)")
 def sheet_load(project: Project, opts: dict) -> Result:
+    from ohmai.sheets import from_opts, symbol_count
+
     if (r := _need_cli("sheet-load")) is not None:
         return r
     if not project.schematic.is_file():
@@ -134,16 +156,54 @@ def sheet_load(project: Project, opts: dict) -> Result:
     files, missing = sheet_files(project.schematic.resolve())
     # also catch orphan sheets in the hardware folder that the root does not reference
     files += [p.resolve() for p in project.schematic.parent.glob("*.kicad_sch") if p.resolve() not in files]
+    sh = from_opts(opts)
+    if sh is not None:
+        files, missing = [f for f in files if f == sh.file], [m for m in missing if Path(m) == sh.file]
     bad = [f"referenced sheet missing: {m}" for m in missing]
     logdir = project.out / "load"
+    rec: dict = {"ok": True, "sheets": {}, "missing": missing}
     for f in files:
         r = kicad.run(["sch", "export", "netlist", "--format", "kicadsexpr",
                        "-o", str(logdir / f"{f.stem}.net"), str(f)], log=logdir / f"{f.stem}.log")
-        if kicad.load_failed(r):
+        n = symbol_count(f.read_text(encoding="utf-8", errors="replace"))
+        loaded = not kicad.load_failed(r)
+        rec["sheets"][f.name] = {"loaded": loaded, "symbols": n}
+        if not loaded:
             bad.append(f"{f.name} does not load (out/load/{f.stem}.log)")
+    total = sum(v["symbols"] for v in rec["sheets"].values())
+    if files and total == 0:
+        bad.append("0 placed symbols in the loaded sheet(s): nothing to check (an empty or unparsed sheet is not a pass)")
+    rec["ok"] = not bad
+    if sh is None:
+        logdir.mkdir(parents=True, exist_ok=True)
+        (project.out / LOAD_RECORD).write_text(json.dumps(rec, indent=2), encoding="utf-8")
     if bad:
         return Result("sheet-load", FAIL, f"{len(bad)} sheet problem(s)", bad)
-    return Result("sheet-load", PASS, f"all {len(files)} sheet(s) load")
+    return Result("sheet-load", PASS, f"all {len(files)} sheet(s) load, {total} symbol(s)")
+
+
+def erc_validity(project: Project, data: dict, opts: dict) -> list[str]:
+    """Why an ERC report cannot count as a pass: a sheet did not load, 0 symbols, or ERC saw fewer sheets."""
+    from ohmai.sheets import instances
+
+    rec = load_record(project)
+    if rec is None:
+        r = sheet_load(project, {k: v for k, v in opts.items() if k != "sheet"})
+        if r.status == SKIP:
+            return []
+        rec = load_record(project) or {"ok": r.status == PASS, "sheets": {}}
+    why = []
+    if not rec.get("ok"):
+        failed = [k for k, v in rec.get("sheets", {}).items() if not v.get("loaded")] + list(rec.get("missing") or [])
+        why.append("sheet-load failed (" + (", ".join(failed) or "see out/load/result.json") + "): ERC skips a sheet "
+                   "that does not load, so its 0 violations would be a false pass")
+    if rec.get("sheets") and sum(v.get("symbols", 0) for v in rec["sheets"].values()) == 0:
+        why.append("0 placed symbols: ERC on an empty or unparsed schematic proves nothing")
+    want = len(instances(project.schematic))
+    got = len(data.get("sheets", []))
+    if got < want:
+        why.append(f"ERC report covers {got} sheet(s), the hierarchy has {want}: a sheet was dropped")
+    return why
 
 
 @register("erc", "kicad-cli ERC, all severities, JSON report in out/erc.json")
@@ -157,10 +217,15 @@ def erc(project: Project, opts: dict) -> Result:
         data = json.loads(out.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         return Result("erc", FAIL, f"no ERC report ({e}); see out/erc.log")
-    vs = [(s.get("path", "?"), v) for s in data.get("sheets", []) for v in s.get("violations", [])]
+    invalid = erc_validity(project, data, opts)
+    if invalid:
+        return Result("erc", FAIL, "ERC result invalid (load before ERC): " + invalid[0], invalid)
+    sh = from_opts(opts)
+    vs = [(s.get("path", "?"), v) for s in data.get("sheets", []) for v in s.get("violations", [])
+          if sh is None or s.get("path") == sh.path]
     sev = Counter(v.get("severity", "?") for _, v in vs)
     details = [f"[{v.get('severity')}] {p} {v.get('type')}: {v.get('description', '')}" for p, v in vs[:50]]
-    summary = f"{len(vs)} violation(s)" + (": " + ", ".join(f"{n} {k}" for k, n in sev.most_common()) if vs else "")
+    summary = (f"sheet {sh.name}: " if sh else "") + f"{len(vs)} violation(s)" + (": " + ", ".join(f"{n} {k}" for k, n in sev.most_common()) if vs else "")
     # Policy: errors fail; warnings fail too unless ERC_ALLOW_WARNINGS is set in ohmai.yaml (never silence ERC).
     allow_warn = bool(project.config.get("checks", {}).get("erc_allow_warnings", False))
     failing = sev.get("error", 0) + (0 if allow_warn else sev.get("warning", 0))
@@ -179,11 +244,19 @@ def netlist(project: Project, opts: dict) -> Result:
         return Result("netlist", FAIL, str(e))
     nd.dump(nl, project.out / "actual_nets.csv")
     rows, todo = nd.load_expected(project.expected_nets)
+    sh = from_opts(opts)
+    refs = nl.refs_on(sh.path) if sh else None
+    if sh is not None:
+        rows = [r for r in rows if any(n.split(".")[0] in refs for n in r[1])]
     errors = nd.diff(nl, rows)
-    summary = f"{len(nl.comps)} parts, {len(nl.nets)} nets; {len(rows)} expected rows, {todo} TODO rows skipped"
+    cov = nd.coverage(nl, rows, refs)
+    errors += cov["errors"]
+    summary = ((f"sheet {sh.name}: {len(refs)} parts; " if sh else f"{len(nl.comps)} parts, {len(nl.nets)} nets; ")
+               + f"{len(rows)} expected rows, {todo} TODO rows skipped; {cov['auto']} unlabeled net(s), "
+               f"{cov['auto_missing']} not in {project.expected_nets.name}")
     if errors:
-        return Result("netlist", FAIL, summary + f"; {len(errors)} error(s)", errors)
-    return Result("netlist", WARN if todo else PASS, summary)
+        return Result("netlist", FAIL, summary + f"; {len(errors)} error(s)", errors + cov["warns"])
+    return Result("netlist", WARN if (todo or cov["warns"]) else PASS, summary, cov["warns"])
 
 
 def _png_converter():
@@ -224,6 +297,13 @@ def render(project: Project, opts: dict) -> Result:
 
             cairosvg.svg2png(url=str(s), write_to=str(p), output_width=int(width), background_color="white")
     pngs = sorted(png_dir.glob("*.png"))
+    sh = from_opts(opts)
+    if sh is not None:
+        mine = [p for p in pngs if (p.stem.endswith("-" + sh.name) if sh.path != "/" else p.stem == project.schematic.stem)]
+        if not mine:
+            return Result("render", FAIL, f"sheet {sh.name}: no PNG rendered", [p.name for p in pngs])
+        return Result("render", PASS, f"sheet {sh.name}: {len(mine)} PNG; look at it",
+                      [str(p.relative_to(project.root)) for p in mine])
     rel = [str(p.relative_to(project.root)) for p in pngs]
     if len(pngs) != len(svgs):
         return Result("render", FAIL, f"{len(pngs)}/{len(svgs)} PNG converted", rel)

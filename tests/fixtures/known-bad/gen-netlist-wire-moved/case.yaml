@@ -1,0 +1,9 @@
+check: gen-netlist
+bug: "generator yaml says C2.1 is on VIN but the drawn sheet wires it to 3V3 (sheet edited after generation)"
+detail: "C2\\.1"
+needs: [kicad-cli, kicad-libs]
+base: ["golden:ldo-led"]
+name: ldo-led
+build: true
+mutate:
+  - {file: hardware/gen/layout/power.yaml, replace: "nets: {\"1\": 3V3, \"2\": GND}}", with: "nets: {\"1\": VIN, \"2\": GND}}", stage: built}

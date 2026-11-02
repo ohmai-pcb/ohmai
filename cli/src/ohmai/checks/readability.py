@@ -5,7 +5,10 @@ Per block sheet (the root only joins blocks and is exempt from the label rules):
               uses must reach that IC pin by wire (through other parts' pins is fine: R in series with
               C is a path); joining them only through net labels fails.
   local-label local net labels inside a block fail unless allow-listed
-              (ohmai.yaml checks.readability.allow_local_labels: fnmatch patterns, for long buses).
+              (ohmai.yaml checks.readability.allow_local_labels: fnmatch patterns, for long buses), or the
+              project uses checks.readability.labels: rail-and-label (labels join blocks inside a sheet;
+              the wire-path rule, i.e. passives wired to their IC pins, stays the hard gate). Global and
+              hierarchical labels are never banned: they join sheets.
   junction    three or more connections at a point without a junction dot; a dot on a plain crossing
               or a four-way dot; wires crossing (allow with checks.readability.allow_crossings: true).
   grid        pins, wire ends, labels, junctions off the 1.27 mm grid.
@@ -98,7 +101,8 @@ class _UF:
         self.p[self.f(a)] = self.f(b)
 
 
-def analyze(text: str, sheet: str = "sheet", root: bool = False, allow_labels=(), allow_crossings=False):
+def analyze(text: str, sheet: str = "sheet", root: bool = False, allow_labels=(), allow_crossings=False,
+            label_policy: str = "allowlist"):
     """Return (fails, warns) for one .kicad_sch text."""
     fails: list[str] = []
     warns: list[str] = []
@@ -312,7 +316,7 @@ def analyze(text: str, sheet: str = "sheet", root: bool = False, allow_labels=()
                     fails.append(f"{sheet}: wire-path: {ref}.{num} reaches {ics[0][0]}.{ics[0][1]} ({nm}) only through a "
                                  f"label; draw the wire (datasheet-figure style)")
         for kind, name, _x, _y in labels:
-            if kind == "label" and not any(fnmatch.fnmatchcase(name, pat) for pat in allow_labels):
+            if kind == "label" and label_policy != "rail-and-label" and not any(fnmatch.fnmatchcase(name, pat) for pat in allow_labels):
                 fails.append(f"{sheet}: local-label: '{name}' inside a block (wire it, make it a port, or allow-list a bus)")
 
     # ---- overlaps
@@ -414,11 +418,19 @@ def readability(project: Project, opts: dict) -> Result:
     files, missing = sheet_files(project.schematic)
     if missing:
         return Result("readability", FAIL, f"missing sheets: {', '.join(missing)}")
+    policy = str(cfg.get("labels") or "allowlist")
+    if policy not in ("allowlist", "rail-and-label"):
+        return Result("readability", FAIL, f"checks.readability.labels: {policy!r} (use allowlist or rail-and-label)")
+    sh = (opts or {}).get("sheet")
     fails, warns = [], []
+    n_done = 0
     for f in files:
+        if sh is not None and f.resolve() != sh.file:
+            continue
+        n_done += 1
         rel = f.name
         fl, wn = analyze(f.read_text(encoding="utf-8"), rel, root=(f.resolve() == project.schematic.resolve()),
-                         allow_labels=allow, allow_crossings=bool(cfg.get("allow_crossings")))
+                         allow_labels=allow, allow_crossings=bool(cfg.get("allow_crossings")), label_policy=policy)
         fails += fl
         warns += wn
     papers = {}
@@ -432,8 +444,8 @@ def readability(project: Project, opts: dict) -> Result:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(["FAIL " + x for x in fails] + ["WARN " + x for x in warns]) + "\n", encoding="utf-8")
     if fails:
-        return Result("readability", FAIL, f"{len(fails)} problem(s) in {len(files)} sheet(s) (out/readability.txt)",
+        return Result("readability", FAIL, f"{len(fails)} problem(s) in {n_done} sheet(s) (out/readability.txt)",
                       fails + ["WARN " + w for w in warns])
     if warns:
-        return Result("readability", WARN, f"{len(files)} sheet(s) readable, {len(warns)} warning(s)", warns)
-    return Result("readability", PASS, f"{len(files)} sheet(s): wired like datasheet figures, no overlaps, on grid")
+        return Result("readability", WARN, f"{n_done} sheet(s) readable, {len(warns)} warning(s)", warns)
+    return Result("readability", PASS, f"{n_done} sheet(s): wired like datasheet figures, no overlaps, on grid")

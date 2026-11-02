@@ -1,0 +1,9 @@
+check: cross-sheet
+bug: "3V3 reaches the LED sheet but expected_nets.csv only pins it on the power sheet (open row)"
+detail: "3V3 spans 2 sheets"
+needs: [kicad-cli, kicad-libs]
+base: ["golden:ldo-led"]
+name: ldo-led
+build: true
+mutate:
+  - {file: expected_nets.csv, replace: "3V3,U1.5,C2.1,R1.1", with: "3V3,U1.5,C2.1,..."}

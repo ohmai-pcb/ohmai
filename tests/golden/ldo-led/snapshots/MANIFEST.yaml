@@ -18,3 +18,12 @@ accepted:
     kicad-cli: 9.0.2
     kicad-libs: 9.0.9.1
     ohmai: 0.1.0.dev0
+- date: '2026-11-02'
+  reason: sheet-load reports symbol count (load-before-ERC); netlist reports unlabeled-net coverage
+  by: ohmai-agent
+  changed:
+  - checks
+  toolchain:
+    kicad-cli: 9.0.2
+    kicad-libs: 9.0.9.1
+    ohmai: 0.1.0.dev0

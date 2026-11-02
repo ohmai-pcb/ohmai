@@ -197,7 +197,8 @@ def test_netlist_accepts_kicad_auto_named_wired_net(proj):
     (proj.root / "expected_nets.csv").write_text("net,nodes\nFB,U1.4,R2.2,R3.1\n")
     comps, nets, lib = good_tps63001()
     nets["Net-(U1-FB)"] = nets.pop("/FB")
-    assert run(proj, "netlist", {"netlist": _nl(proj, comps, nets, lib)}).status == "PASS"
+    r = run(proj, "netlist", {"netlist": _nl(proj, comps, nets, lib)})
+    assert r.status in ("PASS", "WARN") and not any("Net-(U1-FB)" in d for d in r.details), r.details
     nets["/OTHER"] = nets.pop("Net-(U1-FB)")
     r = run(proj, "netlist", {"netlist": _nl(proj, comps, nets, lib)})
     assert r.status == "FAIL" and any(d.startswith("name:") for d in r.details)

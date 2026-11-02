@@ -101,6 +101,12 @@ def _context(project: Project, name: str, opts: dict):
     except (RuntimeError, FileNotFoundError) as e:
         return Result(name, FAIL, str(e))
     pairs, unmatched = bind(nl, files)
+    sh = (opts or {}).get("sheet")
+    if sh is not None:
+        on = nl.refs_on(sh.path)
+        pairs, unmatched = [x for x in pairs if x[0] in on], []
+        if not pairs:
+            return Result(name, PASS, f"sheet {sh.name}: no constrained part on this sheet")
     if not pairs:
         return Result(name, SKIP, f"no netlist part matches a constraints file ({len(files)} file(s))", unmatched)
     bound = [(r, f, c, PinMap(r, c, nl.pins_of(r), _load_map(project, f))) for r, f, c in pairs]

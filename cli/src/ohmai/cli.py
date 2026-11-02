@@ -108,8 +108,20 @@ def cmd_check(a) -> int:
         return 0
     p = _project()
     targets = a.targets or ["current"]
-    names = _expand(targets, p)
     opts = {"fab": a.fab, "against": a.against, "netlist": a.netlist}
+    if getattr(a, "sheet", None):
+        from ohmai.phases import SHEET_CHECKS, resolve
+        from ohmai.sheets import resolve as resolve_sheet
+
+        opts["sheet"] = resolve_sheet(p.schematic, a.sheet)
+        new = []
+        for t in (a.targets or ["schematic"]):
+            ph = resolve(t)
+            if ph is not None and ph.id != "schematic":
+                raise SystemExit(f"ohmai check --sheet: only the schematic phase has a per-sheet gate (got {t})")
+            new += list(SHEET_CHECKS) if ph is not None else [t]
+        targets = new
+    names = _expand(targets, p)
     # Review checks pulled in by a phase are the gate: reported separately so the work checks can pass and be
     # committed before the review exists. Named explicitly (review:<phase>) or with --gate they count.
     gate_names = {n for n in names if n.startswith("review:") and n not in targets and not a.gate}
@@ -131,7 +143,8 @@ def cmd_check(a) -> int:
         warns = sum(r.status == "WARN" for r in work)
         wtxt = f", {warns} WARN" if warns else ""
         gtxt = "".join(f"; GATE {r.name} {r.status}" for r in gate)
-        print(f"RESULT: {'FAIL' if failed else 'PASS'} ({len(work)} checks{wtxt}; summary in out/summary.md){gtxt}")
+        stxt = f"sheet {opts['sheet'].name}: " if opts.get("sheet") else ""
+        print(f"RESULT: {stxt}{'FAIL' if failed else 'PASS'} ({len(work)} checks{wtxt}; summary in out/summary.md){gtxt}")
     return 1 if failed else 0
 
 
@@ -558,6 +571,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--netlist", help="use this kicadsexpr netlist instead of exporting one with kicad-cli")
     s.add_argument("--max-details", type=int, default=15)
     s.add_argument("--gate", action="store_true", help="count the phase's review gate check in RESULT")
+    s.add_argument("--sheet", help="per-sheet gate: with `schematic`, run load, ERC, netlist, generator intent, wires, "
+                                   "pin map, passives, readability and render for this sheet only (name, file or stem)")
     s.set_defaults(fn=cmd_check)
 
     s = sub.add_parser("kicad-libs", help="pinned official KiCad libraries: install the tag, write project lib tables, or fetch project 3D models",

@@ -11,10 +11,14 @@ from ohmai.sexp import find, first, parse
 
 @dataclass
 class Netlist:
-    comps: dict[str, dict] = field(default_factory=dict)  # ref -> {value, part, fields, footprint, flags}
+    comps: dict[str, dict] = field(default_factory=dict)  # ref -> {value, part, fields, footprint, flags, sheet}
     libpins: dict[str, dict[str, str]] = field(default_factory=dict)  # "lib:part" -> {num: name}
     nets: dict[str, set[str]] = field(default_factory=dict)  # net -> {"R1.1", ...}
     where: dict[str, str] = field(default_factory=dict)  # "R1.1" -> net
+
+    def refs_on(self, sheet_path: str) -> set[str]:
+        """Refs placed on the sheet instance '/name/' (KiCad sheetpath names)."""
+        return {r for r, c in self.comps.items() if c.get("sheet", "/") == sheet_path}
 
     def pins_of(self, ref: str) -> dict[str, str]:
         c = self.comps.get(ref, {})
@@ -38,8 +42,10 @@ def load(path: Path) -> Netlist:
             name = _val(f, "name")
             fields[name] = f[2] if len(f) > 2 and isinstance(f[2], str) else ""
         flags = {_val(pr, "name") for pr in find(c, "property") if not first(pr, "value")}
+        sp = first(c, "sheetpath")
         nl.comps[ref] = {"value": _val(c, "value"), "part": f"{lib}:{part}" if lib else part, "fields": fields,
-                         "footprint": _val(c, "footprint"), "flags": flags}
+                         "footprint": _val(c, "footprint"), "flags": flags,
+                         "sheet": _val(sp, "names", "/") if sp else "/"}
     for lp in find(first(root, "libparts") or [], "libpart"):
         key = f"{_val(lp, 'lib')}:{_val(lp, 'part')}" if _val(lp, "lib") else _val(lp, "part")
         nl.libpins[key] = {_val(p, "num"): _val(p, "name") for p in find(first(lp, "pins") or [], "pin")}
