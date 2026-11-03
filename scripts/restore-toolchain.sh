@@ -22,7 +22,7 @@ echo "pid $$ $(date -Is) $(hostname)" >&9
 sudo_() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
 
 # ---- KiCad 9 CLI
-if ! kicad-cli version 2>/dev/null | grep -q "^${KV}\b"; then
+if ! kicad-cli version 2>/dev/null | head -1 | grep -qxF "$KV"; then
   echo "kicad-cli $KV missing; installing" >&2
   apt_kicad() { sudo_ apt-get update -o Acquire::Retries=3 && sudo_ apt-get install -y "kicad=${KV}*"; }
   if ! apt_kicad; then
