@@ -1,8 +1,7 @@
 name: release
 
-# Publishes the CLI wheel to PyPI when a v* tag is pushed, using PyPI trusted publishing (OIDC; no API token).
-# One-time setup on pypi.org: add a trusted publisher for project "ohmai", owner ohmai-pcb, repo ohmai,
-# workflow release.yml, environment pypi. Until that exists the publish step fails and nothing is uploaded.
+# Builds the CLI wheel when a v* tag is pushed, checks the tag equals __version__, and keeps the wheel as a
+# workflow artifact. No PyPI publishing until v0.3 (docs/ROADMAP.md); install from git at the tag meanwhile.
 
 on:
   push:
@@ -27,13 +26,3 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: {name: dist, path: dist/}
 
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write   # trusted publishing
-    steps:
-      - uses: actions/download-artifact@v4
-        with: {name: dist, path: dist/}
-      - uses: pypa/gh-action-pypi-publish@release/v1

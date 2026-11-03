@@ -99,7 +99,6 @@ Details: [`skill/phases/`](skill/phases/), [`docs/ARCHITECTURE.md`](docs/ARCHITE
 
 ### Install & Create a Project
 ```bash
-pip install ohmai                      # once 0.1.0 is on PyPI; until then:
 pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.0#subdirectory=cli"
 # contributors: git clone https://github.com/ohmai-pcb/ohmai.git && cd ohmai && pip install -e "cli[dev]"
 ohmai skill install                    # copies skill/ to ~/.cursor/skills/ohmai (use --dest for other agents)

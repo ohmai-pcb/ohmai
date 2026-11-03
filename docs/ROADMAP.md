@@ -15,8 +15,8 @@ Everything below ships in 0.1.0.
   schematic readability lint, PNG render, BOM schema/lock/diff, RFQ lint, fab export via kicad-cli.
 - Tool quality: two-tier toolchain lock (`lock`, `check toolchain`, `upgrade`), known-bad mutation suite
   (a case per check), golden project ldo-led, weekly canary workflow, optional `skidl-netlist`.
-- Packaging: wheel with template + skill; `release.yml` publishes to PyPI by trusted publishing on a `v*` tag
-  (first upload after the PyPI publisher is configured).
+- Packaging: wheel with template + skill; `release.yml` builds it on a `v*` tag (tag == `__version__`).
+  Install from git at the tag; no PyPI yet (v0.3).
 - Known stubs: creepage (TODO, v0.3), abs-max vs net voltage (v0.3), assembly drawings + STEP in
   `release` (v0.4).
 
@@ -24,7 +24,6 @@ Everything below ships in 0.1.0.
 - Dogfood a real board through rev-A; fix every friction point in the phase guides and the CLI.
 - CI and the weekly canary verified on GitHub (kicad/kicad:9.0 container, sticky comment, KiBot release);
   first real `ohmai upgrade` (kicad-cli 9.0.x) through the suites.
-- First PyPI upload of `ohmai` via `release.yml`.
 - Multi-unit symbols (op-amps, gates, MCU banks) in `schematic build`, pin-map and gen-netlist.
 - pico-k frozen at rev-A and added as a golden project (with layout: drc + gerbers), if ready.
 - `ohmai new --github` (owner-approved `gh repo create` + first push).
@@ -36,6 +35,7 @@ Everything below ships in 0.1.0.
 - A golden board with a routed layout, so drc and gerbers are snapshotted and Freerouting/KiKit upgrades get
   suite coverage.
 - Schematic visual diff (KiBot/KiRi style) posted in PRs.
+- Publish `ohmai` to PyPI: trusted-publishing job in `release.yml` (environment `pypi`), first upload.
 - passive-mpn: more vendor codes (Panasonic ERJ, KEMET, TDK C-series) and voltage/dielectric decode.
 
 ## v0.4: sourcing and outputs

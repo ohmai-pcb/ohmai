@@ -9,8 +9,9 @@ and what comes in 0.2 (first real board through rev-A).
   `approved` requires a logged decision.
 - New `passive-mpn` check: UniRoyal / Yageo RC / Samsung CL / Murata GRM-GCM MPNs are decoded and compared to
   the Value field (known-bad case `passive-mpn-value-mismatch`).
-- `.github/workflows/release.yml`: wheel build + PyPI trusted publishing on `v*` tags (tag must equal
-  `__version__`). Lint is clean, so the CI ruff step passes.
+- `.github/workflows/release.yml`: wheel build on `v*` tags (tag must equal `__version__`), kept as a
+  workflow artifact. Not on PyPI: install with `pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.0#subdirectory=cli"`;
+  PyPI publishing is planned for v0.3. Lint is clean, so the CI ruff step passes.
 - Lessons from dogfooding: new `decisions` check in every phase (each
   `D-xxx` cited in STATUS.md or review resolutions has its own docs/decisions.md entry); `pin-map` WARNs on ICs,
   modules and connectors with no constraints binding (`unbound:`); skill lists agent defaults vs owner decisions.
