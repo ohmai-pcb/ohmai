@@ -38,8 +38,7 @@ and what comes in 0.2 (first real board through rev-A).
   Librarian / SnapEDA / vendor portals (`--source portal`) and HTML walls exit 75 (agent-retryable). The
   `pending-download` status and the human captcha handoff are removed.
 - `ohmai kicad-libs fetch|import|verify|list <MPN>` (new): the supported library tool for parts the pinned KiCad
-  libraries lack. `fetch` prints vendor (TI/Ultra Librarian/ST/ADI/Microchip/NXP/SnapEDA) download steps and
-  records `pending-download`; `import` takes a vetted zip/dir/.kicad_sym/.kicad_mod, merges into
+  libraries lack. `fetch` downloads the part (see above); `import` takes a vetted zip/dir/.kicad_sym/.kicad_mod, merges into
   `hardware/lib/OhmAI_Project.*`, adds `${KIPRJMOD}` table rows (backed up) and writes provenance to
   `hardware/lib/manifest.yaml`; `verify` checks every symbol pin number+name against the datasheet pin table;
   `--status provisional` registers a stopgap. Skill phases 4/7 and SKILL.md: agents run the tool, never

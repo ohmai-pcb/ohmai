@@ -10,7 +10,7 @@ don't improvise.
     source ~/ohmai-venv/env.sh
     cd <project> && ohmai check toolchain
 The script is idempotent and does the following:
-- Installs KiCad 9 (`kicad`, default 9.0.2) with apt. If the Debian HTTP proxy fails, it switches the
+- Installs KiCad pinned to `kicad=$KICAD_VERSION*` (default 9.0.2; the exact version is checked, not just the major) with apt; `easyeda2kicad` is pinned to 1.0.1. If the Debian HTTP proxy fails, it switches the
   sources to `https://deb.debian.org` (the originals are kept as `*.bak-ohmai`) and retries.
 - Installs `poppler-utils` and `librsvg2-bin`.
 - Creates the **durable** venv `~/ohmai-venv`, runs `pip install -e cli[dev,layout] easyeda2kicad`, and

@@ -53,7 +53,7 @@ def test_unbound_connector_warns():
 
 
 # --- passive-mpn -------------------------------------------------------------------------------------
-from ohmai.checks.passivempn import compare, decode  # noqa: E402
+from ohmai.checks.passivempn import compare, decode, summarize  # noqa: E402
 
 
 def test_decode_vendor_codes():
@@ -110,3 +110,12 @@ def test_set_front_approved_needs_logged_decision(tmp_path):
     assert "gate: approved" in st.read_text()
     with pytest.raises(ValueError):
         set_front(st, phase="99")
+
+
+def test_passive_mpn_reports_skipped_count():
+    comps = {"R1": {"value": "1k", "fields": {"MPN": "0603WAF1001T5E"}},
+             "R2": {"value": "1k", "fields": {"MPN": "ERJ-3EKF1001V"}},
+             "C1": {"value": "1u", "fields": {"MPN": "XYZ-1U"}}}
+    errs, unknown, n = compare(comps)
+    assert (n, errs, len(unknown)) == (1, [], 2)
+    assert "skipped 2 MPN(s) not decodable" in summarize(n, errs, unknown)

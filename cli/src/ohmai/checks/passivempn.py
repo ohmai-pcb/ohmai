@@ -79,6 +79,10 @@ def compare(comps: dict[str, dict], tol: float = 0.011) -> tuple[list[str], list
     return errors, unknown, n
 
 
+def summarize(n: int, errors: list[str], unknown: list[str]) -> str:
+    return f"{n} R/C MPN(s) decoded, {len(errors)} mismatch(es); skipped {len(unknown)} MPN(s) not decodable"
+
+
 @register("passive-mpn", "Resistor/capacitor MPN encodes the same value as the Value field (UniRoyal, Yageo, Samsung, Murata)")
 def passive_mpn(project: Project, opts: dict) -> Result:
     from ohmai.checks.schematic import export_netlist
@@ -96,7 +100,7 @@ def passive_mpn(project: Project, opts: dict) -> Result:
         on = nl.refs_on(sh.path)
         comps = {r: c for r, c in comps.items() if r in on}
     errors, unknown, n = compare(comps)
-    summary = f"{n} R/C MPN(s) decoded; {len(errors)} mismatch(es), {len(unknown)} not decodable"
+    summary = summarize(n, errors, unknown)
     if errors:
         return Result("passive-mpn", FAIL, summary, errors + unknown)
     if n == 0:

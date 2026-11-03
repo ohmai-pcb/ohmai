@@ -15,7 +15,6 @@ from ohmai import passives as pv
 from ohmai.checks.placement import check_placement
 from ohmai.cli import build_parser, main
 from ohmai.layout import placement as pl
-from ohmai.layout import pourgeom as pg
 from ohmai.project import find_project
 
 PCB_MULTI_ISLAND = """(kicad_pcb
@@ -154,6 +153,8 @@ def test_improvement2c_multi_island_courtyard(demo_proj):
 
 
 def test_improvement2b_3_5_placement_keepouts_checklist_and_pour(demo_proj):
+    pytest.importorskip("shapely")   # layout extra
+    pytest.importorskip("numpy")
     layout_yaml = demo_proj.root / "hardware" / "layout.yaml"
     layout_yaml.write_text(
         yaml.safe_dump(
@@ -212,7 +213,10 @@ def test_improvement2b_3_5_placement_keepouts_checklist_and_pour(demo_proj):
 
 
 def test_improvement3_pourgeom_neck_with_xy():
+    pytest.importorskip("shapely")   # optional extra: pip install 'cli[layout]'
     from shapely.geometry import Polygon, box
+
+    from ohmai.layout import pourgeom as pg
 
     # Hourglass polygon with a 0.4 mm neck at (5.0, 5.0)
     left = box(0.0, 0.0, 4.8, 10.0)
@@ -227,6 +231,8 @@ def test_improvement3_pourgeom_neck_with_xy():
 
 
 def test_improvement2d_4_layout_cli_staged_and_opt_passes(demo_proj, tmp_path):
+    pytest.importorskip("shapely")   # layout extra
+    pytest.importorskip("numpy")
     # Verify autoroute parser defaults (--opt-passes=2, --timeout=00:10:00)
     ap = build_parser()
     ns = ap.parse_args(["layout", "autoroute"])
