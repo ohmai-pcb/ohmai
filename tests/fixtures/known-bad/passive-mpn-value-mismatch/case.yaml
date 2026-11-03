@@ -1,0 +1,11 @@
+check: passive-mpn
+bug: "resistor value 1k but its MPN orders 10 kohm"
+detail: "R1: value 1k but MPN 0603WAF1002T5E"
+base: ["golden:ldo-led", ldo-led]
+opts: {netlist: board.net}
+prepare:
+  - {file: board.net.yaml, replace: "mpn: FICT-R-1K-0603", with: "mpn: 0603WAF1001T5E"}
+  - {file: board.net.yaml, replace: "C1: {value: 1u, part: 'Device:C', mpn: FICT-C-1U-0603", with: "C1: {value: 1u, part: 'Device:C', mpn: CL10A105KB8NNNC"}
+  - {file: board.net.yaml, replace: "C2: {value: 1u, part: 'Device:C', mpn: FICT-C-1U-0603", with: "C2: {value: 1u, part: 'Device:C', mpn: GRM188R61A105KA61D"}
+mutate:
+  - {file: board.net.yaml, replace: "mpn: 0603WAF1001T5E", with: "mpn: 0603WAF1002T5E"}

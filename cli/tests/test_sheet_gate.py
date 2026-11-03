@@ -1,10 +1,8 @@
 """Feedback 2026-11 checks: generator intent vs KiCad, wire ends, unlabeled-net coverage, label policy, sheets."""
 
-from pathlib import Path
 
 import pytest
 import yaml
-
 from helpers import good_tps63001, netlist
 
 from ohmai import sheets
@@ -31,7 +29,8 @@ def test_gen_netlist_matches_good(tmp_path):
 
 def test_gen_netlist_split_merged_missing_nc(tmp_path):
     comps, nets, lib = good_tps63001()
-    nets["/FB"] = ["U1.4", "R2.2"]; nets["/FB2"] = ["R3.1"]                  # wire stopped short: split
+    nets["/FB"] = ["U1.4", "R2.2"]
+    nets["/FB2"] = ["R3.1"]                  # wire stopped short: split
     errs, _ = compare_intent(_nl(tmp_path, comps, nets, lib), _intent())
     assert any(e.startswith("split: generator net FB") for e in errs), errs
     comps, nets, lib = good_tps63001()
@@ -39,7 +38,8 @@ def test_gen_netlist_split_merged_missing_nc(tmp_path):
     errs, _ = compare_intent(_nl(tmp_path, comps, nets, lib), _intent())
     assert any(e.startswith("merged:") for e in errs), errs
     comps, nets, lib = good_tps63001()
-    nets["/N1"] = ["U1.1", "C1.1"]; nets["/VCC"] = ["U1.10"]                # NC pin wired + C1.1 moved
+    nets["/N1"] = ["U1.1", "C1.1"]
+    nets["/VCC"] = ["U1.10"]                # NC pin wired + C1.1 moved
     errs, _ = compare_intent(_nl(tmp_path, comps, nets, lib), {**_intent(), "C9.1": "VCC"})
     assert any(e.startswith("nc: generator says U1.1") for e in errs), errs
     assert any(e.startswith("missing: VCC: C9.1") for e in errs), errs

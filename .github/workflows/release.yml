@@ -1,0 +1,39 @@
+name: release
+
+# Publishes the CLI wheel to PyPI when a v* tag is pushed, using PyPI trusted publishing (OIDC; no API token).
+# One-time setup on pypi.org: add a trusted publisher for project "ohmai", owner ohmai-pcb, repo ohmai,
+# workflow release.yml, environment pypi. Until that exists the publish step fails and nothing is uploaded.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Tag matches __version__
+        run: |
+          v=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('cli/src/ohmai/__init__.py').read()).group(1))")
+          test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != v$v"; exit 1; }
+      - run: pip install build && python -m build --wheel cli -o dist   # sdist unsupported: template/ lives outside cli/
+      - run: python -m zipfile -l dist/*.whl | grep -q "ohmai/_data/skill/SKILL.md"
+      - uses: actions/upload-artifact@v4
+        with: {name: dist, path: dist/}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: dist, path: dist/}
+      - uses: pypa/gh-action-pypi-publish@release/v1

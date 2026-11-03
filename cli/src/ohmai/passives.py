@@ -7,8 +7,6 @@ hardware/**/*.kicad_sch, hardware/gen/layout/*.yaml, and hardware/*.kicad_pcb.
 
 from __future__ import annotations
 
-from ohmai.netlist import parse_value
-
 import csv
 import io
 import json
@@ -18,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from ohmai import sexp
+from ohmai.netlist import parse_value
 from ohmai.project import Project
 
 PASSIVE_REF_RE = re.compile(r"^(R|C|L|FB)\d+$")

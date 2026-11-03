@@ -99,7 +99,6 @@ def dumps(node, indent: int = 0) -> str:
     if not has_sublist:
         atoms = " ".join(_fmt_atom(c) for c in node[1:])
         return f"({head} {atoms})" if atoms else f"({head})"
-    pad = "  " * indent
     cpad = "  " * (indent + 1)
     parts = [f"({head}"]
     inline_prefix = []

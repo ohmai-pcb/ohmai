@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from test_cli import _review_proj, _write_review
+from test_cli import proj as proj  # noqa: F401  (fixture)
+
 import ohmai.checks as checks
 from ohmai.checks import FAIL, Result
 from ohmai.checks import review as review_check
 from ohmai.checks.readability import readability
-
-from test_cli import _review_proj, _write_review, proj  # noqa: F401  (fixture)
 
 
 def _with_readability(monkeypatch, status):
@@ -80,11 +81,12 @@ def test_review_start_writes_pack(proj):
 def test_pack_works_for_every_gate(proj, monkeypatch):
     """Every reviewable phase gets a pack: MANIFEST, BRIEF, resolutions, files_hash inputs, sources."""
     import shutil as _sh
+
     from ohmai.review import DEFAULT_GATES, gates, pack, start
 
     monkeypatch.setattr(_sh, "which", lambda name: None)   # no renderers: packs must still be written
     p = _review_proj(proj)
-    for ph, g in gates(p).items():
+    for g in gates(p).values():
         for pat in list(g.scope) + list(g.sources):
             if "*" in pat:
                 f = p.root / pat.replace("*.", "x.").replace("*", "x")

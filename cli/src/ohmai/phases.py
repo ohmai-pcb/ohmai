@@ -23,7 +23,7 @@ PHASES: tuple[Phase, ...] = (
           "Owner approves parts with a named second source"),
     Phase(5, "constraints", "Per-part constraints", ("constraints", "mcu-pin-budget", "review:constraints"), "Independent review of every constraints file + owner approval"),
     Phase(6, "rfq", "Supplier questions / RFQs", ("rfq",), "Owner sends the RFQs"),
-    Phase(7, "schematic", "Schematic", ("kicad-app", "kicad-libs", "lib-refs", "toolchain", "sheet-load", "erc", "netlist", "gen-netlist", "wire-ends", "skidl-netlist", "pin-map", "single-source", "passives", "pullups",
+    Phase(7, "schematic", "Schematic", ("kicad-app", "kicad-libs", "lib-refs", "toolchain", "sheet-load", "erc", "netlist", "gen-netlist", "wire-ends", "skidl-netlist", "pin-map", "single-source", "passives", "passive-mpn", "pullups",
            "i2c-addr", "evb-compare", "readability", "render", "cross-sheet", "review:schematic"),
           "Human reviews the schematic diff"),
     Phase(8, "layout", "Layout", ("kicad-app", "toolchain", "lib-refs-strict", "footprints", "escape-room", "drc", "creepage", "review:layout"), "3D view, 1:1 print, pin-1/rotation check"),
@@ -44,7 +44,7 @@ PHASES = tuple(Phase(p.num, p.id, p.title,
 # passives, readability, render. The project-wide schematic gate is every sheet passing this, plus the
 # project-only checks (toolchain, libraries, single-source, pull-ups, I2C, EVB compare, cross-sheet) and
 # the separate review.
-SHEET_CHECKS: tuple[str, ...] = ("sheet-load", "erc", "netlist", "gen-netlist", "wire-ends", "pin-map", "passives",
+SHEET_CHECKS: tuple[str, ...] = ("sheet-load", "erc", "netlist", "gen-netlist", "wire-ends", "pin-map", "passives", "passive-mpn",
                                  "readability", "render")
 
 BY_ID = {p.id: p for p in PHASES}

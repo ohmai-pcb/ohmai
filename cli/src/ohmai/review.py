@@ -541,7 +541,8 @@ def _svg_to_png(svgs, dest: Path, width: int) -> list[str]:
 
 def _render_pngs(project: Project, dest: Path, width: int = 3508) -> list[str]:
     """Best effort: hi-res PNG of every schematic sheet (kicad-cli + rsvg-convert). Returns notes."""
-    import shutil, tempfile
+    import shutil
+    import tempfile
     sch = getattr(project, "schematic", None)
     if not sch or not Path(sch).is_file():
         return ["no schematic found; no sheet PNGs"]
@@ -561,7 +562,8 @@ PCB_VIEWS = {"front": "F.Cu,F.Paste,F.Silkscreen,F.Fab,Edge.Cuts", "back": "B.Cu
 
 def _render_pcb(project: Project, dest: Path, width: int = 3508) -> list[str]:
     """Best effort: board PNGs (front, back, all copper) and, if present, 3D renders."""
-    import shutil, tempfile
+    import shutil
+    import tempfile
     pcb = getattr(project, "pcb", None)
     if not pcb or not Path(pcb).is_file():
         return ["no .kicad_pcb found; no board renders"]
@@ -604,13 +606,15 @@ def pack(project: Project, phase: str, files: list[Path] | None = None) -> Path:
     listed = []
     for name in ("BRIEF.md", "resolutions.md"):
         if (d / name).is_file():
-            shutil.copy2(d / name, out / name); listed.append(name)
+            shutil.copy2(d / name, out / name)
+            listed.append(name)
     def put(f, sub):
         f = Path(f)
         rel = f.relative_to(project.root) if f.is_absolute() else f
         tgt = out / sub / rel
         tgt.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(project.root / rel, tgt); listed.append(f"{sub}/{rel.as_posix()}")
+        shutil.copy2(project.root / rel, tgt)
+        listed.append(f"{sub}/{rel.as_posix()}")
     for f in files:
         put(f, "files")
     srcs = [s for s in _glob(project, gate.sources, []) if s not in set(map(Path, files))] if gate.sources else []
@@ -621,7 +625,8 @@ def pack(project: Project, phase: str, files: list[Path] | None = None) -> Path:
         notes += fn(project, out / "visuals")
     fab = project.root / "out" / phase   # anything the phase already rendered (e.g. out/fab/*.png, gerber zips)
     for f in sorted(fab.glob("*.png")) + sorted(fab.glob("*.zip")) + sorted(fab.glob("*.pdf")) if fab.is_dir() else []:
-        (out / "visuals").mkdir(exist_ok=True); shutil.copy2(f, out / "visuals" / f.name)
+        (out / "visuals").mkdir(exist_ok=True)
+        shutil.copy2(f, out / "visuals" / f.name)
     if (out / "visuals").is_dir():
         listed += [f"visuals/{p.name}" for p in sorted((out / "visuals").iterdir())]
     M = [f"# Review pack: `{phase}`", "",

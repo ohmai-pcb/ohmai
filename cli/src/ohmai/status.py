@@ -112,3 +112,49 @@ def load(path: Path) -> Status:
         st.problems.append(f"{path} not found")
         return st
     return parse(path.read_text(encoding="utf-8"))
+
+
+def set_front(path: Path, phase: str | None = None, gate: str | None = None, decision: str | None = None,
+              today: str | None = None) -> list[str]:
+    """Set `phase` / `gate` in STATUS.md front matter in place (comments and other keys kept). Returns the changes.
+
+    Agents use this instead of hand-editing YAML. `--gate approved` records an owner approval, so it needs the
+    decision id that logs it, and that id must already have its own entry in docs/decisions.md.
+    """
+    import datetime
+
+    text = path.read_text(encoding="utf-8")
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.S)
+    if not m:
+        raise ValueError("no YAML front matter in STATUS.md")
+    fm, changes = m.group(1), []
+    if gate is not None and gate not in ("open", "in_review", "approved"):
+        raise ValueError(f"gate must be open | in_review | approved, not {gate!r}")
+    if gate == "approved":
+        if not decision or not re.fullmatch(r"D-\d{3}", decision):
+            raise ValueError("--gate approved needs --decision D-xxx (the owner approval you recorded)")
+        log = path.parent / "docs" / "decisions.md"
+        if not log.is_file() or not re.search(rf"^\s*(?:\|\s*|#+\s*){decision}\b", log.read_text(encoding="utf-8"), re.M):
+            raise ValueError(f"{decision} has no entry in docs/decisions.md; record the owner's decision first")
+
+    def put(fm: str, key: str, val: str) -> str:
+        pat = re.compile(rf"^({key}:[ \t]*)([^#\n]*?)([ \t]*(#.*)?)$", re.M)
+        if pat.search(fm):
+            old = pat.search(fm).group(2).strip()
+            if old != val:
+                changes.append(f"{key}: {old} -> {val}")
+            return pat.sub(lambda mm: f"{mm.group(1)}{val}{mm.group(3)}", fm, count=1)
+        changes.append(f"{key}: (none) -> {val}")
+        return fm + f"\n{key}: {val}"
+
+    if phase is not None:
+        ph = resolve(str(phase))
+        if ph is None:
+            raise ValueError(f"unknown phase {phase!r} (1-12 or a phase id)")
+        fm = put(fm, "phase", str(ph.num))
+    if gate is not None:
+        fm = put(fm, "gate", gate)
+    if changes:
+        fm = put(fm, "updated", today or datetime.date.today().isoformat())
+        path.write_text(text[:m.start(1)] + fm + text[m.end(1):], encoding="utf-8")
+    return changes

@@ -60,6 +60,15 @@ def cmd_status(a) -> int:
     from ohmai.status import load
 
     p = _project()
+    if getattr(a, "set_phase", None) or getattr(a, "gate", None):
+        from ohmai.status import set_front
+        try:
+            changes = set_front(p.root / "STATUS.md", a.set_phase, a.gate, a.decision)
+        except ValueError as e:
+            print(f"ohmai status: {e}", file=sys.stderr)
+            return 2
+        print("STATUS.md: " + ("; ".join(changes) if changes else "unchanged"))
+        return 0
     st = load(p.root / "STATUS.md")
     if a.json:
         print(json.dumps(st.as_dict(), indent=2, default=str))
@@ -581,6 +590,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("status", help="show phase, gate, decisions, open questions from STATUS.md")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--set-phase", metavar="N|ID", help="set the front-matter phase (1-12 or a phase id)")
+    s.add_argument("--gate", choices=["open", "in_review", "approved"], help="set the front-matter gate")
+    s.add_argument("--decision", metavar="D-xxx", help="with --gate approved: the logged owner decision")
     s.set_defaults(fn=cmd_status)
 
     s = sub.add_parser("check", help="run the checks for a phase (or single checks)",

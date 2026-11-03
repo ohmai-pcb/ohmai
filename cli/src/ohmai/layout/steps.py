@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 import shutil
-import subprocess
 from pathlib import Path
 
 from .. import sexp
@@ -346,7 +345,7 @@ def run_handroute(
             if path:
                 simp = grid_mod.simplify(path)
                 segs = []
-                for (l0, i0, j0), (l1, i1, j1) in zip(simp, simp[1:]):
+                for (l0, i0, j0), (l1, i1, j1) in zip(simp, simp[1:], strict=False):
                     if l0 == l1:
                         x0, y0 = g.xy(i0, j0)
                         x1, y1 = g.xy(i1, j1)

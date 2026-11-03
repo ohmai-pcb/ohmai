@@ -117,6 +117,7 @@ def test_copper_island_track_end_via_is_terminal():
 
 def test_copper_island_ignores_ripped_copper():
     from shapely.geometry import LineString, Point
+
     from ohmai.layout.grid import copper_island
     items = [("N", {"F": LineString([(0, 0), (1, 0)]).buffer(0.075)}),
              ("N", {"F": Point(1, 0).buffer(0.225), "B": Point(1, 0).buffer(0.225)})]

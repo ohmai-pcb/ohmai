@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import shutil
 from pathlib import Path
 
@@ -13,13 +12,11 @@ import yaml
 from ohmai import datasheets as ds
 from ohmai import models3d
 from ohmai import passives as pv
-from ohmai import trailers as tr
 from ohmai.checks.placement import check_placement
 from ohmai.cli import build_parser, main
 from ohmai.layout import placement as pl
 from ohmai.layout import pourgeom as pg
 from ohmai.project import find_project
-
 
 PCB_MULTI_ISLAND = """(kicad_pcb
   (version 20241229)
@@ -297,6 +294,7 @@ def test_improvement6_7_pre_push_guard_and_auto_installed_hooks(tmp_path: Path):
     """Improvement 6 & 7: `ohmai new` auto-installs commit-msg + pre-push hooks, supports `--anonymous`,
     and `check_pre_push` catches tracked PDFs, `@localhost` emails, and anonymous-mode violations."""
     import subprocess
+
     from ohmai.newproject import create
     from ohmai.trailers import check_pre_push, hook_status
 
