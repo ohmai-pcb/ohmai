@@ -11,3 +11,7 @@ datasheets/*.pdf
 .env.*
 *.pem
 *.key
+
+# Private board notes stay in the private project repos, never here.
+docs/RETROSPECTIVE*.md
+docs/private/
