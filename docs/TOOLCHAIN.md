@@ -6,7 +6,7 @@ happens `ohmai check toolchain` FAILs, or `kicad-cli` / `ohmai` disappear. Resto
 don't improvise.
 
 ## Restore (after any toolchain FAIL)
-    /workspace/ohmai/scripts/restore-toolchain.sh
+    scripts/restore-toolchain.sh          # run from the ohmai repo root
     source ~/ohmai-venv/env.sh
     cd <project> && ohmai check toolchain
 The script is idempotent and does the following:
