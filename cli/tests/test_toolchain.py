@@ -41,7 +41,7 @@ def fake(p, **over):
     out.update({
         "kicad-app": {"version": "9.0.2", "sha256": "a" * 64, "hash_scope": "machine"},
         "kicad-libs": {"version": "9.0.9.1", "sha256": "b" * 64, "hash_scope": "portable", "files": 2},
-        "python": {"version": "3.12.1"}, "ohmai": {"version": "0.1.0.dev0"}, "git": {"version": "2.47.3"},
+        "python": {"version": "3.12.1"}, "ohmai": {"version": "0.1.0"}, "git": {"version": "2.47.3"},
         "rsvg-convert": {"version": "2.60.0"},
     })
     for n in tc.tool_names():

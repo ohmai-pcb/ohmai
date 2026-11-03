@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.1.0.dev0 (unreleased)
+## 0.1.0 (2026-11-03)
+First release. An AI-agent skill plus the `ohmai` CLI that takes a PCB idea through 12 gated
+phases (requirements to bring-up) with deterministic KiCad 9 checks, owner review gates, attributed commits,
+a pinned toolchain, a known-bad mutation suite and a golden project. See docs/ROADMAP.md for what is in 0.1.0
+and what comes in 0.2 (first real board through rev-A).
+- `ohmai status --set-phase/--gate [--decision D-xxx]`: front-matter edits without hand-editing STATUS.md;
+  `approved` requires a logged decision.
+- New `passive-mpn` check: UniRoyal / Yageo RC / Samsung CL / Murata GRM-GCM MPNs are decoded and compared to
+  the Value field (known-bad case `passive-mpn-value-mismatch`).
+- `.github/workflows/release.yml`: wheel build + PyPI trusted publishing on `v*` tags (tag must equal
+  `__version__`). Lint is clean, so the CI ruff step passes.
 - Lessons from dogfooding: new `decisions` check in every phase (each
   `D-xxx` cited in STATUS.md or review resolutions has its own docs/decisions.md entry); `pin-map` WARNs on ICs,
   modules and connectors with no constraints binding (`unbound:`); skill lists agent defaults vs owner decisions.

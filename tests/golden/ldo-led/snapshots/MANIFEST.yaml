@@ -3,7 +3,7 @@ golden: ldo-led
 toolchain:
   kicad-cli: 9.0.2
   kicad-libs: 9.0.9.1
-  ohmai: 0.1.0.dev0
+  ohmai: 0.1.0
 accepted:
 - date: '2026-10-15'
   reason: initial snapshot of the ldo-led reference board (KiCad 9.0.2, libraries 9.0.9.1)
@@ -17,7 +17,7 @@ accepted:
   toolchain:
     kicad-cli: 9.0.2
     kicad-libs: 9.0.9.1
-    ohmai: 0.1.0.dev0
+    ohmai: 0.1.0
 - date: '2026-11-02'
   reason: sheet-load reports symbol count (load-before-ERC); netlist reports unlabeled-net coverage
   by: ohmai-agent
@@ -26,4 +26,4 @@ accepted:
   toolchain:
     kicad-cli: 9.0.2
     kicad-libs: 9.0.9.1
-    ohmai: 0.1.0.dev0
+    ohmai: 0.1.0

@@ -2,26 +2,32 @@
 
 Versions apply to the tool (CLI + skill + template), all versioned together.
 
-## v0.1: skeleton (now)
+## v0.1.0: first release (2026-11-03)
+Everything below ships in 0.1.0.
 - Skill + 12 phase guides, project template, Apache-2.0.
-- CLI: `new`, `status`, `check`, `release --dry-run`, `skill install`.
-- Working: STATUS.md parsing, doc-marker checks, constraints schema validation, sheet-load, ERC, DRC,
-  netlist diff, pin-map, single-source, passives (C/R/L presence + value range), pull-ups, I2C uniqueness,
-  EVB-compare presence, PNG render, BOM schema/lock/diff (fab actual-purchase + power-rating downgrade),
-  RFQ standalone lint, fab export via kicad-cli.
-- Stubs: creepage (TODO), abs-max vs net voltage (not started), assembly drawings, STEP in `release`.
-- Tool quality (2026-10-15): two-tier toolchain lock (`ohmai lock`, `check toolchain`, `ohmai upgrade`),
-  known-bad mutation suite (a case per check; creepage has none until it is implemented), golden projects
-  (ldo-led), weekly canary. Optional research-tool integrations: `skidl-netlist` (SKiDL, separate process),
-  `ohmai parts search` (jlcparts DB). See docs/TESTING.md, docs/ARCHITECTURE.md.
+- CLI: `new` (`--anonymous`), `adopt`, `status` (+ `--set-phase/--gate/--decision`), `check` (per phase,
+  per sheet `--sheet`, `--gate`), `review start`, `commit`/`hooks`, `release` (`--dry-run`), `skill install`,
+  `schematic build`, `layout {fit,fanout,autoroute,pour,handroute}`, `passives swap`, `datasheets`,
+  `kicad-libs` (pinned libs + agent fetch/import of missing parts), `parts search` (jlcparts), `doctor`.
+- Checks: STATUS.md parsing, doc markers, decisions log, constraints schema, sheet-load, ERC, DRC, netlist
+  diff, gen-netlist, wire-ends, cross-sheet, pin-map (+ unbound WARN), single-source, passives,
+  passive-mpn (MPN-encoded value vs Value field), pull-ups, I2C uniqueness, EVB-compare presence,
+  schematic readability lint, PNG render, BOM schema/lock/diff, RFQ lint, fab export via kicad-cli.
+- Tool quality: two-tier toolchain lock (`lock`, `check toolchain`, `upgrade`), known-bad mutation suite
+  (a case per check), golden project ldo-led, weekly canary workflow, optional `skidl-netlist`.
+- Packaging: wheel with template + skill; `release.yml` publishes to PyPI by trusted publishing on a `v*` tag
+  (first upload after the PyPI publisher is configured).
+- Known stubs: creepage (TODO, v0.3), abs-max vs net voltage (v0.3), assembly drawings + STEP in
+  `release` (v0.4).
 
-## v0.2: first real project end to end
-- Dogfood on one real board through rev-A. Fix every friction point in the phase guides.
-- Template CI verified on GitHub (kicad/kicad:9.0 container, sticky comment, KiBot release).
-- pico-k frozen at rev-A and added as a golden project by reference (with layout: drc + gerbers artefacts).
-- First canary run on GitHub; first real `ohmai upgrade` (kicad-cli 9.0.x) through the suites.
-- Publish `ohmai` to PyPI. `ohmai new --github` (owner-approved `gh repo create`).
-- `ohmai status --set-phase/--gate` so agents do not hand-edit the front matter.
+## v0.2: first real board end to end
+- Dogfood a real board through rev-A; fix every friction point in the phase guides and the CLI.
+- CI and the weekly canary verified on GitHub (kicad/kicad:9.0 container, sticky comment, KiBot release);
+  first real `ohmai upgrade` (kicad-cli 9.0.x) through the suites.
+- First PyPI upload of `ohmai` via `release.yml`.
+- Multi-unit symbols (op-amps, gates, MCU banks) in `schematic build`, pin-map and gen-netlist.
+- pico-k frozen at rev-A and added as a golden project (with layout: drc + gerbers), if ready.
+- `ohmai new --github` (owner-approved `gh repo create` + first push).
 
 ## v0.3: design-intent checks
 - Net voltage annotations (from the power tree) → abs-max and capacitor/resistor rating checks per pin.
@@ -29,8 +35,8 @@ Versions apply to the tool (CLI + skill + template), all versioned together.
   (plus its known-bad case).
 - A golden board with a routed layout, so drc and gerbers are snapshotted and Freerouting/KiKit upgrades get
   suite coverage.
-- Readability lint for schematics (crossings, 4-way junctions, hidden refs, label overlap).
 - Schematic visual diff (KiBot/KiRi style) posted in PRs.
+- passive-mpn: more vendor codes (Panasonic ERJ, KEMET, TDK C-series) and voltage/dielectric decode.
 
 ## v0.4: sourcing and outputs
 - Sourcing adapters (Nexar/Octopart, LCSC, DigiKey, Mouser) that fill price/stock/lifecycle with

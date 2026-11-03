@@ -99,8 +99,9 @@ Details: [`skill/phases/`](skill/phases/), [`docs/ARCHITECTURE.md`](docs/ARCHITE
 
 ### Install & Create a Project
 ```bash
-git clone https://github.com/ohmai-pcb/ohmai.git && cd ohmai
-pip install -e "cli[dev]"
+pip install ohmai                      # once 0.1.0 is on PyPI; until then:
+pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.0#subdirectory=cli"
+# contributors: git clone https://github.com/ohmai-pcb/ohmai.git && cd ohmai && pip install -e "cli[dev]"
 ohmai skill install                    # copies skill/ to ~/.cursor/skills/ohmai (use --dest for other agents)
 
 # Create a new project (add --anonymous for clean public repos using role labels & repo-relative paths)
@@ -117,7 +118,7 @@ Then tell your agent: *"My idea is a solar-powered USB-C charger for 2 phones, u
 | Command | Purpose |
 |---|---|
 | `ohmai new <path> --idea "..." [--anonymous]` | Initialize a project repo from `template/`, pin `.ohmai/phases/`, and install git hooks |
-| `ohmai status` | Show current phase, gate status, locked decisions, and open questions |
+| `ohmai status [--set-phase N --gate G --decision D-xxx]` | Show current phase, gate status, locked decisions, and open questions; set phase/gate in STATUS.md front matter |
 | `ohmai check [current\|<phase>\|<check>] [--gate]` | Run deterministic checks (`--list` to view all checks); writes `out/summary.md` |
 | `ohmai review start <phase>` | Generate `reviews/<phase>/BRIEF.md` (with SHA-256 `files_hash`) and `resolutions.md` |
 | `ohmai layout {fit,fanout,autoroute,pour,handroute}` | Run the 4-stage PCB layout helpers (`critical_loops`, `keepouts`, pour neck width) |
@@ -127,7 +128,7 @@ Then tell your agent: *"My idea is a solar-powered USB-C charger for 2 phones, u
 | `ohmai kicad-libs {fetch,import,verify,list} <MPN>` | Agent-only fetch/import of parts the pinned libraries lack (LCSC/EasyEDA via easyeda2kicad, direct manufacturer URL) into `hardware/lib/` + lib tables + `manifest.yaml`, datasheet pin check and pin types; walled sources exit 75 |
 | `ohmai commit -m "..." [-a]` / `ohmai hooks {install,status}` | Commit with `OhmAI-Author:` trailers and manage `commit-msg` / `pre-push` hooks |
 | `ohmai lock` / `ohmai upgrade` / `ohmai release <tag>` | Manage `toolchain.lock.yaml` or build a fabrication release (`--dry-run` supported) |
-| `ohmai golden` / `ohmai known-bad` | Run golden reference projects and the 25 planted-bug mutation fixtures (`tests/known-bad/`) |
+| `ohmai golden` / `ohmai known-bad` | Run golden reference projects and the planted-bug mutation fixtures (`tests/fixtures/known-bad/`) |
 
 ---
 
