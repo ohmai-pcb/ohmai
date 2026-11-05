@@ -15,3 +15,6 @@ datasheets/*.pdf
 # Private board notes stay in the private project repos, never here.
 docs/RETROSPECTIVE*.md
 docs/private/
+
+# Timestamped pre-edit safety copies stay local.
+*.bak.*

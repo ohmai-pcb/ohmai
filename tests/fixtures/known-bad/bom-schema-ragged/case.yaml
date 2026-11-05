@@ -1,0 +1,8 @@
+check: bom-schema
+bug: "An unquoted comma adds a field to the C1 C2 BOM row"
+detail: 'row 4 \(C1 C2\): field-count mismatch'
+base: ["golden:ldo-led", ldo-led]
+expect: {clean: WARN}
+why_clean_warn: "Fictional fixture parts have no second sources"
+mutate:
+  - {file: bom/bom.csv, replace: "C1 C2,2,", with: "C1 C2,2,unquoted comma,"}

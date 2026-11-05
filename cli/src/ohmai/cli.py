@@ -170,6 +170,28 @@ def cmd_check(a) -> int:
         gtxt = "".join(f"; GATE {r.name} {r.status}" for r in gate)
         stxt = f"sheet {opts['sheet'].name}: " if opts.get("sheet") else ""
         print(f"RESULT: {stxt}{'FAIL' if failed else 'PASS'} ({len(work)} checks{wtxt}; summary in out/summary.md){gtxt}")
+    from ohmai.attempts import record, retro
+
+    sheet = opts["sheet"].file.relative_to(p.root).as_posix() if opts.get("sheet") else ""
+    command = shlex.join(["ohmai", "check", *(a.targets or (["schematic"] if sheet else ["current"]))])
+    if sheet:
+        command += " --sheet " + shlex.quote(sheet)
+    # Preserve verification options in the attempt evidence (including fixture netlists).
+    for flag in ("strict", "gate", "json"):
+        if getattr(a, flag, False):
+            command += " --" + flag
+    for flag in ("netlist", "fab", "against"):
+        if getattr(a, flag, None):
+            command += " --" + flag + " " + shlex.quote(str(getattr(a, flag)))
+    try:
+        state = record(p.out, failed, sheet, command)
+    except ValueError as e:
+        print(f"STOP: {e}", file=sys.stderr)
+        return 3
+    if len(state["attempts"]) >= 3:
+        # Keep --json stdout a machine-readable result array.
+        print(retro(state), file=sys.stderr if a.json else sys.stdout)
+        return 3
     return 1 if failed else 0
 
 
@@ -597,7 +619,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("check", help="run the checks for a phase (or single checks)",
                        description="Targets: a phase (schematic, 7), a check (erc, netlist, ...), 'current' "
-                                   "(phase in STATUS.md, default) or 'all'.")
+                                   "(phase in STATUS.md, default) or 'all'. Exit codes: 0 pass, 1 fail, "
+                                   "3 stop after third identical failure signature. History: out/check-attempts.json; "
+                                   "PASS or a changed signature clears it. Stop outranks further redraw.")
     s.add_argument("targets", nargs="*")
     s.add_argument("--list", action="store_true", help="list phases and checks")
     s.add_argument("--json", action="store_true")

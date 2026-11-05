@@ -324,7 +324,15 @@ def check_row_sourcing(row_num: int, r: dict) -> tuple[list[str], list[str], dic
 def read_rows(text: str) -> tuple[list[str], list[dict]]:
     lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
     rd = csv.DictReader(io.StringIO("\n".join(lines)))
-    rows = [{(k or "").strip().lower(): (v or "").strip() for k, v in r.items()} for r in rd]
+    rows = []
+    for i, r in enumerate(rd, start=2):
+        expected = len(rd.fieldnames or [])
+        actual = sum(v is not None for k, v in r.items() if k is not None) + len(r.get(None, []))
+        if actual != expected:
+            refs = r.get("refs") or next((v for k, v in r.items() if k and k.strip().lower() == "refs"), "?")
+            raise csv.Error(f"row {i} ({refs}): field-count mismatch: expected {expected}, got {actual}; "
+                            "quote fields containing commas")
+        rows.append({(k or "").strip().lower(): (v or "").strip() for k, v in r.items()})
     return [(h or "").strip().lower() for h in (rd.fieldnames or [])], rows
 
 
@@ -359,7 +367,10 @@ def format_single_source_highlights(single_sources: list[dict]) -> list[str]:
 def bom_schema(project: Project, opts: dict) -> Result:
     if not project.bom.is_file():
         return Result("bom-schema", FAIL, f"{project.bom.relative_to(project.root)} missing")
-    head, rows = load(project.bom)
+    try:
+        head, rows = load(project.bom)
+    except csv.Error as e:
+        return Result("bom-schema", FAIL, "invalid BOM CSV", [str(e)])
     errors, warns, single_sources = [], [], []
     missing = [c for c in REQUIRED if c not in head]
     if missing:
