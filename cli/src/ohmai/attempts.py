@@ -18,8 +18,35 @@ def normalize(detail: str) -> str:
 
 
 def signature(failed: list[Result], sheet: str = "") -> str:
-    keys = sorted((r.name, normalize(r.details[0] if r.details else r.summary)) for r in failed)
+    keys = sorted((r.name, sorted({normalize(d) for d in (r.details or [r.summary])})) for r in failed)
     return json.dumps({"sheet": sheet, "checks": keys}, sort_keys=True, separators=(",", ":"))
+
+
+def _validate_history(state: object) -> None:
+    """Reject malformed evidence before resetting, appending, or rendering it."""
+    if not isinstance(state, dict) or not isinstance(state.get("attempts"), list):
+        raise ValueError("invalid history structure")
+    attempts = state["attempts"]
+    if "signature" not in state or len(attempts) > 3:
+        raise ValueError("invalid history structure")
+    if state["signature"] is None:
+        if attempts:
+            raise ValueError("cleared history contains attempts")
+        return
+    if not isinstance(state["signature"], str) or not state["signature"] or not attempts:
+        raise ValueError("invalid failure signature or empty history")
+    for attempt in attempts:
+        if (not isinstance(attempt, dict)
+                or not all(isinstance(attempt.get(k), str) for k in ("command", "changed"))
+                or not isinstance(attempt.get("failures"), list) or not attempt["failures"]):
+            raise ValueError("invalid attempt record")
+        for failure in attempt["failures"]:
+            if (not isinstance(failure, dict)
+                    or not all(isinstance(failure.get(k), str) for k in ("name", "status", "summary"))
+                    or failure["status"] not in {"PASS", "FAIL", "WARN", "SKIP", "TODO"}
+                    or not isinstance(failure.get("details"), list)
+                    or not all(isinstance(detail, str) for detail in failure["details"])):
+                raise ValueError("invalid failure evidence")
 
 
 def record(out: Path, failed: list[Result], sheet: str, command: str) -> dict:
@@ -30,11 +57,10 @@ def record(out: Path, failed: list[Result], sheet: str, command: str) -> dict:
     """
     path = out / "check-attempts.json"
     state = {}
-    if failed and path.exists():
+    if path.exists():
         try:
             state = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(state, dict) or not isinstance(state.get("attempts", []), list):
-                raise ValueError("invalid history structure")
+            _validate_history(state)
         except (ValueError, TypeError) as e:
             raise ValueError("invalid out/check-attempts.json; preserve evidence and repair history before retrying") from e
     if not failed:

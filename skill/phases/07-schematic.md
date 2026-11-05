@@ -23,11 +23,12 @@ gate evidence, even for `wip:` (report blocked FAIL/SKIP honestly).
 
 **Placement before wires:** commit symbols, ties and values only after verifying intended pin-to-net
 assignments (explicitly mark this incomplete drawing `wip:` and retain fresh failing gate evidence).
-Then add explicit wires in a second commit only after `ohmai check schematic --sheet <name>` passes.
-A placement-only drawing is not a passing sheet.
+After the placement-only commit, add explicit wires, then run `ohmai check schematic --sheet <name>`.
+Commit the passing wiring only after that gate passes. Placement-only is intermediate WIP, not a PASS claim.
 
-**Stop outranks unbounded redraw:** third identical signature exits **3** (FAIL **1**, PASS **0**);
-`out/check-attempts.json` keeps commands/results. PASS or changed signature resets it; never game the
+**Stop outranks unbounded redraw:** third identical signature or corrupt attempt history exits **3**
+(FAIL **1**, PASS **0**). Preserve and repair corrupt history before retrying;
+`out/check-attempts.json` keeps commands/results. PASS or changed signature resets valid history; never game the
 counter. Also stop after three drawing attempts without a real gate, or fixes that keep re-breaking
 checks. Next deliverable is retro + `wip:` placement, not search #4. Copy skill section 2's retro:
 signature, three commands/changes/exits, failed hypothesis, process trap, proposed OhmAI change.

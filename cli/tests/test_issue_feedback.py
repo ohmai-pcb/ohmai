@@ -42,6 +42,22 @@ def test_signature_retains_identity():
     assert signature([a, b]) == signature([b, a])
 
 
+def test_signature_canonicalizes_normalized_detail_set(tmp_path):
+    a = Result("wire-ends", FAIL, "2 problems", [
+        "pin R1.1 at (1,2) sits mid-wire", "pin R1.2 at (3,4) sits mid-wire",
+    ])
+    b = Result("wire-ends", FAIL, "3 diagnostics", [
+        "pin R1.2 at (9,8) sits mid-wire", "pin R1.1 at (7,6) sits mid-wire",
+        "pin R1.1 at (5,4) sits mid-wire",
+    ])
+    assert signature([a], "power") == signature([b], "power")
+    for count, result in enumerate((a, b, a), 1):
+        assert len(record(tmp_path, [result], "power", "check")["attempts"]) == count
+    # All normalized identities matter, not just the stable first representative.
+    b.details[0] = "pin R1.3 at (9,8) sits mid-wire"
+    assert signature([a], "power") != signature([b], "power")
+
+
 def test_count_reset_and_saturation(tmp_path):
     failed = [Result("wire-ends", FAIL, "bad", ["pin U1.1 at (1,2) blocked"])]
     for count in (1, 2, 3, 3):
@@ -104,9 +120,82 @@ def test_ragged_bom_fails_not_crashes(project):
     assert run(project, "bom-diff", {}).status == FAIL
 
 
-def test_corrupt_attempt_history_stops(project, monkeypatch, capsys):
+@pytest.mark.parametrize("corruption", [
+    "not-json", "not-object", "missing-signature", "bad-signature", "missing-attempts",
+    "bad-attempts", "empty-attempts", "empty-records", "integer-records", "too-many",
+    "missing-command", "bad-command", "missing-changed", "bad-changed",
+    "missing-failures", "bad-failures", "empty-failures", "integer-failure",
+    "missing-name", "bad-name", "missing-status", "bad-status", "unknown-status",
+    "missing-summary", "bad-summary", "missing-details", "bad-details", "integer-detail",
+    "cleared-with-attempts",
+])
+@pytest.mark.parametrize("outcome", ["matching", "changed", "pass"])
+def test_corrupt_attempt_history_stops(project, monkeypatch, capsys, corruption, outcome):
     import ohmai.checks
-    monkeypatch.setattr(ohmai.checks, "run", lambda p, name, opts: Result(name, FAIL, "blocked"))
-    (project.out / "check-attempts.json").write_text("not json")
-    assert main(["check", "wire-ends"]) == 3
-    assert "repair history" in capsys.readouterr().err
+
+    failure = Result("wire-ends", FAIL, "blocked")
+    state = {"signature": signature([failure]), "attempts": [
+        {"command": "ohmai check wire-ends", "changed": "", "failures": [failure.as_dict()]},
+    ]}
+    if corruption == "not-json":
+        state = "not json"
+    elif corruption == "not-object":
+        state = []
+    elif corruption == "missing-signature":
+        del state["signature"]
+    elif corruption == "bad-signature":
+        state["signature"] = 7
+    elif corruption == "missing-attempts":
+        del state["attempts"]
+    elif corruption == "bad-attempts":
+        state["attempts"] = {}
+    elif corruption == "empty-attempts":
+        state["attempts"] = []
+    elif corruption == "empty-records":
+        state["attempts"] = [{}, {}, {}]
+    elif corruption == "integer-records":
+        state["attempts"] = [1, 2, 3]
+    elif corruption == "too-many":
+        state["attempts"] *= 4
+    elif corruption == "cleared-with-attempts":
+        state["signature"] = None
+    else:
+        kind, field = corruption.split("-", 1)
+        target = state["attempts"][0]
+        if field not in {"command", "changed", "failures", "failure"}:
+            target = target["failures"][0]
+        if kind == "missing":
+            del target[field]
+        elif kind == "bad":
+            target[field] = 7
+        elif corruption == "empty-failures":
+            target["failures"] = []
+        elif corruption == "integer-failure":
+            target["failures"] = [7]
+        elif corruption == "unknown-status":
+            target["status"] = "INVALID"
+        elif corruption == "integer-detail":
+            state["attempts"][0]["failures"][0]["details"] = [7]
+    evidence = state if corruption == "not-json" else json.dumps(state)
+    path = project.out / "check-attempts.json"
+    path.write_text(evidence)
+    if outcome == "changed":
+        failure.summary = "different failure"
+    elif outcome == "pass":
+        failure.status = PASS
+    monkeypatch.setattr(ohmai.checks, "run", lambda p, name, opts: failure)
+    assert main(["check", "wire-ends", "--json"]) == 3
+    output = capsys.readouterr()
+    assert "STOP: corrupt attempt history (exit 3)" in output.err
+    assert "preserve evidence and repair history" in output.err
+    assert json.loads(output.out) == [{**failure.as_dict(), "gate": False}]
+    assert path.read_text() == evidence
+    assert not path.with_suffix(".tmp").exists()
+
+
+def test_check_help_documents_both_stop_reasons(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["check", "--help"])
+    assert exc.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "3 stop after third identical failure signature or corrupt attempt history" in help_text

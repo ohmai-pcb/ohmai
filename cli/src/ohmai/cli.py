@@ -186,7 +186,7 @@ def cmd_check(a) -> int:
     try:
         state = record(p.out, failed, sheet, command)
     except ValueError as e:
-        print(f"STOP: {e}", file=sys.stderr)
+        print(f"STOP: corrupt attempt history (exit 3): {e}", file=sys.stderr)
         return 3
     if len(state["attempts"]) >= 3:
         # Keep --json stdout a machine-readable result array.
@@ -620,8 +620,10 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("check", help="run the checks for a phase (or single checks)",
                        description="Targets: a phase (schematic, 7), a check (erc, netlist, ...), 'current' "
                                    "(phase in STATUS.md, default) or 'all'. Exit codes: 0 pass, 1 fail, "
-                                   "3 stop after third identical failure signature. History: out/check-attempts.json; "
-                                   "PASS or a changed signature clears it. Stop outranks further redraw.")
+                                   "3 stop after third identical failure signature or corrupt attempt history. "
+                                   "History: out/check-attempts.json; "
+                                   "PASS or a changed signature clears valid history; preserve and repair corrupt history. "
+                                   "Stop outranks further redraw.")
     s.add_argument("targets", nargs="*")
     s.add_argument("--list", action="store_true", help="list phases and checks")
     s.add_argument("--json", action="store_true")

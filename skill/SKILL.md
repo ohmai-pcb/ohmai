@@ -69,10 +69,11 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
    are marked `PROPOSAL:` and point to their open question.
 3. Run `ohmai check <id>` (schematic default: `ohmai check schematic --sheet <name>`; whole project only at integration). When a check passes, **commit** with the result in the message, e.g.
    `schematic: regulator sheet; ohmai check schematic PASS`.
-4. Third identical failure signature: **stop** (CLI exit **3**, first two FAILs **1**, PASS **0**).
+4. Third identical failure signature or corrupt attempt history: **stop** (CLI exit **3**;
+   first two FAILs **1**, PASS **0**). Preserve corrupt history as evidence and repair it before retrying.
    `out/check-attempts.json` retains the first three commands/results; signature = failed check names,
-   sheet, first offending detail with coordinates normalized (same blocked net/pin is not a new problem).
-   PASS or a changed signature clears history. Never delete history or run a smaller passing check to evade a stop.
+   sheet, sorted unique offending details with coordinates normalized (diagnostic order is not identity).
+   PASS or a changed signature clears valid history. Never delete history or run a smaller passing check to evade a stop.
    Copy the retro below to STATUS.md and commit `wip:` placement + evidence. Stop outranks unbounded redraw;
    readability remains a gate, not debt. Choose a genuinely distinct allowed escape independently; ask the
    owner only if design intent is ambiguous or a product trade-off requires them.

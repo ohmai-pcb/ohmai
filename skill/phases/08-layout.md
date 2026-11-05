@@ -14,8 +14,9 @@ or generator-local `check()` hill-climbs. Keep the supported Freerouting subproc
 Reproduce + quote failure → root cause → one written hypothesis → minimal edit → fresh same-command
 verification + exit. Never claim progress/completion without fresh evidence. Lazy, not negligent: no
 cuts to DRC/ERC, readability, constraints, safety, datasheet calibration or other gates.
-Third identical check signature exits 3 (FAIL 1, PASS 0); also obey the fixed-placement 3-routing-attempt
-cap below. Stop outranks unbounded redraw: preserve placement and commit `wip:` + scrubbed retro
+Third identical check signature or corrupt attempt history exits 3 (FAIL 1, PASS 0). Preserve and repair
+corrupt history before retrying; also obey the fixed-placement 3-routing-attempt cap below.
+Stop outranks unbounded redraw: preserve placement and commit `wip:` + scrubbed retro
 (signature, three commands/changes/exits, failed hypothesis, proposed OhmAI improvement), then choose a
 distinct allowed approach. Owner only for design intent/product trade-offs. No `shortcut:` readability
 debt. Review reuse before inventing: unnecessary machinery, existing tools, one placement edit?
