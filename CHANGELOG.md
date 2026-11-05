@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+- #1: `ohmai check` records normalized failure signatures under `out/check-attempts.json`; third
+  identical signature exits 3 with a retro template (0 pass, 1 fail). PASS/changed signature clears history;
+  JSON result stdout stays compatible (stop template on stderr). Help documents codes.
+- #1: ragged BOM CSV now FAILs with row identity + expected/actual field count instead of crashing;
+  regression tests + `bom-schema-ragged` known-bad case. Short rows fail too; quoted commas work.
+- #1: per-sheet default, embedded-library vs unverified-pin adopt guidance, and split-at-pin/junction/label
+  generator contract. Deferred: gen-netlist geometric endpoints and stronger wire-ends foreign-segment /
+  interior-tee detection; current checks do not guarantee all geometric connectivity (ROADMAP).
+- #3, #4: six-rung reuse ladder, systematic fix loop, short region plans, placement before wiring,
+  fresh verification before claims, private-router/local-check-hill-climb prohibition, stop above redraw,
+  scrubbed retro + rationalization table, review reuse checklist and skipped/risk footer. No vendored skills,
+  weakened gates or readability debt. Version remains 0.1.0; license remains Apache-2.0.
+
 ## 0.1.0 (2026-11-03)
 First release. An AI-agent skill plus the `ohmai` CLI that takes a PCB idea through 12 gated
 phases (requirements to bring-up) with deterministic KiCad 9 checks, owner review gates, attributed commits,

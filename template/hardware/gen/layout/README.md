@@ -2,13 +2,14 @@
 
 `ohmai schematic build [--layout DIR]` reads `_root.yaml` plus one `<sheet>.yaml` per functional block and
 writes `hardware/<project>.kicad_sch` and `hardware/<sheet>.kicad_sch`, using the pinned official symbols
-(`ohmai kicad-libs`, embedded verbatim). Then run `ohmai check schematic`; `readability` judges the result
+(`ohmai kicad-libs`, embedded verbatim). Then run `ohmai check schematic --sheet <name>` (project gate at integration); `readability` judges the result
 and the reviewer compares the PNGs with the datasheet application figures.
 
 Style: each IC with its passives drawn **wired**, as in the datasheet figure. Orthogonal wires on the
 1.27 mm grid; nets used on several sheets become hierarchical labels automatically; power nets become
 power symbols at the pin (`power:` map). No local labels unless allow-listed in `ohmai.yaml`
-(`checks.readability.allow_local_labels`, owner decision).
+(`checks.readability.allow_local_labels`) or use `checks.readability.labels: rail-and-label`;
+choose the policy and record it in STATUS. Passive-to-IC connections still need wires.
 
 ## `_root.yaml`
 ```yaml
@@ -43,6 +44,14 @@ wire), `first: x|y`, `rot`, `mirror`, `text: right|left|above|below|split`, `ref
 `hide_value`. `dnp: true` marks a part not placed; `bom: false` keeps it off the BOM.
 The generator splits wires at every pin and tee (KiCad joins only at wire ends) and places junctions where
 three or more connections meet. Hidden NC pins get a no-connect flag.
+For every generator (including foreign/adopted ones), **split segments at pins, junctions and labels**;
+never rely on a mid-wire pin. It is a FAIL, not connectivity evidence. `gen-netlist` compares pin→net
+names only, not generator geometry; current `wire-ends` has incomplete foreign-segment/interior-tee
+coverage (see ROADMAP). Run the real per-sheet gate and inspect renders, not a private preview `check()`.
+Namespace UIDs per sheet. Commit placement (symbols/ties/values, `wip:` evidence) before adding wires;
+commit wiring after the per-sheet PASS. No maze/BFS/private routers or local-check hill-climbs. After
+three drawing attempts or CLI exit 3, stop with a retro; use split sheet, rail-and-label or one symbol
+move as a distinct approach. Never weaken gates or carry readability debt.
 
 Keep the yamls in the review scope (`reviews.gates.schematic.scope`). If you edit a sheet by hand in
 eeschema afterwards, either update the yaml or stop generating that sheet and say so in `hardware/README.md`.

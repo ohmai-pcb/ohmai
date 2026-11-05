@@ -4,6 +4,23 @@
 `keepouts`, `layout_checklist`, escape room, and plane continuity/neck width), and fits the enclosure.
 Branch `phase/layout`. Check `ohmai check layout`.
 
+## Bounded region plan and verification
+Use skill section 2's systematic fix loop, retro and rationalization table. Before a hard region, write a
+mini plan (goal, placement commit before routing, exact checks per step, allowed placement/label/split
+escapes). First sufficient rung wins: (1) need it? skip speculative work; (2) reuse OhmAI/project tools
+and the capped Freerouting flow; (3) use KiCad/generator primitives; (4) installed allowed subprocess tool;
+(5) one clear placement/track edit; (6) only then minimum new code. Never invent maze/BFS/private routers
+or generator-local `check()` hill-climbs. Keep the supported Freerouting subprocess, not a private engine.
+Reproduce + quote failure → root cause → one written hypothesis → minimal edit → fresh same-command
+verification + exit. Never claim progress/completion without fresh evidence. Lazy, not negligent: no
+cuts to DRC/ERC, readability, constraints, safety, datasheet calibration or other gates.
+Third identical check signature exits 3 (FAIL 1, PASS 0); also obey the fixed-placement 3-routing-attempt
+cap below. Stop outranks unbounded redraw: preserve placement and commit `wip:` + scrubbed retro
+(signature, three commands/changes/exits, failed hypothesis, proposed OhmAI improvement), then choose a
+distinct allowed approach. Owner only for design intent/product trade-offs. No `shortcut:` readability
+debt. Review reuse before inventing: unnecessary machinery, existing tools, one placement edit?
+End every stop/gate: `Skipped / not checked: …; residual risk: …`.
+
 ## Do, in order (4-Stage Incremental Placement + Routing)
 1. **Outline & Fab rules**:
    - Put the board outline, mounting holes, and mechanical keep-outs from the enclosure/spec onto `Edge.Cuts`.

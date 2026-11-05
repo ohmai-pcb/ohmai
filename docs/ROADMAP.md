@@ -20,6 +20,13 @@ Everything below ships in 0.1.0.
 - Known stubs: creepage (TODO, v0.3), abs-max vs net voltage (v0.3), assembly drawings + STEP in
   `release` (v0.4).
 
+## Schematic geometry follow-up (#1)
+- `gen-netlist` still compares pin→net names, not generator endpoint geometry. Add a separate geometric
+  comparison with mutation fixtures before claiming endpoint validation; no router rewrite.
+- Strengthen `wire-ends`: pins on foreign segment interiors even when another wire ends at that pin;
+  unsplit interior tees/junctions/labels. Current coverage is partial. Require generators to split at all
+  pins/junctions/labels now; ship stricter detection only with clean twins + known-bad cases.
+
 ## v0.2: first real board end to end
 - Dogfood a real board through rev-A; fix every friction point in the phase guides and the CLI.
 - CI and the weekly canary verified on GitHub (kicad/kicad:9.0 container, sticky comment, KiBot release);

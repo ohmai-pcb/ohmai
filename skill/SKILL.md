@@ -67,12 +67,70 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
    Cite prices as distributor + part number + quantity break + date read; if a distributor blocks
    automated access, use another one and say which. Recommendations you make before the owner decides
    are marked `PROPOSAL:` and point to their open question.
-3. Run `ohmai check <id>`. When a check passes, **commit** with the result in the message, e.g.
+3. Run `ohmai check <id>` (schematic default: `ohmai check schematic --sheet <name>`; whole project only at integration). When a check passes, **commit** with the result in the message, e.g.
    `schematic: regulator sheet; ohmai check schematic PASS`.
-4. Same failure 3 times: **stop**. Write the error, your three attempts, a hypothesis, and the decision
-   you need into STATUS.md → Open questions. Commit and tell the owner.
+4. Third identical failure signature: **stop** (CLI exit **3**, first two FAILs **1**, PASS **0**).
+   `out/check-attempts.json` retains the first three commands/results; signature = failed check names,
+   sheet, first offending detail with coordinates normalized (same blocked net/pin is not a new problem).
+   PASS or a changed signature clears history. Never delete history or run a smaller passing check to evade a stop.
+   Copy the retro below to STATUS.md and commit `wip:` placement + evidence. Stop outranks unbounded redraw;
+   readability remains a gate, not debt. Choose a genuinely distinct allowed escape independently; ask the
+   owner only if design intent is ambiguous or a product trade-off requires them.
 5. Keep STATUS.md → "Next actions" current at every commit, so another agent can take over if you hit a
    usage limit. If you might run out, commit `wip:` on the phase branch now.
+
+
+### Smallest passing change: six-rung hardware ladder (#3)
+After reading the check and sheet intent, take the **first rung that fully works**:
+1. **Need it?** Skip speculative features/frameworks; name what was skipped.
+2. **Reuse this project / OhmAI:** per-sheet gates, label policy, hierarchical labels, power symbols,
+   `ohmai schematic build` + layout YAML, split sheet, Freerouting within the 3-try placement cap.
+3. **KiCad / generator primitives:** explicit wire ends, split at pins/junctions/labels, per-sheet UIDs;
+   make existing tools tell the truth instead of hiding a defect with search.
+4. **Installed allowed tool:** use existing subprocess/CI rules; no GPL imports or trivial new dependencies.
+5. **One clear edit:** one symbol move, one wire move, or a policy-allowed local label leaving its block.
+6. **Only then** minimum new generator/code that passes every applicable gate.
+
+**Forbidden rung:** maze/BFS/private routers for adopt or schematic capture; generator-local `check()`
+hill-climbs. Local preview is not the gate or an optimization objective. A crossing gets one explicit
+symbol/wire edit and a real re-check. A wire longer than its block is a placement bug: move the part.
+A scratch script outside the project is not a verified fix: if it is not in the project generator after
+one run, the attempt is spent. The 3-attempt drawing cap applies even if no CLI check was called.
+Lazy, not negligent: never cut ERC/DRC, readability, constraints, safety, security, accessibility,
+datasheet verification or hardware calibration to shrink a diff. No `shortcut:` readability debt;
+deferred non-gate tooling/process work belongs in STATUS open questions / retro (or an MW-xx warning).
+
+### Systematic fix and verification (#4)
+Before dense wiring/routing, write a mini plan in STATUS or docs: goal + sheet/region, placement-only
+commit before wires, exact verification per step, allowed split-sheet / rail-and-label escapes.
+For each fix: reproduce the exact `ohmai check …` failure and quote the offending object → investigate
+root cause → write **one hypothesis** in STATUS/commit → **one minimal change** → rerun the same command
+and record fresh output + exit status. No completion, satisfaction, “should pass”, or `wip:` progress
+claim without fresh gate evidence in this turn; a blocked `wip:` explicitly reports FAIL/SKIP, never PASS.
+After three failed drawing attempts (including private previews), no fourth search. Preserve the
+placement, reason briefly, and write this scrubbed retro, aimed at improving OhmAI:
+
+```text
+Failure signature (check, sheet/region, first offending object):
+Attempt 1 (command + change + exit):
+Attempt 2 (command + change + exit):
+Attempt 3 (command + change + exit):
+Hypothesis that failed:
+What the skill/check made easy to get wrong:
+Proposed OhmAI change (skill/check/adopt):
+Distinct escape: split sheet / rail-and-label / one symbol move (record in STATUS)
+Owner question: only if design intent is ambiguous; otherwise none
+Skipped / not checked: ____; residual risk: ____
+```
+
+**STOP — you are rationalizing:**
+| Thought | Reality |
+|---|---|
+| “One more wire tweak” after two identical FAILs | Third identical signature stops; write the retro. |
+| “Route around it with search” | Forbidden; move the part or use a named escape. |
+| “Local check() is enough” | Only fresh `ohmai check` is gate evidence. |
+| “Readability says keep redrawing” | Stop outranks unbounded redraw; the gate still stands. |
+| “Ask the owner to draw it” | Only if intent is unclear; otherwise retro → improve OhmAI. |
 
 ## 3. Gate protocol (end of every phase)
 
@@ -100,6 +158,8 @@ found in any phase get an `MW-xx` ID under STATUS.md "Manual warnings" and must 
    owner decision, the same failure 3 times, or a usage limit (commit `wip:` and update Next actions first).
    When you stop, say why in chat and in STATUS.md → Next actions. All other rules still apply: anonymous
    mode, the `OhmAI-Author` trailer, file-safety backups, and no push or remote PR without the owner's explicit OK.
+
+**Every gate summary and stop ends:** `Skipped / not checked: …; residual risk: …`.
 
 ## 3b. Writing owner-facing questions (gates, STATUS open questions, review OQs)
 
@@ -171,6 +231,10 @@ Details: `docs/REVIEWS.md` in OhmAI. Configured per gate in `ohmai.yaml` → `re
    change nothing else in scope, or the re-verification is needed again.
 5. `ohmai check review:<phase>` must pass before you ask for the gate. Report the achieved independence
    level in the gate summary.
+6. Schematic/layout/generator review checklist: reuse before invent. Did this invent a tool OhmAI
+   already provides? Could `--sheet`, label policy, or one placement edit suffice? Is new machinery
+   necessary? Verify no private router, no skipped gate, fresh evidence, and placement-before-wires.
+   Findings: what it does → what goes wrong → fix → consequence if left unchanged.
 
 ## 4. Non-negotiable rules
 

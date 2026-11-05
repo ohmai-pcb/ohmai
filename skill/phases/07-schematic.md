@@ -1,7 +1,39 @@
 # Phase 7: Schematic
 
 **Goal:** a schematic that matches the architecture, the constraints and the expected nets.
-Branch `phase/schematic` (one PR per sheet is fine). Check `ohmai check schematic`.
+Branch `phase/schematic` (one PR per sheet is fine). Default check: `ohmai check schematic --sheet <name>`; whole-project checks at integration milestones.
+
+## Bounded work: reuse, diagnose, verify
+Follow skill section 2's systematic fix loop and retro/rationalization table. Write a mini plan per dense
+sheet: goal, placement commit, wiring commit, exact gates, named escapes. Use the first sufficient rung:
+1. Need it? Skip speculative generator features.
+2. Reuse OhmAI/project: `--sheet`, label policy, split sheet, `schematic build` + YAML.
+3. Use KiCad/generator primitives: explicit ends, per-sheet UIDs, split at pins/junctions/labels.
+4. Use an installed allowed tool within subprocess/CI rules (no GPL imports).
+5. Make one clear symbol/wire move or policy-allowed label edit.
+6. Only then minimum new code that passes all gates.
+
+No maze/BFS/private router, search, or generator-local `check()` hill-climb on schematic/adopt work.
+Preview is not the gate. A crossing gets one explicit edit then a real gate; a wire longer than its block
+means move the part. If a scratch script's fix is not in the project generator after one run, the attempt
+is spent. Never cut validation, safety, constraints, datasheet calibration, ERC/DRC or readability.
+Before a fix: reproduce/quote check + object → investigate root cause → one written hypothesis → one
+minimal edit → rerun the same gate and record output + exit. No progress/completion claim without fresh
+gate evidence, even for `wip:` (report blocked FAIL/SKIP honestly).
+
+**Placement before wires:** commit symbols, ties and values only after verifying intended pin-to-net
+assignments (explicitly mark this incomplete drawing `wip:` and retain fresh failing gate evidence).
+Then add explicit wires in a second commit only after `ohmai check schematic --sheet <name>` passes.
+A placement-only drawing is not a passing sheet.
+
+**Stop outranks unbounded redraw:** third identical signature exits **3** (FAIL **1**, PASS **0**);
+`out/check-attempts.json` keeps commands/results. PASS or changed signature resets it; never game the
+counter. Also stop after three drawing attempts without a real gate, or fixes that keep re-breaking
+checks. Next deliverable is retro + `wip:` placement, not search #4. Copy skill section 2's retro:
+signature, three commands/changes/exits, failed hypothesis, process trap, proposed OhmAI change.
+Choose split sheet, rail-and-label or one symbol move; record a distinct approach in STATUS. Owner only
+for ambiguous design intent/product trade-offs, not every dense sheet. Readability is still a hard gate,
+never `shortcut:` debt. End every stop/gate: `Skipped / not checked: …; residual risk: …`.
 
 ## Before drawing
 1. Write `expected_nets.csv` from the architecture and constraints files. Cite the pin source per part
@@ -80,6 +112,11 @@ Ordered rules (do not reorder, do not skip):
    the KiCad export (split, merged, missing, unconnected, NC).
 3. No truncated wires: `wire-ends` FAILs an end that touches nothing and a pin sitting mid-wire (it looks
    connected in the render but is not; a wire must end on the pin or on a junction).
+   Generator contract (including foreign generators): split **every segment at every pin, junction and
+   label**. A pin on a segment interior is FAIL, not proof of connectivity, even when another segment
+   ends at that pin. Current `wire-ends` does not catch every foreign-segment/interior-tee case; do not
+   infer full geometric correctness from PASS (ROADMAP follow-up). `gen-netlist` is pin→net intent only,
+   not a comparison of geometric endpoints.
 4. Convergence: when a drawing step does not converge (the same check fails 3 times after fixes, or a
    fix re-breaks another check), **stop and report** with the failing check output; do not keep redrawing.
 
@@ -128,6 +165,17 @@ current netlist (never overwriting: an existing file gets `*.adopted.*` beside i
 current design, not verified intent: check rows against datasheets (`pin-map`) before trusting them.
 Checks that cannot apply go in `checks.na: {<check>: <reason>}`; they report `SKIP N/A: <reason>`, an empty
 reason FAILs. Minimum without the command: the same two files by hand, plus the N/A map.
+Climb the six-rung ladder above before adding generator helpers; private routers and local `check()`
+hill-climbs remain forbidden on adopt. Default to per-sheet gates, then integrate all sheets.
+
+Distinguish **library missing** (resolve/import vetted libraries via project tables) from **pins unverified**
+(add datasheet-backed constraints, not just an embedded cache). For `checks.lib_refs.allow_embedded: true`,
+put a non-example YAML in `parts/constraints/` with `match.lib_symbol` using the symbol item name (the
+form matched by `pin-map`), plus `match.refs` or `match.mpn` when needed. Include the datasheet source,
+revision and cited pages, every pin number/name/direction with cites, NC intent and required externals;
+validate against the constraints schema and run `constraints` + per-sheet `pin-map` on real exported pins.
+The `lib-refs` binding PASS alone does **not** certify pin correctness; pin-map must verify it.
+Review reuse before inventing: could `--sheet`, label policy or one placement edit have sufficed?
 
 ## Gate
 A human reviews the PR: the schematic diff, the PNG renders, and the netlist and BOM diffs posted by CI.
