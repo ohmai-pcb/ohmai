@@ -28,10 +28,20 @@ class Pad:
     net: str
     layers: tuple[str, ...]
     hole: bool = False
+    # Hole diameter mm from (drill …). Oval (drill oval w h): max(w, h).
+    drill: float = 0.0
 
     @property
     def name(self) -> str:
         return f"{self.ref}.{self.num}"
+
+    @property
+    def w(self) -> float:
+        return self.box[2] - self.box[0]
+
+    @property
+    def h(self) -> float:
+        return self.box[3] - self.box[1]
 
 
 @dataclass
@@ -63,8 +73,14 @@ class Footprint:
 class Via:
     x: float
     y: float
-    d: float
+    d: float  # outer diameter (from via size); public meaning unchanged
     net: str
+    drill: float = 0.0
+
+    @property
+    def size(self) -> float:
+        """Alias for outer diameter `d` (handroute / freeze snapshots)."""
+        return self.d
 
 
 @dataclass(frozen=True)
@@ -85,6 +101,11 @@ class Board:
     tracks: list[tuple[str, str]]      # (net, layer) per segment / arc
     edge: Box | None
     segments: list[Track] = field(default_factory=list)
+
+    @property
+    def edge_box(self) -> Box | None:
+        """Alias for `edge` (fanout / handroute)."""
+        return self.edge
 
     def pads(self, side: str | None = None):
         for fp in self.footprints.values():
@@ -116,6 +137,17 @@ def _num(s: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _drill(node) -> float:
+    """Parse KiCad `(drill …)`. Circular: first number. Oval `(drill oval w h)`: max(w, h)."""
+    c = sexp.first(node, "drill")
+    if c is None:
+        return 0.0
+    nums = [float(v) for v in c[1:] if isinstance(v, str) and _num(v)]
+    if not nums:
+        return 0.0
+    return max(nums) if len(nums) > 1 else nums[0]
 
 
 def _rect_box(cx, cy, w, h, deg) -> Box:
@@ -242,13 +274,14 @@ def load(path: Path) -> Board:
             lay = sexp.first(p, "layers")
             layers = tuple(lay[1:]) if lay else ()
             fp.pads.append(Pad(ref, p[1], x + dx, y + dy, _rect_box(x + dx, y + dy, size[0], size[1], pdeg), net,
-                               layers, hole=len(p) > 2 and p[2] in ("thru_hole", "np_thru_hole")))
+                               layers, hole=len(p) > 2 and p[2] in ("thru_hole", "np_thru_hole"),
+                               drill=_drill(p)))
         fps[ref] = fp
     vias = []
     for v in sexp.find(tree, "via"):
         at, sz, n = sexp.first(v, "at"), sexp.first(v, "size"), sexp.first(v, "net")
         net = (n[2] if len(n) > 2 else nets.get(n[1], "")) if n else ""
-        vias.append(Via(float(at[1]), float(at[2]), float(sz[1]) if sz else 0.0, net))
+        vias.append(Via(float(at[1]), float(at[2]), float(sz[1]) if sz else 0.0, net, drill=_drill(v)))
     tracks = []
     segments: list[Track] = []
     for t in sexp.find(tree, "segment") + sexp.find(tree, "arc"):
@@ -386,7 +419,8 @@ def moved_pads(fp: Footprint, x: float, y: float, rot: float | None = None) -> l
         if round((r - fp.rot) / 90) % 2:
             w, h = h, w
         px, py = x + dx, y + dy
-        out.append(Pad(p.ref, p.num, px, py, (px - w / 2, py - h / 2, px + w / 2, py + h / 2), p.net, p.layers, p.hole))
+        out.append(Pad(p.ref, p.num, px, py, (px - w / 2, py - h / 2, px + w / 2, py + h / 2), p.net, p.layers, p.hole,
+                       drill=p.drill))
     return out
 
 
