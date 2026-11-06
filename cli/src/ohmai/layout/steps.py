@@ -65,6 +65,39 @@ def _pair_clearance(rules: dict, net_a: str | None, net_b: str | None) -> float:
     return max(_class_for_net(rules, net_a)["clearance"], _class_for_net(rules, net_b)["clearance"])
 
 
+
+def _handroute_try_widths(hr: dict, nc: dict, net_name: str) -> list[float]:
+    """Class width first, then alt_widths / residual neck ladder (narrower only).
+
+    `alt_widths` may key by net name or class name → list of mm widths.
+    When `residual_neck` is true (default) or the class is in `neck_classes`,
+    also try ~half width (floored at neck_w) and neck_w itself so dense power
+    islands can still bridge without a project-specific alt list.
+    """
+    full = float(nc["width"])
+    out: list[float] = [full]
+    alts = hr.get("alt_widths") or {}
+    for key in (net_name, nc.get("name")):
+        if not key:
+            continue
+        for w in alts.get(key) or []:
+            wf = float(w)
+            if 0 < wf < full - 1e-9 and all(abs(wf - x) > 1e-9 for x in out):
+                out.append(wf)
+    allow_neck = bool(hr.get("residual_neck", True)) or (
+        nc.get("name") in set(hr.get("neck_classes") or [])
+    )
+    if allow_neck:
+        neck = float(hr.get("neck_w") or 0.15)
+        # Prefer the widest residual that still fits: 3/4 → 1/2 → 2/5 → neck floor.
+        for frac in (0.75, 0.5, 0.375):
+            w = max(neck, round(full * frac, 3))
+            if 0 < w < full - 1e-9 and all(abs(w - x) > 1e-9 for x in out):
+                out.append(w)
+        if neck > 0 and neck < full - 1e-9 and all(abs(neck - x) > 1e-9 for x in out):
+            out.append(neck)
+    return out
+
 def _sort_handroute_nets(rules: dict, nets: list[str]) -> list[str]:
     """Thin-first for multi-net handroute: narrower netclass width first, then name.
 
@@ -878,8 +911,9 @@ def run_handroute(
                 continue  # All exposed copper (including every pad) is already connected.
             bounds = [shape.bounds for _, shapes in items for shape in shapes.values()]
             nc = _class_for_net(rules, net_name)
-            track_w = float(nc["width"])
-            margin = float((cfg.get("handroute") or {}).get("search_margin", 8.0))
+            hr = cfg.get("handroute") or {}
+            try_widths = _handroute_try_widths(hr, nc, net_name)
+            margin = float(hr.get("search_margin", 8.0))
             bbox = (
                 max(eb[0], min(b[0] for b in bounds) - margin),
                 max(eb[1], min(b[1] for b in bounds) - margin),
@@ -891,200 +925,210 @@ def run_handroute(
             if g.nx < 1 or g.ny < 1:
                 continue
             layer_idxs = list(range(len(layers)))
-            free = {li: np.ones((g.ny, g.nx), dtype=bool) for li in layer_idxs}
-            viaok = np.ones((g.ny, g.nx), dtype=bool)
             via_d_net = float(nc["via_d"])
-
-            def _block_rect(li: int, x0: float, y0: float, x1: float, y1: float) -> None:
-                ix0, iy0 = g.cell(x0, y0)
-                ix1, iy1 = g.cell(x1, y1)
-                xa, xb = sorted((ix0, ix1))
-                ya, yb = sorted((iy0, iy1))
-                xa, xb = max(0, xa), min(g.nx - 1, xb)
-                ya, yb = max(0, ya), min(g.ny - 1, yb)
-                if xa <= xb and ya <= yb:
-                    free[li][ya : yb + 1, xa : xb + 1] = False
-
-            def _block_viaok(x0: float, y0: float, x1: float, y1: float) -> None:
-                ix0, iy0 = g.cell(x0, y0)
-                ix1, iy1 = g.cell(x1, y1)
-                xa, xb = sorted((ix0, ix1))
-                ya, yb = sorted((iy0, iy1))
-                xa, xb = max(0, xa), min(g.nx - 1, xb)
-                ya, yb = max(0, ya), min(g.ny - 1, yb)
-                if xa <= xb and ya <= yb:
-                    viaok[ya : yb + 1, xa : xb + 1] = False
-
-            def _block_disk(li: int, x: float, y: float, r: float) -> None:
-                _block_rect(li, x - r, y - r, x + r, y + r)
-
-            def _block_thick_seg(li: int, x0: float, y0: float, x1: float, y1: float, half: float) -> None:
-                length = math.hypot(x1 - x0, y1 - y0)
-                n = max(1, int(math.ceil(length / max(res * 0.5, 1e-6))))
-                for i in range(n + 1):
-                    t = i / n
-                    _block_disk(li, x0 + t * (x1 - x0), y0 + t * (y1 - y0), half)
-
-            # Inflate obstacles by clearance + half our track width so wide power tracks don't short.
-            # Every copper pad blocks unless it is the same non-empty net being routed.
-            # No-net / empty / None pads are never same-net terminals and always obstruct.
-            for op in board.pads():
-                if _same_net(op.net, net_name):
-                    continue
-                grow = _pair_clearance(rules, net_name, op.net) + track_w / 2
-                for li, lay in enumerate(layers):
-                    # Empty layer list: treat as all copper (conservative; no-net EPADs must block).
-                    if (not op.layers) or lay in op.layers or "*.Cu" in op.layers:
-                        _block_rect(
-                            li,
-                            op.box[0] - grow,
-                            op.box[1] - grow,
-                            op.box[2] + grow,
-                            op.box[3] + grow,
-                        )
-                # Layer-change vias must not land in/on foreign / no-net pads (incl. EPADs).
-                via_grow = _pair_clearance(rules, net_name, op.net) + via_d_net / 2
-                _block_viaok(
-                    op.box[0] - via_grow,
-                    op.box[1] - via_grow,
-                    op.box[2] + via_grow,
-                    op.box[3] + via_grow,
-                )
-            for seg in board.segments:
-                if _same_net(seg.net, net_name):
-                    continue
-                if seg.layer not in layers:
-                    continue
-                li = layers.index(seg.layer)
-                grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + track_w / 2
-                _block_thick_seg(li, seg.x0, seg.y0, seg.x1, seg.y1, grow)
-            for v in board.vias:
-                if _same_net(v.net, net_name):
-                    continue
-                grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
-                for li in layer_idxs:
-                    _block_disk(li, v.x, v.y, grow)
-            # Keepouts (unfilled) block. Foreign *filled* pours must not: their AABB
-            # can cover most of a layer (GND/power planes) and zero out free/viaok.
-            # Same-net filled pours are terminals via _handroute_copper_items; KiCad
-            # pour clearance around tracks handles copper-to-pour spacing later.
-            for z in getattr(board, "zones", []) or []:
-                if getattr(z, "filled", True):
-                    continue
-                if z.layer not in layers:
-                    continue
-                li = layers.index(z.layer)
-                grow = _pair_clearance(rules, net_name, z.net) + track_w / 2
-                _block_rect(
-                    li,
-                    z.box[0] - grow,
-                    z.box[1] - grow,
-                    z.box[2] + grow,
-                    z.box[3] + grow,
-                )
-                via_grow = _pair_clearance(rules, net_name, z.net) + via_d_net / 2
-                _block_viaok(
-                    z.box[0] - via_grow,
-                    z.box[1] - via_grow,
-                    z.box[2] + via_grow,
-                    z.box[3] + via_grow,
-                )
-            for seg in fresh_tracks:
-                if _same_net(seg["net"], net_name):
-                    continue
-                if seg["layer"] not in layers:
-                    continue
-                li = layers.index(seg["layer"])
-                grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + track_w / 2
-                _block_thick_seg(li, seg["x0"], seg["y0"], seg["x1"], seg["y1"], grow)
-
-            for v in fresh_vias:
-                if _same_net(v["net"], net_name):
-                    continue
-                grow = float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + track_w / 2
-                for li in layer_idxs:
-                    _block_disk(li, v["x"], v["y"], grow)
-
-            # Own copper must stay seedable. Foreign clearance+half-width inflation can
-            # cover a whole tiny pad (island terminal sizes → 0) even though that pad was
-            # skipped in the obstacle loop. Restore free on same-net shapes before A*.
-            import numpy as np
+            via_cost = float(hr.get("via_cost", 1.6))
+            pitch = grid_mod.via_pitch_cells(
+                float(nc["via_h"]),
+                float(rules.get("hole_hole", rules.get("hole_to_hole", 0.25))),
+                res,
+            )
+            cost_mult = {
+                li: (1.0 if li == 0 else float((hr.get("inner") or {}).get("cost", 4.0)))
+                for li in layer_idxs
+            }
             from shapely import intersects_xy
-            for _, shapes in items:
-                for li, shape in shapes.items():
-                    if li not in free:
-                        continue
-                    x0, y0, x1, y1 = shape.bounds
+
+            best = None  # (remaining, track_w, paths) — prefer fewer remaining islands
+            for track_w in try_widths:
+                free = {li: np.ones((g.ny, g.nx), dtype=bool) for li in layer_idxs}
+                viaok = np.ones((g.ny, g.nx), dtype=bool)
+
+                def _block_rect(li: int, x0: float, y0: float, x1: float, y1: float,
+                                _free=free) -> None:
                     ix0, iy0 = g.cell(x0, y0)
                     ix1, iy1 = g.cell(x1, y1)
-                    xa, xb = max(0, min(ix0, ix1)), min(g.nx - 1, max(ix0, ix1))
-                    ya, yb = max(0, min(iy0, iy1)), min(g.ny - 1, max(iy0, iy1))
-                    if xa > xb or ya > yb:
-                        continue
-                    ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
-                    mask = intersects_xy(shape, g.x0 + (xs + 0.5) * g.res,
-                                         g.y0 + (ys + 0.5) * g.res)
-                    free[li][ya:yb + 1, xa:xb + 1] |= mask
+                    xa, xb = sorted((ix0, ix1))
+                    ya, yb = sorted((iy0, iy1))
+                    xa, xb = max(0, xa), min(g.nx - 1, xb)
+                    ya, yb = max(0, ya), min(g.ny - 1, yb)
+                    if xa <= xb and ya <= yb:
+                        _free[li][ya : yb + 1, xa : xb + 1] = False
 
-            # Include whole islands, not just pad centres. A via contributes all
-            # its layers, so a fanout stub offers an escape beyond a boxed-in pad.
-            terminals = [_handroute_terminal_cells(items, island, g, free) for island in islands]
-            hr = cfg.get("handroute") or {}
-            via_cost = float(hr.get("via_cost", 1.6))
-            pitch = grid_mod.via_pitch_cells(float(nc["via_h"]), float(rules.get("hole_hole", rules.get("hole_to_hole", 0.25))), res)
-            cost_mult = {li: (1.0 if li == 0 else float((hr.get("inner") or {}).get("cost", 4.0))) for li in layer_idxs}
-            paths = []
-            # A* can reach ANY other island. If the first island cannot escape,
-            # try the others; one blocked first pair must not hide useful copper.
-            # Merge successful connections and keep growing until no pair routes.
-            while len(terminals) > 1:
-                for i, starts in enumerate(terminals):
-                    goals = set().union(*(t for j, t in enumerate(terminals) if j != i))
-                    path = grid_mod.astar(
-                        free, viaok, starts, goals, layer_idxs, cost_mult, res,
-                        via_cost, pitch, max_expand=int(hr.get("max_expand", 2_500_000)),
-                    )
-                    if not path:
+                def _block_viaok(x0: float, y0: float, x1: float, y1: float,
+                                 _viaok=viaok) -> None:
+                    ix0, iy0 = g.cell(x0, y0)
+                    ix1, iy1 = g.cell(x1, y1)
+                    xa, xb = sorted((ix0, ix1))
+                    ya, yb = sorted((iy0, iy1))
+                    xa, xb = max(0, xa), min(g.nx - 1, xb)
+                    ya, yb = max(0, ya), min(g.ny - 1, yb)
+                    if xa <= xb and ya <= yb:
+                        _viaok[ya : yb + 1, xa : xb + 1] = False
+
+                def _block_disk(li: int, x: float, y: float, r: float) -> None:
+                    _block_rect(li, x - r, y - r, x + r, y + r)
+
+                def _block_thick_seg(li: int, x0: float, y0: float, x1: float, y1: float,
+                                     half: float) -> None:
+                    length = math.hypot(x1 - x0, y1 - y0)
+                    n = max(1, int(math.ceil(length / max(res * 0.5, 1e-6))))
+                    for i in range(n + 1):
+                        t = i / n
+                        _block_disk(li, x0 + t * (x1 - x0), y0 + t * (y1 - y0), half)
+
+                # Inflate obstacles by clearance + half our track width so wide power tracks don't short.
+                for op in board.pads():
+                    if _same_net(op.net, net_name):
                         continue
-                    paths.append(path)
-                    path_cells = set(path)
-                    joined = {j for j, t in enumerate(terminals) if path_cells & t} | {i}
-                    merged = path_cells.union(*(terminals[j] for j in joined))
-                    terminals = [t for j, t in enumerate(terminals) if j not in joined] + [merged]
-                    # Subsequent branches must respect vias already placed here.
-                    for before, after in zip(path, path[1:], strict=False):
-                        if before[0] != after[0]:
-                            yy, xx = np.ogrid[:g.ny, :g.nx]
-                            viaok[(yy - before[1]) ** 2 + (xx - before[2]) ** 2 < pitch ** 2] = False
-                    break
-                else:
-                    break
-            remaining_islands[net_name] = len(terminals)
+                    grow = _pair_clearance(rules, net_name, op.net) + track_w / 2
+                    for li, lay in enumerate(layers):
+                        if (not op.layers) or lay in op.layers or "*.Cu" in op.layers:
+                            _block_rect(
+                                li,
+                                op.box[0] - grow,
+                                op.box[1] - grow,
+                                op.box[2] + grow,
+                                op.box[3] + grow,
+                            )
+                    via_grow = _pair_clearance(rules, net_name, op.net) + via_d_net / 2
+                    _block_viaok(
+                        op.box[0] - via_grow,
+                        op.box[1] - via_grow,
+                        op.box[2] + via_grow,
+                        op.box[3] + via_grow,
+                    )
+                for seg in board.segments:
+                    if _same_net(seg.net, net_name):
+                        continue
+                    if seg.layer not in layers:
+                        continue
+                    li = layers.index(seg.layer)
+                    grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + track_w / 2
+                    _block_thick_seg(li, seg.x0, seg.y0, seg.x1, seg.y1, grow)
+                for v in board.vias:
+                    if _same_net(v.net, net_name):
+                        continue
+                    grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
+                    for li in layer_idxs:
+                        _block_disk(li, v.x, v.y, grow)
+                # Keepouts (unfilled) block; foreign filled pours do not (AABB would wall a plane).
+                for z in getattr(board, "zones", []) or []:
+                    if getattr(z, "filled", True):
+                        continue
+                    if z.layer not in layers:
+                        continue
+                    li = layers.index(z.layer)
+                    grow = _pair_clearance(rules, net_name, z.net) + track_w / 2
+                    _block_rect(
+                        li,
+                        z.box[0] - grow,
+                        z.box[1] - grow,
+                        z.box[2] + grow,
+                        z.box[3] + grow,
+                    )
+                    via_grow = _pair_clearance(rules, net_name, z.net) + via_d_net / 2
+                    _block_viaok(
+                        z.box[0] - via_grow,
+                        z.box[1] - via_grow,
+                        z.box[2] + via_grow,
+                        z.box[3] + via_grow,
+                    )
+                for seg in fresh_tracks:
+                    if _same_net(seg["net"], net_name):
+                        continue
+                    if seg["layer"] not in layers:
+                        continue
+                    li = layers.index(seg["layer"])
+                    grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + track_w / 2
+                    _block_thick_seg(li, seg["x0"], seg["y0"], seg["x1"], seg["y1"], grow)
+                for v in fresh_vias:
+                    if _same_net(v["net"], net_name):
+                        continue
+                    grow = float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + track_w / 2
+                    for li in layer_idxs:
+                        _block_disk(li, v["x"], v["y"], grow)
+
+                # Own copper must stay seedable under foreign clearance inflation.
+                for _, shapes in items:
+                    for li, shape in shapes.items():
+                        if li not in free:
+                            continue
+                        x0, y0, x1, y1 = shape.bounds
+                        ix0, iy0 = g.cell(x0, y0)
+                        ix1, iy1 = g.cell(x1, y1)
+                        xa, xb = max(0, min(ix0, ix1)), min(g.nx - 1, max(ix0, ix1))
+                        ya, yb = max(0, min(iy0, iy1)), min(g.ny - 1, max(iy0, iy1))
+                        if xa > xb or ya > yb:
+                            continue
+                        ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
+                        mask = intersects_xy(
+                            shape,
+                            g.x0 + (xs + 0.5) * g.res,
+                            g.y0 + (ys + 0.5) * g.res,
+                        )
+                        free[li][ya:yb + 1, xa:xb + 1] |= mask
+
+                terminals = [_handroute_terminal_cells(items, island, g, free) for island in islands]
+                paths = []
+                while len(terminals) > 1:
+                    for i, starts in enumerate(terminals):
+                        if not starts:
+                            continue
+                        goals = set().union(*(t for j, t in enumerate(terminals) if j != i and t))
+                        if not goals:
+                            continue
+                        path = grid_mod.astar(
+                            free, viaok, starts, goals, layer_idxs, cost_mult, res,
+                            via_cost, pitch, max_expand=int(hr.get("max_expand", 2_500_000)),
+                        )
+                        if not path:
+                            continue
+                        paths.append(path)
+                        path_cells = set(path)
+                        joined = {j for j, t in enumerate(terminals) if path_cells & t} | {i}
+                        merged = path_cells.union(*(terminals[j] for j in joined))
+                        terminals = [t for j, t in enumerate(terminals) if j not in joined] + [merged]
+                        for before, after in zip(path, path[1:], strict=False):
+                            if before[0] != after[0]:
+                                yy, xx = np.ogrid[:g.ny, :g.nx]
+                                viaok[(yy - before[1]) ** 2 + (xx - before[2]) ** 2 < pitch ** 2] = False
+                        break
+                    else:
+                        break
+                rem = len(terminals)
+                cand = (rem, track_w, paths)
+                if best is None or cand[0] < best[0] or (cand[0] == best[0] and cand[1] > best[1]):
+                    # Prefer fewer remaining islands; tie-break prefer wider copper.
+                    best = cand
+                if rem <= 1:
+                    break  # fully connected at this width
+
+            remaining_islands[net_name] = best[0] if best else len(islands)
             segs = []
             net_vias = []
-            for path in paths:
-                runs = grid_mod.simplify(path, g.xy)
-                seg_pairs, via_pts = grid_mod.runs_to_segments(runs)
-                # NOTE: do not name the endpoint `b` — that shadowed the Board and crashed on net 2+.
-                for l0, a, bpt in seg_pairs:
-                    segs.append({
-                        "net": net_name,
-                        "layer": layers[l0],
-                        "x0": round(a[0], 4),
-                        "y0": round(a[1], 4),
-                        "x1": round(bpt[0], 4),
-                        "y1": round(bpt[1], 4),
-                        "width": track_w,
-                    })
-                # Layer-change vias from runs_to_segments must be written (not discarded).
-                for pt in via_pts:
-                    net_vias.append({
-                        "net": net_name,
-                        "x": round(pt[0], 4),
-                        "y": round(pt[1], 4),
-                        "size": float(nc["via_d"]),
-                        "drill": float(nc["via_h"]),
-                    })
+            if best and best[2]:
+                track_w = best[1]
+                for path in best[2]:
+                    runs = grid_mod.simplify(path, g.xy)
+                    seg_pairs, via_pts = grid_mod.runs_to_segments(runs)
+                    for l0, a, bpt in seg_pairs:
+                        segs.append({
+                            "net": net_name,
+                            "layer": layers[l0],
+                            "x0": round(a[0], 4),
+                            "y0": round(a[1], 4),
+                            "x1": round(bpt[0], 4),
+                            "y1": round(bpt[1], 4),
+                            "width": track_w,
+                        })
+                    for pt in via_pts:
+                        net_vias.append({
+                            "net": net_name,
+                            "x": round(pt[0], 4),
+                            "y": round(pt[1], 4),
+                            "size": float(nc["via_d"]),
+                            "drill": float(nc["via_h"]),
+                        })
             if segs or net_vias:
                 routed[net_name] = segs
                 fresh_tracks.extend(segs)

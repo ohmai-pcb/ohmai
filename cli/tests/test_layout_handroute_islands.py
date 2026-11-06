@@ -361,3 +361,15 @@ def test_tiny_pad_seedable_under_foreign_clearance(tmp_path):
     # Seedable terminals under foreign clearance → A* can bridge (remaining 1).
     assert rep["remaining_islands"]["SIG"] == 1
     assert "SIG" in rep.get("routed_nets", [])
+
+
+def test_handroute_try_widths_ladder():
+    hr = {"neck_w": 0.15, "residual_neck": True, "alt_widths": {"VBUS_FILT": [0.35]}}
+    nc = {"name": "VBUS_20V", "width": 0.6}
+    assert steps._handroute_try_widths(hr, nc, "VBUS_FILT") == [0.6, 0.35, 0.45, 0.3, 0.225, 0.15]
+    # residual_neck off + class not in neck_classes → only full + explicit alts
+    hr2 = {"neck_w": 0.15, "residual_neck": False, "neck_classes": ["Default"],
+           "alt_widths": {"SW_NODE": [0.4]}}
+    nc2 = {"name": "SW_NODE", "width": 0.8}
+    assert steps._handroute_try_widths(hr2, nc2, "SW2_NODE") == [0.8, 0.4]
+

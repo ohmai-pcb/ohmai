@@ -40,8 +40,8 @@ DEFAULTS: dict = {
                           "plane_via_keepout": 0.5, "class_split": None, "widen_padstacks": [],
                           "inner_class": {"name": "InnerOk", "width": 0.15, "clearance": 0.1}}},
     "pour": None,                  # {net, layer, zone_clearance, edge, attach, min_neck, local_neck, local}
-    "handroute": {"via_cost": 1.6, "plane_window": 4.0, "search_margin": 8.0, "neck_w": 0.1,
-                  "neck_classes": ["Default"], "alt_widths": OPEN, "no_inner": [], "no_rip": [], "rip_cap": 4,
+    "handroute": {"via_cost": 1.6, "plane_window": 4.0, "search_margin": 8.0, "neck_w": 0.15,
+                  "neck_classes": ["Default"], "residual_neck": True, "alt_widths": OPEN, "no_inner": [], "no_rip": [], "rip_cap": 4,
                   "rip_pen": 0.4, "inner": {"cost": 4.0, "max_run": 2.5, "wide_w": 1.4, "narrow_pen": 0.3},
                   "max_expand": 2500000, "solid_pads": OPEN, "manual": OPEN},
     "escape_room": None,
