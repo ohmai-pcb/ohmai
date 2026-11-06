@@ -660,6 +660,81 @@ def lcfg_pour(cfg: dict, net: str | None, layer: str | None) -> dict:
     return base
 
 
+def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
+    """Same-net geometry for copper_island; Board currently exposes no filled zones.
+
+    Match the placement model: pads are their (possibly rotated) bounding boxes,
+    tracks are round-ended strokes, and vias span all modeled copper layers.
+    Include non-routing copper in connectivity, but not as A* landing cells.
+    """
+    from shapely.geometry import LineString, Point, box
+
+    # Routing layers retain their A* indices. Extra copper layers participate in
+    # island connectivity only (e.g. two fanout vias joined by an inner track).
+    other_layers = {s.layer for s in board.segments if s.layer.endswith(".Cu")}
+    other_layers.update(lay for p in board.pads() for lay in p.layers
+                        if lay.endswith(".Cu") and lay != "*.Cu")
+    copper_layers = layers + sorted(other_layers - set(layers))
+    items = []
+    for p in board.pads():
+        if p.net == net_name:
+            shapes = {
+                li: box(*p.box) for li, lay in enumerate(copper_layers)
+                if lay in p.layers or "*.Cu" in p.layers
+            }
+            if shapes:
+                items.append((net_name, shapes))
+    for v in board.vias:
+        if v.net == net_name:
+            disk = Point(v.x, v.y).buffer(v.size / 2)
+            items.append((net_name, dict.fromkeys(range(len(copper_layers)), disk)))
+    for s in board.segments:
+        if s.net == net_name and s.layer in copper_layers:
+            stroke = LineString([(s.x0, s.y0), (s.x1, s.y1)]).buffer(s.width / 2)
+            items.append((net_name, {copper_layers.index(s.layer): stroke}))
+    return items
+
+
+def _handroute_islands(items: list) -> list[list[int]]:
+    """Partition touching copper using the existing geometric connectivity helper."""
+    remaining = set(range(len(items)))
+    islands = []
+    while remaining:
+        island = grid_mod.copper_island(items, min(remaining))
+        islands.append(island)
+        remaining.difference_update(island)
+    return islands
+
+
+def _handroute_terminal_cells(items: list, island: list[int], g, free: dict) -> set:
+    """Rasterize copper centres, never overriding inflated foreign-copper obstacles.
+
+    Own copper was never blocked. Filtering by free also avoids seeding A* inside
+    a foreign clearance envelope (unblocking such a cell can manufacture a short).
+    """
+    import numpy as np
+    from shapely import intersects_xy
+
+    cells = set()
+    for i in island:
+        for li, shape in items[i][1].items():
+            if li not in free:
+                continue
+            x0, y0, x1, y1 = shape.bounds
+            ix0, iy0 = g.cell(x0, y0)
+            ix1, iy1 = g.cell(x1, y1)
+            xa, xb = max(0, ix0), min(g.nx - 1, ix1)
+            ya, yb = max(0, iy0), min(g.ny - 1, iy1)
+            if xa > xb or ya > yb:
+                continue
+            ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
+            mask = intersects_xy(shape, g.x0 + (xs + 0.5) * g.res,
+                                 g.y0 + (ys + 0.5) * g.res)
+            mask &= free[li][ya:yb + 1, xa:xb + 1]
+            cells.update((li, int(y), int(x)) for y, x in zip(ys[mask], xs[mask], strict=True))
+    return cells
+
+
 def run_handroute(
     cfg: dict,
     action: str = "status",
@@ -749,7 +824,16 @@ def run_handroute(
             route_src = Path(staged)
             carry_fanout = _fanout_vias_from_staged(pcb, Path(staged))
             keep_vias, keep_tracks = _kept_handroute_from_staged(pcb, Path(staged), set(target_nets))
-        board = L.load(route_src)
+        # Route against exactly the copper that survives the wipe-or-replace write.
+        # Old target-net staged tracks must not become terminals: they are removed.
+        board = L.load(pcb)
+        if route_src != pcb:
+            for v in carry_fanout + keep_vias:
+                board.vias.append(L.Via(v["x"], v["y"], v["size"], v["net"], v["drill"]))
+            for v in carry_fanout:
+                board.segments.append(L.Track(v["net"], v["layer"], v["pad_x"], v["pad_y"],
+                                             v["x"], v["y"], v["width"]))
+            board.segments.extend(L.Track(**s) for s in keep_tracks)
         rules = cfg["rules_resolved"]
         # Thin-first: narrower class before wider so 1.0 mm BATT/STEREO does not block later thin nets.
         target_nets = _sort_handroute_nets(rules, list(target_nets))
@@ -757,24 +841,27 @@ def run_handroute(
         eb = board.edge_box or (95.0, 95.0, 125.0, 155.0)
         layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])
         routed: dict[str, list[dict]] = {}
+        remaining_islands: dict[str, int] = {}
         # Copper laid earlier in this call — later nets must clear it.
         fresh_tracks: list[dict] = []
         fresh_vias: list[dict] = []
         import numpy as np
 
         for net_name in target_nets:
-            net_pads = [p for p in board.pads() if p.net == net_name]
-            if len(net_pads) < 2:
-                continue
-            p0, p1 = net_pads[0], net_pads[1]
+            items = _handroute_copper_items(board, net_name, layers)
+            islands = _handroute_islands(items)
+            remaining_islands[net_name] = len(islands)
+            if len(islands) < 2:
+                continue  # All exposed copper (including every pad) is already connected.
+            bounds = [shape.bounds for _, shapes in items for shape in shapes.values()]
             nc = _class_for_net(rules, net_name)
             track_w = float(nc["width"])
             margin = float((cfg.get("handroute") or {}).get("search_margin", 8.0))
             bbox = (
-                max(eb[0], min(p0.x, p1.x) - margin),
-                max(eb[1], min(p0.y, p1.y) - margin),
-                min(eb[2], max(p0.x, p1.x) + margin),
-                min(eb[3], max(p0.y, p1.y) + margin),
+                max(eb[0], min(b[0] for b in bounds) - margin),
+                max(eb[1], min(b[1] for b in bounds) - margin),
+                min(eb[2], max(b[2] for b in bounds) + margin),
+                min(eb[3], max(b[3] for b in bounds) + margin),
             )
             # Grid.around covers the bbox; free/viaok arrays carry per-layer occupancy.
             g = grid_mod.Grid.around(bbox, res)
@@ -860,37 +947,52 @@ def run_handroute(
                 grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + track_w / 2
                 _block_thick_seg(li, seg["x0"], seg["y0"], seg["x1"], seg["y1"], grow)
 
-            s_li = 0 if (not p0.layers or layers[0] in p0.layers or "*.Cu" in p0.layers) else min(1, len(layers) - 1)
-            g_li = 0 if (not p1.layers or layers[0] in p1.layers or "*.Cu" in p1.layers) else min(1, len(layers) - 1)
-            six, siy = g.cell(p0.x, p0.y)
-            gix, giy = g.cell(p1.x, p1.y)
-            if not (0 <= six < g.nx and 0 <= siy < g.ny and 0 <= gix < g.nx and 0 <= giy < g.ny):
-                continue
-            # Own terminals must stay walkable even if clearance from nearby copper nibbled them.
-            free[s_li][siy, six] = True
-            free[g_li][giy, gix] = True
-            start = (s_li, siy, six)
-            goal = (g_li, giy, gix)
+            for v in fresh_vias:
+                if v["net"] == net_name:
+                    continue
+                grow = float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + track_w / 2
+                for li in layer_idxs:
+                    _block_disk(li, v["x"], v["y"], grow)
+
+            # Include whole islands, not just pad centres. A via contributes all
+            # its layers, so a fanout stub offers an escape beyond a boxed-in pad.
+            terminals = [_handroute_terminal_cells(items, island, g, free) for island in islands]
             hr = cfg.get("handroute") or {}
             via_cost = float(hr.get("via_cost", 1.6))
             pitch = grid_mod.via_pitch_cells(float(nc["via_h"]), float(rules.get("hole_hole", rules.get("hole_to_hole", 0.25))), res)
             cost_mult = {li: (1.0 if li == 0 else float((hr.get("inner") or {}).get("cost", 4.0))) for li in layer_idxs}
-            path = grid_mod.astar(
-                free,
-                viaok,
-                {start},
-                {goal},
-                layer_idxs,
-                cost_mult,
-                res,
-                via_cost,
-                pitch,
-                max_expand=int(hr.get("max_expand", 2_500_000)),
-            )
-            if path:
-                runs = grid_mod.simplify(path, lambda ix, iy: g.xy(ix, iy))
+            paths = []
+            # A* can reach ANY other island. If the first island cannot escape,
+            # try the others; one blocked first pair must not hide useful copper.
+            # Merge successful connections and keep growing until no pair routes.
+            while len(terminals) > 1:
+                for i, starts in enumerate(terminals):
+                    goals = set().union(*(t for j, t in enumerate(terminals) if j != i))
+                    path = grid_mod.astar(
+                        free, viaok, starts, goals, layer_idxs, cost_mult, res,
+                        via_cost, pitch, max_expand=int(hr.get("max_expand", 2_500_000)),
+                    )
+                    if not path:
+                        continue
+                    paths.append(path)
+                    path_cells = set(path)
+                    joined = {j for j, t in enumerate(terminals) if path_cells & t} | {i}
+                    merged = path_cells.union(*(terminals[j] for j in joined))
+                    terminals = [t for j, t in enumerate(terminals) if j not in joined] + [merged]
+                    # Subsequent branches must respect vias already placed here.
+                    for before, after in zip(path, path[1:], strict=False):
+                        if before[0] != after[0]:
+                            yy, xx = np.ogrid[:g.ny, :g.nx]
+                            viaok[(yy - before[1]) ** 2 + (xx - before[2]) ** 2 < pitch ** 2] = False
+                    break
+                else:
+                    break
+            remaining_islands[net_name] = len(terminals)
+            segs = []
+            net_vias = []
+            for path in paths:
+                runs = grid_mod.simplify(path, g.xy)
                 seg_pairs, via_pts = grid_mod.runs_to_segments(runs)
-                segs = []
                 # NOTE: do not name the endpoint `b` — that shadowed the Board and crashed on net 2+.
                 for l0, a, bpt in seg_pairs:
                     segs.append({
@@ -903,7 +1005,6 @@ def run_handroute(
                         "width": track_w,
                     })
                 # Layer-change vias from runs_to_segments must be written (not discarded).
-                net_vias = []
                 for pt in via_pts:
                     net_vias.append({
                         "net": net_name,
@@ -912,6 +1013,7 @@ def run_handroute(
                         "size": float(nc["via_d"]),
                         "drill": float(nc["via_h"]),
                     })
+            if segs or net_vias:
                 routed[net_name] = segs
                 fresh_tracks.extend(segs)
                 fresh_vias.extend(net_vias)
@@ -938,6 +1040,7 @@ def run_handroute(
             "staged": str(staged) if staged else None,
             "dry_run": dry_run,
             "routed_nets": sorted(routed.keys()),
+            "remaining_islands": remaining_islands,
             "segments_added": len(fresh_track_list),
             "vias_added": len(fresh_vias),
             "fanout_carried": len(carry_fanout),
