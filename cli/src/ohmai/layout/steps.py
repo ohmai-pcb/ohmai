@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
 from pathlib import Path
 
@@ -326,31 +327,41 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         # Netclass width when a non-Default class matches; else fanout.track_w fallback.
         p_track_w = float(nc["width"]) if nc["name"] != "Default" else fo_track_fallback
         stub_layer = p.layers[0] if p.layers else "F.Cu"
+        # Try netclass via first; if no slot (dense QFN toes), fall back to the thinner
+        # project default via so escape stubs can leave fine-pitch pads.
+        size_attempts = [(p_via_d, p_via_h, p_track_w)]
+        def_d, def_h = _clamp_via_size(rules, float(rules["via_d"]), float(rules["via_h"]))
+        if (def_d < p_via_d - 1e-9) or (def_h < p_via_h - 1e-9):
+            size_attempts.append((def_d, def_h, min(p_track_w, fo_track_fallback)))
         placed = None
-        for r_step in steps:
-            # Ring from full pad extent (EPAD / large pads), not a centre point.
-            dist = max(p.w, p.h) / 2 + p_via_d / 2 + r_step
-            for k in range(angles):
-                ang = 2 * math.pi * k / angles
-                vx = round(p.x + dist * math.cos(ang), 4)
-                vy = round(p.y + dist * math.sin(ang), 4)
-                if eb and (vx - p_via_d / 2 < eb[0] + edge_cl or vx + p_via_d / 2 > eb[2] - edge_cl or
-                           vy - p_via_d / 2 < eb[1] + edge_cl or vy + p_via_d / 2 > eb[3] - edge_cl):
-                    continue
-                if any(math.hypot(vx - hx, vy - hy) < (p_via_h / 2 + hr + hole_hole) for hx, hy, hr in existing_holes):
-                    continue
-                if not _fanout_escape_ok(
-                    pad=p, vx=vx, vy=vy, via_d=p_via_d, stub_w=p_track_w, stub_layer=stub_layer,
-                    rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
-                    planned=planned_vias, pad_gap=pad_gap,
-                ):
-                    continue
-                # Require pad copper connection: always carry stub endpoints (no orphan vias).
-                placed = {"ref": p.ref, "pad": p.num, "net": p.net, "x": vx, "y": vy,
-                          "pad_x": p.x, "pad_y": p.y, "layer": stub_layer,
-                          "size": p_via_d, "drill": p_via_h, "width": p_track_w}
-                existing_holes.append((vx, vy, p_via_h / 2))
-                break
+        for attempt_i, (cand_d, cand_h, cand_w) in enumerate(size_attempts):
+            for r_step in steps:
+                # Ring from full pad extent (EPAD / large pads), not a centre point.
+                dist = max(p.w, p.h) / 2 + cand_d / 2 + r_step
+                for k in range(angles):
+                    ang = 2 * math.pi * k / angles
+                    vx = round(p.x + dist * math.cos(ang), 4)
+                    vy = round(p.y + dist * math.sin(ang), 4)
+                    if eb and (vx - cand_d / 2 < eb[0] + edge_cl or vx + cand_d / 2 > eb[2] - edge_cl or
+                               vy - cand_d / 2 < eb[1] + edge_cl or vy + cand_d / 2 > eb[3] - edge_cl):
+                        continue
+                    if any(math.hypot(vx - hx, vy - hy) < (cand_h / 2 + hr + hole_hole) for hx, hy, hr in existing_holes):
+                        continue
+                    if not _fanout_escape_ok(
+                        pad=p, vx=vx, vy=vy, via_d=cand_d, stub_w=cand_w, stub_layer=stub_layer,
+                        rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
+                        planned=planned_vias, pad_gap=pad_gap,
+                    ):
+                        continue
+                    # Require pad copper connection: always carry stub endpoints (no orphan vias).
+                    placed = {"ref": p.ref, "pad": p.num, "net": p.net, "x": vx, "y": vy,
+                              "pad_x": p.x, "pad_y": p.y, "layer": stub_layer,
+                              "size": cand_d, "drill": cand_h, "width": cand_w,
+                              "via_relaxed": attempt_i > 0}
+                    existing_holes.append((vx, vy, cand_h / 2))
+                    break
+                if placed:
+                    break
             if placed:
                 break
         if placed and "pad_x" in placed and "pad_y" in placed:
@@ -372,6 +383,7 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         "staged": str(staged) if staged else None,
         "dry_run": dry_run,
         "vias_added": len(planned_vias),
+        "vias_relaxed": sum(1 for v in planned_vias if v.get("via_relaxed")),
         "vias": planned_vias,
         "skipped": skipped,
         "skipped_count": len(skipped),
@@ -584,6 +596,22 @@ def _append_copper_to_pcb(
     dst_pcb.write_text(sexp.dumps(tree) + "\n", encoding="utf-8")
 
 
+def _freerouting_jar() -> str:
+    """Absolute Freerouting jar when known; else the relative name for the caller's cwd."""
+    for key in ("OHMAI_FREEROUTING_JAR", "FREEROUTING_JAR"):
+        env = os.environ.get(key)
+        if env and Path(env).is_file():
+            return str(Path(env).resolve())
+    for cand in (
+        Path("/workspace/.toolcache/freerouting/freerouting-2.2.4.jar"),
+        Path("/workspace/.toolcache/freerouting/freerouting-2.1.0.jar"),
+        Path.home() / ".cache/ohmai/freerouting/freerouting.jar",
+    ):
+        if cand.is_file():
+            return str(cand.resolve())
+    return "freerouting.jar"
+
+
 def prepare_autoroute(
     cfg: dict,
     dsn_in: Path | None = None,
@@ -608,22 +636,34 @@ def prepare_autoroute(
     eff_threads = threads if threads is not None else ar.get("threads")
 
     dsn_edited = False
+    dsn_log: list[str] = []
     if raw_dsn.is_file():
-        tree = dsn_mod.parse(raw_dsn.read_text(encoding="utf-8", errors="replace"))
+        # dsn.patch edits Specctra text in place (no sexp tree API).
         dsn_cfg = dict(ar.get("dsn") or {})
-        dsn_cfg["planes"] = cfg.get("planes") or {}
-        dsn_cfg["inner_nets"] = ar.get("inner_nets")
-        dsn_cfg["signal_layers"] = cfg.get("signal_layers") or ["F.Cu", "B.Cu"]
-        dsn_cfg["inner_signal_layer"] = cfg.get("inner_signal_layer")
-        dsn_mod.edit_dsn(tree, dsn_cfg)
-        patched_dsn.write_text(dsn_mod.dumps(tree), encoding="utf-8")
+        planes = dict(cfg.get("planes") or {})
+        signal_layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])
+        # copper = DSN layer names to consider. Layers not in signal_layers are
+        # flipped signal→power. Default to signal_layers only: KiCad often exports
+        # inner planes already as (type power) under names like GND/PWR, not In1.Cu.
+        copper = list(cfg.get("copper") or signal_layers)
+        patched, dsn_log = dsn_mod.patch(
+            raw_dsn.read_text(encoding="utf-8", errors="replace"),
+            dsn_cfg,
+            planes,
+            copper,
+            signal_layers,
+            inner_layer=cfg.get("inner_signal_layer"),
+            inner_nets=ar.get("inner_nets"),
+        )
+        patched_dsn.write_text(patched, encoding="utf-8")
         dsn_edited = True
 
+    jar = _freerouting_jar()
     cmd = [
         "java",
         "-Djava.awt.headless=true",
         "-jar",
-        "freerouting.jar",
+        jar,
         "-de",
         str(patched_dsn if dsn_edited else raw_dsn),
         "-do",
@@ -644,14 +684,51 @@ def prepare_autoroute(
         "raw_dsn": str(raw_dsn),
         "patched_dsn": str(patched_dsn),
         "dsn_edited": dsn_edited,
+        "dsn_log": dsn_log,
         "ses_out": str(ses_out),
         "passes": eff_passes,
         "opt_passes": eff_opt,
         "timeout": eff_timeout,
         "timeout_sec": parse_timeout_sec(eff_timeout),
         "via_costs": eff_via_costs,
+        "jar": jar,
         "cmd": cmd,
     }
+
+
+def run_autoroute(prepared: dict) -> dict:
+    """Execute the Freerouting command from prepare_autoroute; returns returncode + log tails."""
+    import subprocess
+
+    cmd = list(prepared["cmd"])
+    jar = Path(cmd[cmd.index("-jar") + 1]) if "-jar" in cmd else Path("freerouting.jar")
+    if not jar.is_file() and jar.name == str(jar):
+        raise FileNotFoundError(
+            f"freerouting jar not found ({jar}); set OHMAI_FREEROUTING_JAR or place freerouting.jar on cwd"
+        )
+    if not jar.is_file():
+        raise FileNotFoundError(f"{jar}: freerouting jar not found")
+    de = Path(prepared["patched_dsn"] if prepared.get("dsn_edited") else prepared["raw_dsn"])
+    if not de.is_file():
+        raise FileNotFoundError(f"{de}: DSN input missing (export Specctra to {prepared['raw_dsn']} first)")
+    timeout = int(prepared.get("timeout_sec") or 600)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout + 30,
+        cwd=str(Path(prepared["ses_out"]).resolve().parent),
+    )
+    def _tail(s: str, n: int = 40) -> str:
+        lines = (s or "").splitlines()
+        return "\n".join(lines[-n:])
+    return {
+        "returncode": proc.returncode,
+        "ses_exists": Path(prepared["ses_out"]).is_file(),
+        "stdout_tail": _tail(proc.stdout),
+        "stderr_tail": _tail(proc.stderr),
+    }
+
 
 
 def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged: Path | None = None) -> dict:

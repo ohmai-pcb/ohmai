@@ -122,21 +122,41 @@ def cmd_autoroute(a) -> int:
     p = _project()
     cfg = _cfg(p, a)
     dsn_in = (p.root / a.dsn) if a.dsn and not Path(a.dsn).is_absolute() else (Path(a.dsn) if a.dsn else None)
-    res = steps.prepare_autoroute(
-        cfg,
-        dsn_in=dsn_in,
-        passes=a.passes,
-        opt_passes=a.opt_passes,
-        timeout=a.timeout,
-        via_costs=a.via_costs,
-        threads=a.threads,
-    )
+    try:
+        res = steps.prepare_autoroute(
+            cfg,
+            dsn_in=dsn_in,
+            passes=a.passes,
+            opt_passes=a.opt_passes,
+            timeout=a.timeout,
+            via_costs=a.via_costs,
+            threads=a.threads,
+        )
+    except Exception as e:
+        print(f"ohmai layout autoroute: {e}", file=sys.stderr)
+        return 1
+    if a.prepare_only:
+        if a.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"autoroute: passes={res['passes']}, opt_passes={res['opt_passes']}, timeout={res['timeout']}, "
+                  f"dsn_edited={res['dsn_edited']}, jar={res['jar']}")
+            print("cmd:", " ".join(res["cmd"]))
+        return 0
+    try:
+        run = steps.run_autoroute(res)
+    except Exception as e:
+        print(f"ohmai layout autoroute: {e}", file=sys.stderr)
+        return 1
+    out = {**res, **run}
     if a.json:
-        print(json.dumps(res, indent=2))
+        print(json.dumps(out, indent=2))
     else:
-        print(f"autoroute: passes={res['passes']}, opt_passes={res['opt_passes']}, timeout={res['timeout']}, "
-              f"dsn_edited={res['dsn_edited']}")
-    return 0
+        print(f"autoroute: exit={run['returncode']}, dsn_edited={res['dsn_edited']}, "
+              f"ses={res['ses_out']}, jar={res['jar']}")
+        if run.get("stderr_tail"):
+            print(run["stderr_tail"], file=sys.stderr)
+    return 0 if run["returncode"] == 0 else 1
 
 
 def cmd_pour(a) -> int:
