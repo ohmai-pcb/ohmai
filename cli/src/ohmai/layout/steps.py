@@ -53,6 +53,179 @@ def _pair_clearance(rules: dict, net_a: str, net_b: str) -> float:
     return max(_class_for_net(rules, net_a)["clearance"], _class_for_net(rules, net_b)["clearance"])
 
 
+def _clamp_via_size(rules: dict, via_d: float, via_h: float) -> tuple[float, float]:
+    """Prefer netclass via size, but never below board / .kicad_dru floors (or annular)."""
+    min_d = float(rules.get("min_via_d") or 0.0)
+    min_h = float(rules.get("min_via_h") or 0.0)
+    min_ann = float(rules.get("min_via_annular") or 0.0)
+    d = max(float(via_d), min_d) if min_d else float(via_d)
+    h = max(float(via_h), min_h) if min_h else float(via_h)
+    if min_ann and d < h + 2 * min_ann:
+        d = h + 2 * min_ann
+    if min_d:
+        d = max(d, min_d)
+    return d, h
+
+
+def _thick_seg_box(x0: float, y0: float, x1: float, y1: float, half: float) -> tuple[float, float, float, float]:
+    """Axis-aligned bbox of a thick segment (conservative vs true capsule)."""
+    return (
+        min(x0, x1) - half,
+        min(y0, y1) - half,
+        max(x0, x1) + half,
+        max(y0, y1) + half,
+    )
+
+
+def _disk_box(x: float, y: float, r: float) -> tuple[float, float, float, float]:
+    return (x - r, y - r, x + r, y + r)
+
+
+def _zone_obstacles(pcb: Path) -> list[tuple[str, tuple[str, ...], tuple[float, float, float, float], bool]]:
+    """Foreign-zone AABBs from the live board: (net, layers, box, keepout_no_via).
+
+    Keepouts with vias not_allowed and copper zones (non-empty net) block fanout copper.
+    Outline polygons only (filled_polygon not required) — conservative bbox.
+    """
+    try:
+        tree = sexp.parse(pcb.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return []
+    out: list[tuple[str, tuple[str, ...], tuple[float, float, float, float], bool]] = []
+    for z in sexp.find(tree, "zone"):
+        nn = sexp.first(z, "net_name")
+        net = str(nn[1]) if nn and len(nn) > 1 else ""
+        layers_node = sexp.first(z, "layers") or sexp.first(z, "layer")
+        layers: tuple[str, ...] = ()
+        if layers_node and len(layers_node) > 1:
+            layers = tuple(str(x) for x in layers_node[1:] if isinstance(x, str))
+        keep = sexp.first(z, "keepout")
+        keepout_no_via = False
+        if keep is not None:
+            vias_rule = sexp.first(keep, "vias")
+            keepout_no_via = bool(vias_rule and len(vias_rule) > 1 and str(vias_rule[1]) == "not_allowed")
+        if not keepout_no_via and not net:
+            continue
+        xs: list[float] = []
+        ys: list[float] = []
+        for poly in list(sexp.find(z, "polygon")) + list(sexp.find(z, "filled_polygon")):
+            pts = sexp.first(poly, "pts")
+            if not pts:
+                continue
+            for xy in sexp.find(pts, "xy"):
+                if len(xy) >= 3:
+                    xs.append(float(xy[1]))
+                    ys.append(float(xy[2]))
+        if not xs:
+            continue
+        out.append((net, layers, (min(xs), min(ys), max(xs), max(ys)), keepout_no_via))
+    return out
+
+
+def _fanout_escape_ok(
+    *,
+    pad,
+    vx: float,
+    vy: float,
+    via_d: float,
+    stub_w: float,
+    stub_layer: str,
+    rules: dict,
+    all_pads: list,
+    segments: list,
+    vias: list,
+    zones: list,
+    planned: list[dict],
+    pad_gap: float,
+) -> bool:
+    """True if via + pad→via stub clear foreign copper (pads/tracks/vias/zones) by clearance.
+
+    Same-net copper is allowed. Source pad is skipped. Full pad boxes (incl. large EPADs) are
+    obstacles — never a centre-only point check. Prefer rejecting the candidate over a short.
+    """
+    v_r = via_d / 2
+    stub_half = stub_w / 2
+    v_box = _disk_box(vx, vy, v_r)
+    stub_box = _thick_seg_box(pad.x, pad.y, vx, vy, stub_half)
+
+    def _cl(other_net: str) -> float:
+        # Max of pair clearance and fanout pad_gap so dense QFN toes still clear.
+        return max(_pair_clearance(rules, pad.net, other_net or ""), pad_gap)
+
+    # Foreign pads (full boxes, including EPAD).
+    for o in all_pads:
+        if o is pad or o.net == pad.net:
+            continue
+        # Layer-aware for stub; vias pierce all copper layers.
+        stub_hit = (not o.layers) or stub_layer in o.layers or "*.Cu" in o.layers
+        cl = _cl(o.net)
+        if L.overlap(L.grow(v_box, cl), o.box, 0.0):
+            return False
+        if stub_hit and L.overlap(L.grow(stub_box, cl), o.box, 0.0):
+            return False
+        # Also require via copper itself stays pad_gap clear of the raw pad box.
+        if L.overlap(L.grow(v_box, pad_gap), o.box, 0.0):
+            return False
+
+    # Existing tracks.
+    for seg in segments:
+        if seg.net == pad.net:
+            continue
+        cl = _cl(seg.net)
+        # Via hits every layer; stub only its layer.
+        seg_half = seg.width / 2
+        sbox = _thick_seg_box(seg.x0, seg.y0, seg.x1, seg.y1, seg_half)
+        if L.overlap(L.grow(v_box, cl), sbox, 0.0):
+            return False
+        if seg.layer == stub_layer and L.overlap(L.grow(stub_box, cl), sbox, 0.0):
+            return False
+
+    # Existing vias.
+    for v in vias:
+        if v.net == pad.net:
+            continue
+        cl = _cl(v.net)
+        ob = _disk_box(v.x, v.y, v.size / 2)
+        if L.overlap(L.grow(v_box, cl), ob, 0.0):
+            return False
+        if L.overlap(L.grow(stub_box, cl), ob, 0.0):
+            return False
+
+    # Zones / keepouts.
+    for znet, zlayers, zbox, keepout_no_via in zones:
+        if keepout_no_via:
+            if L.overlap(v_box, zbox, 0.0) or L.overlap(stub_box, zbox, 0.0):
+                return False
+            continue
+        if znet == pad.net:
+            continue
+        cl = _cl(znet)
+        layer_hit = (not zlayers) or stub_layer in zlayers or any(l.endswith(".Cu") for l in zlayers)
+        if L.overlap(L.grow(v_box, cl), zbox, 0.0):
+            return False
+        if layer_hit and L.overlap(L.grow(stub_box, cl), zbox, 0.0):
+            return False
+
+    # Already-accepted fanout copper this call.
+    for pv in planned:
+        if pv["net"] == pad.net:
+            continue
+        cl = _cl(pv["net"])
+        ob = _disk_box(pv["x"], pv["y"], float(pv["size"]) / 2)
+        if L.overlap(L.grow(v_box, cl), ob, 0.0):
+            return False
+        if L.overlap(L.grow(stub_box, cl), ob, 0.0):
+            return False
+        # Their stub vs our via/stub.
+        other_stub = _thick_seg_box(pv["pad_x"], pv["pad_y"], pv["x"], pv["y"], float(pv["width"]) / 2)
+        other_layer = pv.get("layer", "F.Cu")
+        if L.overlap(L.grow(v_box, cl), other_stub, 0.0):
+            return False
+        if other_layer == stub_layer and L.overlap(L.grow(stub_box, cl), other_stub, 0.0):
+            return False
+    return True
+
+
 def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> dict:
     pcb = Path(cfg["board"])
     if not pcb.is_file():
@@ -76,11 +249,13 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         (p.x, p.y, p.drill / 2) for p in all_pads if p.hole
     ]
     eb = b.edge_box
+    zones = _zone_obstacles(pcb)
 
     escape_specs = fo.get("escape") or []
     target_refs = {spec["ref"] for spec in escape_specs if isinstance(spec, dict) and "ref" in spec}
 
     planned_vias: list[dict] = []
+    skipped: list[dict] = []
     fo_track_fallback = float(fo.get("track_w") or 0.25)
     for p in all_pads:
         if p.hole or not p.net:
@@ -93,12 +268,13 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         if any(v.net == p.net and math.hypot(v.x - p.x, v.y - p.y) <= 1.2 for v in b.vias):
             continue
         nc = _class_for_net(rules, p.net)
-        p_via_d = float(nc["via_d"])
-        p_via_h = float(nc["via_h"])
+        p_via_d, p_via_h = _clamp_via_size(rules, float(nc["via_d"]), float(nc["via_h"]))
         # Netclass width when a non-Default class matches; else fanout.track_w fallback.
         p_track_w = float(nc["width"]) if nc["name"] != "Default" else fo_track_fallback
+        stub_layer = p.layers[0] if p.layers else "F.Cu"
         placed = None
         for r_step in steps:
+            # Ring from full pad extent (EPAD / large pads), not a centre point.
             dist = max(p.w, p.h) / 2 + p_via_d / 2 + r_step
             for k in range(angles):
                 ang = 2 * math.pi * k / angles
@@ -109,17 +285,15 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
                     continue
                 if any(math.hypot(vx - hx, vy - hy) < (p_via_h / 2 + hr + hole_hole) for hx, hy, hr in existing_holes):
                     continue
-                v_box = (vx - p_via_d / 2, vy - p_via_d / 2, vx + p_via_d / 2, vy + p_via_d / 2)
-                # Foreign pads (other nets, including empty-net copper) are obstacles for via cells.
-                if any(
-                    o.net != p.net
-                    and L.overlap(L.grow(v_box, pad_gap), o.box, 0.0)
-                    for o in all_pads
+                if not _fanout_escape_ok(
+                    pad=p, vx=vx, vy=vy, via_d=p_via_d, stub_w=p_track_w, stub_layer=stub_layer,
+                    rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
+                    planned=planned_vias, pad_gap=pad_gap,
                 ):
                     continue
                 # Require pad copper connection: always carry stub endpoints (no orphan vias).
                 placed = {"ref": p.ref, "pad": p.num, "net": p.net, "x": vx, "y": vy,
-                          "pad_x": p.x, "pad_y": p.y, "layer": p.layers[0] if p.layers else "F.Cu",
+                          "pad_x": p.x, "pad_y": p.y, "layer": stub_layer,
                           "size": p_via_d, "drill": p_via_h, "width": p_track_w}
                 existing_holes.append((vx, vy, p_via_h / 2))
                 break
@@ -127,10 +301,14 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
                 break
         if placed and "pad_x" in placed and "pad_y" in placed:
             planned_vias.append(placed)
+        else:
+            # No legal escape — skip rather than plant a short / illegal via.
+            skipped.append({"ref": p.ref, "pad": p.num, "net": p.net, "reason": "no_legal_escape"})
 
     target = staged or (pcb if not dry_run else None)
     if target is not None:
         # Wipe-or-replace: always rebuild staged from the live board + this fanout only.
+        # Prefer writing zero fanout copper over illegal copper when every pad was skipped.
         _append_copper_to_pcb(pcb, target, planned_vias, [], via_d, via_h, fo_track_fallback)
         if staged is not None:
             _ensure_staged_project_files(pcb, Path(staged))
@@ -141,6 +319,8 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         "dry_run": dry_run,
         "vias_added": len(planned_vias),
         "vias": planned_vias,
+        "skipped": skipped,
+        "skipped_count": len(skipped),
     }
 
 
@@ -148,17 +328,26 @@ def _ensure_staged_project_files(board: Path, staged: Path) -> None:
     """Copy .kicad_pro / .kicad_dru next to a staged PCB so DRC picks up project design rules.
 
     Staged boards live under work_dir (often out/layout/), away from the live board's project
-    files. Without siblings, kicad-cli DRC falls back to defaults and can report 0 shorts that
-    appear after apply on the live board.
+    files. KiCad binds rules by *basename* (staged.kicad_pcb ↔ staged.kicad_pro), so copies are
+    renamed to the staged stem — keeping the live board's name leaves KiCad on default via mins
+    (0.5 / 0.3) and false via_diameter / drill_out_of_range.
     """
     src_dir = Path(board).resolve().parent
-    dst_dir = Path(staged).resolve().parent
-    if src_dir == dst_dir:
-        return
+    staged_p = Path(staged).resolve()
+    dst_dir = staged_p.parent
+    stem = staged_p.stem
     dst_dir.mkdir(parents=True, exist_ok=True)
-    for src in list(src_dir.glob("*.kicad_pro")) + list(src_dir.glob("*.kicad_dru")):
-        dst = dst_dir / src.name
-        if dst.resolve() == src.resolve():
+    board_stem = Path(board).stem
+    for ext in (".kicad_pro", ".kicad_dru"):
+        src = src_dir / f"{board_stem}{ext}"
+        if not src.is_file():
+            # Fall back to any single matching file in the board dir.
+            matches = list(src_dir.glob(f"*{ext}"))
+            src = matches[0] if len(matches) == 1 else None
+        if src is None or not Path(src).is_file():
+            continue
+        dst = dst_dir / f"{stem}{ext}"
+        if dst.resolve() == Path(src).resolve():
             continue
         shutil.copy2(src, dst)
 

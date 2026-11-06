@@ -103,12 +103,17 @@ def cmd_fanout(a) -> int:
     except Exception as e:
         print(f"ohmai layout fanout: {e}", file=sys.stderr)
         return 1
+    skipped = res.get("skipped") or []
     if a.json:
         print(json.dumps(res, indent=2))
     else:
         mode = " [dry-run]" if a.dry_run else (f" [staged -> {staged_path}]" if staged_path else "")
         print(f"fanout{mode}: {res['vias_added']} via(s) planned")
-    return 0
+        if skipped:
+            print(f"fanout: skipped {len(skipped)} pad(s) with no legal escape (no illegal copper written)",
+                  file=sys.stderr)
+    # Prefer zero fanout copper over illegal copper: non-zero when pads were skipped.
+    return 1 if skipped else 0
 
 
 def cmd_autoroute(a) -> int:

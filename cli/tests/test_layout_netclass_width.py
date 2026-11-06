@@ -346,5 +346,172 @@ def test_staged_project_rules_copied_alongside(tmp_path: Path):
     staged = tmp_path / "out" / "layout" / "staged.kicad_pcb"
     steps.run_handroute(cfg, action="route", nets=["VIN"], staged=staged, dry_run=False)
     assert staged.is_file()
-    assert (staged.parent / pcb.with_suffix(".kicad_pro").name).is_file()
-    assert (staged.parent / dru.name).is_file()
+    assert (staged.parent / "staged.kicad_pro").is_file()
+    assert (staged.parent / "staged.kicad_dru").is_file()
+    # KiCad binds rules by basename; live board names must not be the only copy.
+    assert not (staged.parent / pcb.with_suffix(".kicad_pro").name).is_file() or (
+        staged.parent / pcb.with_suffix(".kicad_pro").name
+    ).resolve() == (staged.parent / "staged.kicad_pro").resolve()
+
+
+def test_fanout_stub_blocked_by_foreign_pad(tmp_path: Path):
+    """Escape stub/via that would cross a foreign pad must be rejected (skip, not short)."""
+    from ohmai.layout import fixture as F
+    from ohmai.layout import placement as L
+
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    (hw / "layout").mkdir()
+    # Source pad at 110,110; foreign pad dead ahead so short stubs hit it.
+    pcb = hw / "t.kicad_pcb"
+    pcb.write_text(
+        F.board(
+            [
+                F.two_pad("R1", 110.0, 110.0, "SIG", "GND", size=(0.4, 0.4), pitch=0.5,
+                          cy=(-0.6, -0.4, 0.6, 0.4)),
+                F.two_pad("R2", 111.3, 110.0, "OTHER", "GND", size=(0.8, 0.8), pitch=0.5,
+                          cy=(-0.8, -0.6, 0.8, 0.6)),
+            ],
+            edge=(100.0, 100.0, 130.0, 130.0),
+        ),
+        encoding="utf-8",
+    )
+    (hw / "t.kicad_pro").write_text(
+        json.dumps({
+            "net_settings": {
+                "classes": [
+                    {"name": "Default", "clearance": 0.2, "track_width": 0.2,
+                     "via_diameter": 0.45, "via_drill": 0.2},
+                ],
+                "netclass_patterns": [],
+            },
+            "board": {"design_settings": {"rules": {
+                "min_hole_clearance": 0.2, "min_hole_to_hole": 0.25,
+                "min_copper_edge_clearance": 0.2,
+                "min_via_diameter": 0.45, "min_through_hole_diameter": 0.2,
+                "min_via_annular_width": 0.1,
+            }}},
+        }),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text(
+        "planes: {GND: B.Cu}\nfanout:\n  escape: [{ref: R1}]\n"
+        "  steps: [0.05, 0.1, 0.15, 0.2, 0.3]\n  angles: 8\n",
+        encoding="utf-8",
+    )
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+    fo = steps.run_fanout(cfg, staged=None, dry_run=True)
+    board = L.load(pcb)
+    foreign = next(p for p in board.pads() if p.ref == "R2" and p.num == "1")
+    for v in fo["vias"]:
+        if v["net"] != "SIG":
+            continue
+        v_box = (v["x"] - v["size"] / 2, v["y"] - v["size"] / 2,
+                 v["x"] + v["size"] / 2, v["y"] + v["size"] / 2)
+        stub = steps._thick_seg_box(v["pad_x"], v["pad_y"], v["x"], v["y"], v["width"] / 2)
+        assert not L.overlap(L.grow(v_box, 0.2), foreign.box, 0.0), v
+        assert not L.overlap(L.grow(stub, 0.2), foreign.box, 0.0), v
+    sig_skip = [s for s in fo["skipped"] if s["net"] == "SIG"]
+    sig_via = [v for v in fo["vias"] if v["net"] == "SIG"]
+    assert sig_via or sig_skip
+
+
+def test_fanout_via_size_respects_board_mins(tmp_path: Path):
+    """Fanout vias must meet board/netclass via diameter and drill floors."""
+    cfg, _ = _proj(
+        tmp_path,
+        classes=[
+            {"name": "Default", "clearance": 0.1, "track_width": 0.2,
+             "via_diameter": 0.4, "via_drill": 0.15},
+        ],
+        patterns=[],
+        layout="planes: {GND: B.Cu}\nfanout:\n  escape: [{ref: R1}]\n",
+    )
+    pro = tmp_path / "hardware" / "t.kicad_pro"
+    data = json.loads(pro.read_text(encoding="utf-8"))
+    data["board"]["design_settings"]["rules"].update({
+        "min_via_diameter": 0.5,
+        "min_through_hole_diameter": 0.3,
+        "min_via_annular_width": 0.1,
+    })
+    data["net_settings"]["classes"][0]["via_diameter"] = 0.4
+    data["net_settings"]["classes"][0]["via_drill"] = 0.15
+    pro.write_text(json.dumps(data), encoding="utf-8")
+    cfg = lcfg.load(Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}}))
+    assert cfg["rules_resolved"]["min_via_d"] == 0.5
+    assert cfg["rules_resolved"]["min_via_h"] == 0.3
+    fo = steps.run_fanout(cfg, staged=None, dry_run=True)
+    assert fo["vias_added"] >= 1 or fo["skipped_count"] >= 1
+    for v in fo["vias"]:
+        assert v["size"] + 1e-9 >= 0.5, v
+        assert v["drill"] + 1e-9 >= 0.3, v
+        assert v["size"] + 1e-9 >= v["drill"] + 2 * 0.1, v
+
+
+def test_fanout_epad_blocks_nearby_via_or_skips(tmp_path: Path):
+    """EPAD-sized foreign pad must block nearby escape vias; skip if no clear site."""
+    from ohmai.layout import fixture as F
+    from ohmai.layout import placement as L
+
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    (hw / "layout").mkdir()
+    qnets = {17: "GND"}
+    for i in range(1, 17):
+        qnets[i] = "GND" if i % 2 == 0 else f"IO{i}"
+    pcb = hw / "t.kicad_pcb"
+    pcb.write_text(
+        F.board(
+            [
+                F.qfn("U1", 110.0, 110.0, nets=qnets, ep=3.0),
+                F.two_pad("C1", 110.0, 110.2, "VBUS", "GND", size=(0.4, 0.4), pitch=0.5,
+                          cy=(-0.6, -0.4, 0.6, 0.4)),
+            ],
+            edge=(100.0, 100.0, 130.0, 130.0),
+        ),
+        encoding="utf-8",
+    )
+    (hw / "t.kicad_pro").write_text(
+        json.dumps({
+            "net_settings": {
+                "classes": [
+                    {"name": "Default", "clearance": 0.15, "track_width": 0.2,
+                     "via_diameter": 0.45, "via_drill": 0.2},
+                ],
+                "netclass_patterns": [],
+            },
+            "board": {"design_settings": {"rules": {
+                "min_hole_clearance": 0.2, "min_hole_to_hole": 0.25,
+                "min_copper_edge_clearance": 0.2,
+                "min_via_diameter": 0.45, "min_through_hole_diameter": 0.2,
+            }}},
+        }),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text(
+        "planes: {GND: B.Cu}\nfanout:\n  escape: [{ref: C1}]\n"
+        "  steps: [0.05, 0.15, 0.25, 0.4, 0.6]\n",
+        encoding="utf-8",
+    )
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+    fo = steps.run_fanout(cfg, dry_run=True)
+    board = L.load(pcb)
+    epad = next(p for p in board.pads() if p.ref == "U1" and p.num == "17")
+    assert epad.w >= 2.9  # large EPAD, not a point
+    for v in fo["vias"]:
+        if v["net"] != "VBUS":
+            continue
+        v_box = (v["x"] - v["size"] / 2, v["y"] - v["size"] / 2,
+                 v["x"] + v["size"] / 2, v["y"] + v["size"] / 2)
+        stub = steps._thick_seg_box(v["pad_x"], v["pad_y"], v["x"], v["y"], v["width"] / 2)
+        assert not L.overlap(L.grow(v_box, 0.15), epad.box, 0.0), (
+            f"via ({v['x']},{v['y']}) overlaps EPAD {epad.box}"
+        )
+        assert not L.overlap(L.grow(stub, 0.15), epad.box, 0.0), (
+            f"stub to ({v['x']},{v['y']}) overlaps EPAD {epad.box}"
+        )
+    vbus = [v for v in fo["vias"] if v["net"] == "VBUS"]
+    skipped = [s for s in fo["skipped"] if s["net"] == "VBUS"]
+    assert vbus or skipped

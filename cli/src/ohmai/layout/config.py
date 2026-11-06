@@ -111,11 +111,39 @@ def resolve_rules(cfg: dict) -> dict:
     r = (data.get("board", {}).get("design_settings", {}).get("rules", {}))
     rules = cfg["rules"]
     via_hole_cu = rules["via_hole_cu"] if rules["via_hole_cu"] is not None else r.get("min_hole_clearance", 0.25)
+    # Board-setup via floors (KiCad DRC via_diameter / drill_out_of_range). Prefer netclass sizes
+    # when present, but never emit below these mins. .kicad_dru may raise them further.
+    min_via_d = float(r.get("min_via_diameter") or 0.0)
+    min_via_h = float(r.get("min_through_hole_diameter") or 0.0)
+    min_via_ann = float(r.get("min_via_annular_width") or 0.0)
+    dru_path = Path(cfg["project_file"]).with_suffix(".kicad_dru")
+    if dru_path.is_file():
+        import re as _re
+        dru = dru_path.read_text(encoding="utf-8", errors="replace")
+        for m in _re.finditer(
+            r'\(constraint\s+via_diameter\s*\(min\s+([0-9.]+)\s*mm\)\)', dru
+        ):
+            min_via_d = max(min_via_d, float(m.group(1)))
+        for m in _re.finditer(
+            r'\(constraint\s+hole_size\s*\(min\s+([0-9.]+)\s*mm\)\)\s*'
+            r'\(condition\s+"A\.Type\s*==\s*\'Via\'"\)',
+            dru,
+        ):
+            min_via_h = max(min_via_h, float(m.group(1)))
+        for m in _re.finditer(
+            r'\(constraint\s+annular_width\s*\(min\s+([0-9.]+)\s*mm\)\)\s*'
+            r'\(condition\s+"A\.Type\s*==\s*\'Via\'"\)',
+            dru,
+        ):
+            min_via_ann = max(min_via_ann, float(m.group(1)))
     out = {
         "classes": classes,
         "patterns": [(p["pattern"], p["netclass"]) for p in ns.get("netclass_patterns", []) or []],
         "via_d": cfg["via"]["d"] or classes["Default"].get("via_d") or 0.45,
         "via_h": cfg["via"]["h"] or classes["Default"].get("via_h") or 0.2,
+        "min_via_d": min_via_d,
+        "min_via_h": min_via_h,
+        "min_via_annular": min_via_ann,
         "margin": rules["margin"],
         "via_hole_cu": via_hole_cu,
         "pth_hole_trk": rules["pth_hole_trk"] if rules["pth_hole_trk"] is not None else via_hole_cu,
