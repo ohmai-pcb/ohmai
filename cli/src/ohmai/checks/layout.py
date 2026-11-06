@@ -23,8 +23,10 @@ def drc(project: Project, opts: dict) -> Result:
     # Drop any prior report so a failed load cannot reuse stale counts.
     if out.is_file():
         out.unlink()
+    # Run from the PCB directory so .kicad_pro / .kicad_dru next to the board (or a staged
+    # copy that received _ensure_staged_project_files) are applied — not default rules.
     r = kicad.run(["pcb", "drc", "--format", "json", "--severity-all", "--schematic-parity", "-o", str(out),
-                   str(project.pcb)], log=project.out / "drc.log")
+                   str(project.pcb)], log=project.out / "drc.log", cwd=project.pcb.parent)
     if kicad.load_failed(r):
         return Result("drc", FAIL, "Failed to load board (see out/drc.log)")
     try:

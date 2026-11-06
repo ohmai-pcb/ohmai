@@ -117,22 +117,24 @@ def test_fanout_stub_and_netclass_via(tmp_path: Path):
     assert text.count("(segment") >= text.count("(via")
 
 
-def test_append_skips_orphan_via_without_pad(tmp_path: Path):
+def test_append_midroute_via_without_pad_stub(tmp_path: Path):
+    """Layer-change vias have no pad_x/pad_y; they are written and rely on connecting tracks."""
     cfg, pcb = _proj(tmp_path)
     out = tmp_path / "out.kicad_pcb"
     steps._append_copper_to_pcb(
         pcb,
         out,
-        [{"net": "GND", "x": 111.0, "y": 111.0}],  # no pad_x/pad_y
-        [],
+        [{"net": "GND", "x": 111.0, "y": 111.0, "size": 0.45, "drill": 0.2}],
+        [{"net": "GND", "x0": 110.0, "y0": 111.0, "x1": 111.0, "y1": 111.0, "width": 0.2, "layer": "F.Cu"},
+         {"net": "GND", "x0": 111.0, "y0": 111.0, "x1": 112.0, "y1": 111.0, "width": 0.2, "layer": "B.Cu"}],
         0.45,
         0.2,
         0.25,
     )
     text = out.read_text(encoding="utf-8")
-    # Fixture may already contain vias; ensure we did not add an orphan at 111,111 without a stub from this call.
-    # Count vias at 111 — should be zero new orphans: the append must skip.
-    assert "(at 111.0 111.0)" not in text and "(at 111 111)" not in text
+    assert "(at 111.0 111.0)" in text or "(at 111 111)" in text
+    # No fanout stub from a pad — only the two connecting tracks above.
+    assert text.count("(segment") >= 2
 
 
 def test_staged_chaining_preserves_fanout_via(tmp_path: Path):
@@ -173,3 +175,176 @@ def test_netclass_staged_kicad_loadable(tmp_path: Path):
     combined = (r.stdout or "") + (r.stderr or "")
     assert "Failed to load board" not in combined, combined
     assert r.returncode == 0, combined
+
+
+def test_handroute_layer_change_writes_via(tmp_path: Path):
+    """Layer-change points from runs_to_segments are written as vias in the PCB sexp."""
+    from ohmai.layout import grid as grid_mod
+    from ohmai.layout import fixture as F
+
+    cfg, pcb = _proj(tmp_path)
+    # Simulate a path that flips F.Cu -> B.Cu at (112, 110).
+    runs = [
+        (0, [(110.0, 110.0), (112.0, 110.0)]),
+        (1, [(112.0, 110.0), (114.0, 110.0)]),
+    ]
+    seg_pairs, via_pts = grid_mod.runs_to_segments(runs)
+    assert via_pts == [(112.0, 110.0)], via_pts
+    layers = ["F.Cu", "B.Cu"]
+    tracks = []
+    for l0, a, bpt in seg_pairs:
+        tracks.append({
+            "net": "VIN", "layer": layers[l0],
+            "x0": a[0], "y0": a[1], "x1": bpt[0], "y1": bpt[1], "width": 0.6,
+        })
+    vias = [{"net": "VIN", "x": pt[0], "y": pt[1], "size": 0.6, "drill": 0.3} for pt in via_pts]
+    staged = tmp_path / "hardware" / "layout" / "staged.kicad_pcb"
+    steps._append_copper_to_pcb(pcb, staged, vias, tracks, 0.45, 0.2, 0.2)
+    text = staged.read_text(encoding="utf-8")
+    assert "(via" in text
+    assert "112.0" in text or "112" in text
+    # Via present without requiring a fanout pad stub (mid-route).
+    assert text.count("(via") >= 1
+    assert text.count("(segment") >= 2
+
+
+def test_handroute_opposite_layer_pads_emit_via(tmp_path: Path):
+    """Pads on opposite copper layers force a via; run_handroute must write it (not discard _vias)."""
+    from ohmai.layout import fixture as F
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    (hw / "layout").mkdir()
+    # Build board text then flip R2 pad 1 onto B.Cu only.
+    raw = F.board(
+        [
+            F.two_pad("R1", 110.0, 110.0, "SIG", "GND"),
+            F.two_pad("R2", 118.0, 110.0, "SIG", "GND"),
+        ],
+        edge=(100.0, 100.0, 140.0, 140.0),
+    )
+    # Fixture emits F.Cu for all pads; move R2's SIG pad (pad "1") to B.Cu.
+    # The first pad "1" after footprint R2 is the SIG pad.
+    parts = raw.split('(footprint "kb:C_fixture"', 2)
+    assert len(parts) == 3
+    r2 = parts[2]
+    # Replace only the first pad layers block in R2 (pad 1 = SIG).
+    r2 = r2.replace(
+        '(layers "F.Cu" "F.Mask" "F.Paste")',
+        '(layers "B.Cu" "B.Mask" "B.Paste")',
+        1,
+    )
+    pcb_text = parts[0] + '(footprint "kb:C_fixture"' + parts[1] + '(footprint "kb:C_fixture"' + r2
+    pcb = hw / "t.kicad_pcb"
+    pcb.write_text(pcb_text, encoding="utf-8")
+    (hw / "t.kicad_pro").write_text(
+        json.dumps({
+            "net_settings": {
+                "classes": [
+                    {"name": "Default", "clearance": 0.1, "track_width": 0.2,
+                     "via_diameter": 0.45, "via_drill": 0.2},
+                ],
+                "netclass_patterns": [],
+            },
+            "board": {"design_settings": {"rules": {
+                "min_hole_clearance": 0.2, "min_hole_to_hole": 0.25,
+                "min_copper_edge_clearance": 0.2,
+            }}},
+        }),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text("signal_layers: [F.Cu, B.Cu]\n", encoding="utf-8")
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+    staged = hw / "layout" / "staged.kicad_pcb"
+    hr = steps.run_handroute(cfg, action="route", nets=["SIG"], staged=staged, dry_run=False)
+    assert "SIG" in hr["routed_nets"], hr
+    assert hr.get("vias_added", 0) >= 1, hr
+    text = staged.read_text(encoding="utf-8")
+    assert "(via" in text
+    layers = {s["layer"] for s in hr["routes"]["SIG"]}
+    assert layers == {"F.Cu", "B.Cu"} or hr["vias_added"] >= 1
+
+
+def test_staged_handroute_rerun_does_not_double_segments(tmp_path: Path):
+    """Second handroute --staged must wipe-or-replace, not append onto prior handroute copper."""
+    cfg, _ = _proj(tmp_path)
+    staged = tmp_path / "hardware" / "layout" / "staged.kicad_pcb"
+    hr1 = steps.run_handroute(cfg, action="route", nets=["VIN"], staged=staged, dry_run=False)
+    assert "VIN" in hr1["routed_nets"]
+    n1 = staged.read_text(encoding="utf-8").count("(segment")
+    hr2 = steps.run_handroute(cfg, action="route", nets=["VIN"], staged=staged, dry_run=False)
+    assert "VIN" in hr2["routed_nets"]
+    n2 = staged.read_text(encoding="utf-8").count("(segment")
+    assert n2 == n1, f"staged re-run doubled segments: {n1} -> {n2}"
+    assert n2 < n1 * 1.5
+
+
+def test_fanout_via_blocked_by_foreign_epad(tmp_path: Path):
+    """Fanout must not place an escape via in/on a foreign EPAD (generator + overlap check)."""
+    from ohmai.layout import fixture as F
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    (hw / "layout").mkdir()
+    # QFN at 110,110 with EPAD on GND; VBUS pad of a nearby part whose natural escape
+    # ring intersects the EPAD — via cells inside the EPAD must be rejected.
+    qnets = {17: "GND"}  # EPAD pin for per_side=4
+    for i in range(1, 17):
+        qnets[i] = "GND" if i % 2 == 0 else f"IO{i}"
+    pcb = hw / "t.kicad_pcb"
+    # Place escape source pad almost on top of the QFN EPAD so every short ring hits it.
+    pcb.write_text(
+        F.board(
+            [
+                F.qfn("U1", 110.0, 110.0, nets=qnets, ep=2.4),
+                F.two_pad("C1", 110.0, 110.0, "VBUS", "GND", size=(0.4, 0.4), pitch=0.5,
+                          cy=(-0.6, -0.4, 0.6, 0.4)),
+            ],
+            edge=(100.0, 100.0, 130.0, 130.0),
+        ),
+        encoding="utf-8",
+    )
+    (hw / "t.kicad_pro").write_text(
+        json.dumps({
+            "net_settings": {
+                "classes": [
+                    {"name": "Default", "clearance": 0.1, "track_width": 0.2, "via_diameter": 0.45, "via_drill": 0.2},
+                ],
+                "netclass_patterns": [],
+            },
+            "board": {"design_settings": {"rules": {
+                "min_hole_clearance": 0.2, "min_hole_to_hole": 0.25, "min_copper_edge_clearance": 0.2,
+            }}},
+        }),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text(
+        "planes: {GND: B.Cu}\nfanout:\n  escape: [{ref: C1}]\n  steps: [0.05, 0.15, 0.25, 0.4]\n",
+        encoding="utf-8",
+    )
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+    fo = steps.run_fanout(cfg, staged=tmp_path / "hardware" / "layout" / "staged.kicad_pcb", dry_run=True)
+    board = __import__("ohmai.layout.placement", fromlist=["load"]).load(pcb)
+    epad = next(p for p in board.pads() if p.ref == "U1" and p.num == "17")
+    for v in fo["vias"]:
+        if v["net"] != "VBUS":
+            continue
+        # Via copper must not overlap the foreign EPAD (grown by pad_gap).
+        v_box = (v["x"] - v["size"] / 2, v["y"] - v["size"] / 2, v["x"] + v["size"] / 2, v["y"] + v["size"] / 2)
+        from ohmai.layout import placement as L
+        assert not L.overlap(L.grow(v_box, 0.12), epad.box, 0.0), (
+            f"fanout via at ({v['x']},{v['y']}) overlaps U1 EPAD {epad.box}"
+        )
+
+
+def test_staged_project_rules_copied_alongside(tmp_path: Path):
+    """Writing staged copper also copies .kicad_pro/.kicad_dru for project-aware DRC."""
+    cfg, pcb = _proj(tmp_path)
+    # Drop a fake design-rules file next to the live board.
+    dru = pcb.with_suffix(".kicad_dru")
+    dru.write_text("(version 1)\n", encoding="utf-8")
+    staged = tmp_path / "out" / "layout" / "staged.kicad_pcb"
+    steps.run_handroute(cfg, action="route", nets=["VIN"], staged=staged, dry_run=False)
+    assert staged.is_file()
+    assert (staged.parent / pcb.with_suffix(".kicad_pro").name).is_file()
+    assert (staged.parent / dru.name).is_file()
