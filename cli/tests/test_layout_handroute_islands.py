@@ -170,3 +170,80 @@ def test_nonrouting_inner_track_still_connects_island(tmp_path, monkeypatch):
     rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
     assert rep["remaining_islands"]["SIG"] == 1
     assert rep["routed_nets"] == []
+
+
+def test_nonet_epad_not_routed_through(tmp_path):
+    """No-net EPAD between two NET_A pads must not take tracks/vias (empty ≠ free space)."""
+    from ohmai.layout import placement as L
+
+    epad = {"ref": "Q1", "lib": "kb:QFN", "x": 110, "y": 105, "rot": 0,
+            "pads": [("9", 0, 0, 4.0, 4.0, "")], "cy": (-2.2, -2.2, 2.2, 2.2)}
+    cfg, pcb = _case(
+        tmp_path,
+        [_pad("A", 103, 105, "NET_A"), _pad("B", 117, 105, "NET_A"), epad],
+        layers=["F.Cu", "B.Cu"],
+        margin=2.0,
+    )
+    board = L.load(pcb)
+    ep = next(p for p in board.pads() if p.ref == "Q1" and p.num == "9")
+    assert ep.net == ""
+    assert steps._same_net("", "NET_A") is False
+    assert steps._same_net("", "") is False
+    assert steps._same_net(None, "NET_A") is False
+    assert steps._same_net("NET_A", "NET_A") is True
+    # No-net pad is never a same-net terminal / copper item.
+    items = steps._handroute_copper_items(board, "NET_A", cfg["signal_layers"])
+    assert len(items) == 2  # pads A and B only
+
+    staged = tmp_path / "staged.kicad_pcb"
+    steps.run_handroute(cfg, "route", ["NET_A"], staged=staged)
+    st = L.load(staged)
+    ep_layers = set(ep.layers)
+    for v in st.vias:
+        v_box = (v.x - v.size / 2, v.y - v.size / 2, v.x + v.size / 2, v.y + v.size / 2)
+        assert not L.overlap(v_box, ep.box, 0.0), f"via shorts no-net EPAD at ({v.x},{v.y})"
+    for s in st.segments:
+        if s.layer not in ep_layers and "*.Cu" not in ep.layers:
+            continue
+        hw = s.width / 2
+        sb = (min(s.x0, s.x1) - hw, min(s.y0, s.y1) - hw, max(s.x0, s.x1) + hw, max(s.y0, s.y1) + hw)
+        assert not L.overlap(sb, ep.box, 0.0), f"staged track shorts no-net EPAD: {s}"
+
+
+def test_fanout_skips_via_on_nonet_epad(tmp_path):
+    """Fanout must not plant via/stub on a no-net EPAD (empty net is foreign)."""
+    from ohmai.layout import fixture as F
+    from ohmai.layout import placement as L
+
+    q = F.qfn("U1", 110, 110, nets={1: "SIG"}, ep=3.0)  # EPAD pin 17 stays ""
+    assert q["pads"][-1][5] == ""
+    src = F.two_pad("R1", 110.0, 110.0, "VBUS", "GND", size=(0.4, 0.4), pitch=0.5,
+                    cy=(-0.6, -0.4, 0.6, 0.4))
+    pcb = tmp_path / "board.kicad_pcb"
+    pcb.write_text(F.board([q, src], edge=(100, 100, 130, 130)))
+    cfg = {
+        "board": str(pcb),
+        "fanout": {"steps": [0.05, 0.15, 0.3], "angles": 24, "escape": [{"ref": "R1"}]},
+        "planes": {},
+        "rules_resolved": {
+            "track_w": 0.2, "clearance": 0.1, "via_d": 0.45, "via_h": 0.2,
+            "fanout": {"clearance": 0.12, "hole_trk": 0.2, "hole_hole": 0.25,
+                       "edge": 0.2, "pad_gap": 0.12},
+            "classes": {"Default": {"clearance": 0.1, "width": 0.2, "via_d": 0.45, "via_h": 0.2}},
+        },
+        "signal_layers": ["F.Cu", "B.Cu"],
+    }
+    fo = steps.run_fanout(cfg, dry_run=True)
+    epad = next(p for p in L.load(pcb).pads() if p.ref == "U1" and p.num == "17")
+    assert epad.net == ""
+    for v in fo["vias"]:
+        v_box = (v["x"] - v["size"] / 2, v["y"] - v["size"] / 2,
+                 v["x"] + v["size"] / 2, v["y"] + v["size"] / 2)
+        assert not L.overlap(L.grow(v_box, 0.12), epad.box, 0.0), (
+            f"fanout via ({v['x']},{v['y']}) overlaps no-net EPAD {epad.box}"
+        )
+        stub = (min(v["pad_x"], v["x"]) - v["width"] / 2, min(v["pad_y"], v["y"]) - v["width"] / 2,
+                max(v["pad_x"], v["x"]) + v["width"] / 2, max(v["pad_y"], v["y"]) + v["width"] / 2)
+        assert not L.overlap(L.grow(stub, 0.12), epad.box, 0.0), (
+            f"fanout stub to ({v['x']},{v['y']}) overlaps no-net EPAD"
+        )

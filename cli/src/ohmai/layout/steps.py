@@ -23,8 +23,17 @@ def parse_timeout_sec(t_str: str) -> int:
     return int(parts[0])
 
 
-def _class_for_net(rules: dict, net: str) -> dict:
-    """Netclass width/clearance/via for `net` from rules_resolved; Default / top-level fallback."""
+def _same_net(a: str | None, b: str | None) -> bool:
+    """True only when both nets are non-empty and equal. No-net never matches any net."""
+    return bool(a) and bool(b) and a == b
+
+
+def _class_for_net(rules: dict, net: str | None) -> dict:
+    """Netclass width/clearance/via for `net` from rules_resolved; Default / top-level fallback.
+
+    Empty / None nets resolve as Default (KiCad no-net has no class of its own).
+    """
+    net = net or ""
     classes = rules.get("classes") or {}
     patterns = rules.get("patterns") or []
     cname = grid_mod.netclass(patterns, net) if patterns else "Default"
@@ -48,8 +57,11 @@ def _class_for_net(rules: dict, net: str) -> dict:
     }
 
 
-def _pair_clearance(rules: dict, net_a: str, net_b: str) -> float:
-    """KiCad-style clearance: max of the two netclasses' clearance values."""
+def _pair_clearance(rules: dict, net_a: str | None, net_b: str | None) -> float:
+    """KiCad-style clearance: max of the two netclasses' clearance values.
+
+    None / "" (no-net) uses Default clearance via _class_for_net.
+    """
     return max(_class_for_net(rules, net_a)["clearance"], _class_for_net(rules, net_b)["clearance"])
 
 
@@ -161,9 +173,9 @@ def _fanout_escape_ok(
         # Max of pair clearance and fanout pad_gap so dense QFN toes still clear.
         return max(_pair_clearance(rules, pad.net, other_net or ""), pad_gap)
 
-    # Foreign pads (full boxes, including EPAD).
+    # Foreign pads (full boxes, including EPAD). No-net is never same-net.
     for o in all_pads:
-        if o is pad or o.net == pad.net:
+        if o is pad or _same_net(o.net, pad.net):
             continue
         # Layer-aware for stub; vias pierce all copper layers.
         stub_hit = (not o.layers) or stub_layer in o.layers or "*.Cu" in o.layers
@@ -178,7 +190,7 @@ def _fanout_escape_ok(
 
     # Existing tracks.
     for seg in segments:
-        if seg.net == pad.net:
+        if _same_net(seg.net, pad.net):
             continue
         cl = _cl(seg.net)
         # Via hits every layer; stub only its layer.
@@ -191,7 +203,7 @@ def _fanout_escape_ok(
 
     # Existing vias.
     for v in vias:
-        if v.net == pad.net:
+        if _same_net(v.net, pad.net):
             continue
         cl = _cl(v.net)
         ob = _disk_box(v.x, v.y, v.size / 2)
@@ -206,7 +218,7 @@ def _fanout_escape_ok(
             if L.overlap(v_box, zbox, 0.0) or L.overlap(stub_box, zbox, 0.0):
                 return False
             continue
-        if znet == pad.net:
+        if _same_net(znet, pad.net):
             continue
         cl = _cl(znet)
         layer_hit = (not zlayers) or stub_layer in zlayers or any(l.endswith(".Cu") for l in zlayers)
@@ -217,7 +229,7 @@ def _fanout_escape_ok(
 
     # Already-accepted fanout copper this call.
     for pv in planned:
-        if pv["net"] == pad.net:
+        if _same_net(pv["net"], pad.net):
             continue
         cl = _cl(pv["net"])
         ob = _disk_box(pv["x"], pv["y"], float(pv["size"]) / 2)
@@ -677,7 +689,7 @@ def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
     copper_layers = layers + sorted(other_layers - set(layers))
     items = []
     for p in board.pads():
-        if p.net == net_name:
+        if _same_net(p.net, net_name):
             shapes = {
                 li: box(*p.box) for li, lay in enumerate(copper_layers)
                 if lay in p.layers or "*.Cu" in p.layers
@@ -685,11 +697,11 @@ def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
             if shapes:
                 items.append((net_name, shapes))
     for v in board.vias:
-        if v.net == net_name:
+        if _same_net(v.net, net_name):
             disk = Point(v.x, v.y).buffer(v.size / 2)
             items.append((net_name, dict.fromkeys(range(len(copper_layers)), disk)))
     for s in board.segments:
-        if s.net == net_name and s.layer in copper_layers:
+        if _same_net(s.net, net_name) and s.layer in copper_layers:
             stroke = LineString([(s.x0, s.y0), (s.x1, s.y1)]).buffer(s.width / 2)
             items.append((net_name, {copper_layers.index(s.layer): stroke}))
     return items
@@ -903,12 +915,15 @@ def run_handroute(
                     _block_disk(li, x0 + t * (x1 - x0), y0 + t * (y1 - y0), half)
 
             # Inflate obstacles by clearance + half our track width so wide power tracks don't short.
+            # Every copper pad blocks unless it is the same non-empty net being routed.
+            # No-net / empty / None pads are never same-net terminals and always obstruct.
             for op in board.pads():
-                if op.net == net_name:
+                if _same_net(op.net, net_name):
                     continue
                 grow = _pair_clearance(rules, net_name, op.net) + track_w / 2
                 for li, lay in enumerate(layers):
-                    if lay in op.layers or "*.Cu" in op.layers:
+                    # Empty layer list: treat as all copper (conservative; no-net EPADs must block).
+                    if (not op.layers) or lay in op.layers or "*.Cu" in op.layers:
                         _block_rect(
                             li,
                             op.x - op.w / 2 - grow,
@@ -916,7 +931,7 @@ def run_handroute(
                             op.x + op.w / 2 + grow,
                             op.y + op.h / 2 + grow,
                         )
-                # Layer-change vias must not land in/on foreign pads (incl. EPADs).
+                # Layer-change vias must not land in/on foreign / no-net pads (incl. EPADs).
                 via_grow = _pair_clearance(rules, net_name, op.net) + via_d_net / 2
                 _block_viaok(
                     op.box[0] - via_grow,
@@ -925,7 +940,7 @@ def run_handroute(
                     op.box[3] + via_grow,
                 )
             for seg in board.segments:
-                if seg.net == net_name:
+                if _same_net(seg.net, net_name):
                     continue
                 if seg.layer not in layers:
                     continue
@@ -933,13 +948,13 @@ def run_handroute(
                 grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + track_w / 2
                 _block_thick_seg(li, seg.x0, seg.y0, seg.x1, seg.y1, grow)
             for v in board.vias:
-                if v.net == net_name:
+                if _same_net(v.net, net_name):
                     continue
                 grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
                 for li in layer_idxs:
                     _block_disk(li, v.x, v.y, grow)
             for seg in fresh_tracks:
-                if seg["net"] == net_name:
+                if _same_net(seg["net"], net_name):
                     continue
                 if seg["layer"] not in layers:
                     continue
@@ -948,7 +963,7 @@ def run_handroute(
                 _block_thick_seg(li, seg["x0"], seg["y0"], seg["x1"], seg["y1"], grow)
 
             for v in fresh_vias:
-                if v["net"] == net_name:
+                if _same_net(v["net"], net_name):
                     continue
                 grow = float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + track_w / 2
                 for li in layer_idxs:
