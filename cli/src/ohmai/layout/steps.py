@@ -673,10 +673,11 @@ def lcfg_pour(cfg: dict, net: str | None, layer: str | None) -> dict:
 
 
 def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
-    """Same-net geometry for copper_island; Board currently exposes no filled zones.
+    """Same-net geometry for copper_island, including filled zones when present.
 
     Match the placement model: pads are their (possibly rotated) bounding boxes,
-    tracks are round-ended strokes, and vias span all modeled copper layers.
+    tracks are round-ended strokes, vias span all modeled copper layers, and
+    filled pours use their filled_polygon AABB (outline if unfilled).
     Include non-routing copper in connectivity, but not as A* landing cells.
     """
     from shapely.geometry import LineString, Point, box
@@ -704,6 +705,16 @@ def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
         if _same_net(s.net, net_name) and s.layer in copper_layers:
             stroke = LineString([(s.x0, s.y0), (s.x1, s.y1)]).buffer(s.width / 2)
             items.append((net_name, {copper_layers.index(s.layer): stroke}))
+    for z in getattr(board, "zones", []) or []:
+        # Only filled pours are copper terminals; unfilled outlines are keepout-ish obstacles.
+        if not getattr(z, "filled", True) or not _same_net(z.net, net_name):
+            continue
+        if z.layer not in copper_layers:
+            if z.layer.endswith(".Cu"):
+                copper_layers.append(z.layer)
+            else:
+                continue
+        items.append((net_name, {copper_layers.index(z.layer): box(*z.box)}))
     return items
 
 
@@ -926,10 +937,10 @@ def run_handroute(
                     if (not op.layers) or lay in op.layers or "*.Cu" in op.layers:
                         _block_rect(
                             li,
-                            op.x - op.w / 2 - grow,
-                            op.y - op.h / 2 - grow,
-                            op.x + op.w / 2 + grow,
-                            op.y + op.h / 2 + grow,
+                            op.box[0] - grow,
+                            op.box[1] - grow,
+                            op.box[2] + grow,
+                            op.box[3] + grow,
                         )
                 # Layer-change vias must not land in/on foreign / no-net pads (incl. EPADs).
                 via_grow = _pair_clearance(rules, net_name, op.net) + via_d_net / 2
@@ -953,6 +964,27 @@ def run_handroute(
                 grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
                 for li in layer_idxs:
                     _block_disk(li, v.x, v.y, grow)
+            for z in getattr(board, "zones", []) or []:
+                if _same_net(z.net, net_name):
+                    continue
+                if z.layer not in layers:
+                    continue
+                li = layers.index(z.layer)
+                grow = _pair_clearance(rules, net_name, z.net) + track_w / 2
+                _block_rect(
+                    li,
+                    z.box[0] - grow,
+                    z.box[1] - grow,
+                    z.box[2] + grow,
+                    z.box[3] + grow,
+                )
+                via_grow = _pair_clearance(rules, net_name, z.net) + via_d_net / 2
+                _block_viaok(
+                    z.box[0] - via_grow,
+                    z.box[1] - via_grow,
+                    z.box[2] + via_grow,
+                    z.box[3] + via_grow,
+                )
             for seg in fresh_tracks:
                 if _same_net(seg["net"], net_name):
                     continue

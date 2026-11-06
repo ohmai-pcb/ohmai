@@ -94,6 +94,15 @@ class Track:
     width: float
 
 
+@dataclass(frozen=True)
+class Zone:
+    """Filled copper zone (pour). `box` is AABB of filled_polygon pts (or outline if unfilled)."""
+    net: str
+    layer: str
+    box: Box
+    filled: bool = True
+
+
 @dataclass
 class Board:
     footprints: dict[str, Footprint]
@@ -101,6 +110,7 @@ class Board:
     tracks: list[tuple[str, str]]      # (net, layer) per segment / arc
     edge: Box | None
     segments: list[Track] = field(default_factory=list)
+    zones: list[Zone] = field(default_factory=list)
 
     @property
     def edge_box(self) -> Box | None:
@@ -335,7 +345,45 @@ def load(path: Path) -> Board:
         if isinstance(g, list) and g and g[0].startswith("gr_") and _layer(g) == "Edge.Cuts":
             pts += _graphic_points(["fp" + g[0][2:], *g[1:]])
     edge = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)) if pts else None
-    return Board(fps, vias, tracks, edge, segments)
+    zones: list[Zone] = []
+    for z in sexp.find(tree, "zone"):
+        nn = sexp.first(z, "net_name")
+        net = nn[1] if nn and len(nn) > 1 and isinstance(nn[1], str) else ""
+        if not net:
+            n = sexp.first(z, "net")
+            if n and len(n) > 2 and isinstance(n[2], str):
+                net = n[2]
+            elif n and len(n) > 1:
+                net = nets.get(n[1], "")
+        lay_n = sexp.first(z, "layer")
+        if lay_n and len(lay_n) > 1:
+            zlayers = [lay_n[1]]
+        else:
+            lays = sexp.first(z, "layers")
+            zlayers = list(lays[1:]) if lays else []
+        # Prefer filled copper; fall back to zone outline polygon (unfilled keepout-ish).
+        filled_nodes = [c for c in z[1:] if isinstance(c, list) and c and c[0] == "filled_polygon"]
+        outline_nodes = [c for c in z[1:] if isinstance(c, list) and c and c[0] == "polygon"]
+        src_nodes = filled_nodes or outline_nodes
+        filled = bool(filled_nodes)
+        for node in src_nodes:
+            # filled_polygon may carry (layer ...); else use zone layer list.
+            nlay = _layer(node) if sexp.first(node, "layer") else None
+            use_layers = [nlay] if nlay else zlayers
+            pl = sexp.first(node, "pts")
+            xys = []
+            for xy in (pl[1:] if pl else []):
+                if isinstance(xy, list) and xy and xy[0] == "xy":
+                    xys.append((float(xy[1]), float(xy[2])))
+            if len(xys) < 3:
+                continue
+            xs = [p[0] for p in xys]
+            ys = [p[1] for p in xys]
+            zb = (min(xs), min(ys), max(xs), max(ys))
+            for zl in use_layers:
+                if isinstance(zl, str) and zl.endswith(".Cu"):
+                    zones.append(Zone(net, zl, zb, filled=filled))
+    return Board(fps, vias, tracks, edge, segments, zones)
 
 
 # ---------------------------------------------------------------- box geometry

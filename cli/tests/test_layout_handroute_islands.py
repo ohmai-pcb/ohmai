@@ -281,3 +281,50 @@ def test_custom_epad_box_includes_primitives_and_blocks_route(tmp_path):
         hw = s.width / 2
         sb = (min(s.x0, s.x1) - hw, min(s.y0, s.y1) - hw, max(s.x0, s.x1) + hw, max(s.y0, s.y1) + hw)
         assert not L.overlap(sb, ep.box, 0.0), s
+
+
+def test_load_exposes_filled_zones_from_stereo_pcb():
+    stereo = Path("/workspace/projects/usb-c-12v-stereo/hardware/usb-c-12v-stereo.kicad_pcb")
+    if not stereo.is_file():
+        pytest.skip("stereo PCB not present")
+    board = L.load(stereo)
+    assert board.zones, "expected poured zones on stereo board"
+    filled = [z for z in board.zones if z.filled and z.net]
+    assert any(z.net == "GND" for z in filled)
+    assert any(z.net == "VBUS_CD" and z.layer == "F.Cu" for z in filled)
+
+
+def _inject_zone(pcb: Path, net: str, pts: list[tuple[float, float]], layer: str = "F.Cu") -> None:
+    raw = pcb.read_text().rstrip()
+    assert raw.endswith(")")
+    xy = " ".join(f"(xy {x} {y})" for x, y in pts)
+    zone = f"""
+\t(zone
+\t\t(net 1)
+\t\t(net_name "{net}")
+\t\t(layer "{layer}")
+\t\t(polygon (pts {xy}))
+\t\t(filled_polygon (layer "{layer}") (pts {xy}))
+\t)
+"""
+    pcb.write_text(raw[:-1] + zone + ")\n")
+
+
+def test_filled_zone_merges_pad_islands(tmp_path):
+    """A same-net pour between two pads is one copper island (no route copper needed)."""
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)], layers=["F.Cu"])
+    _inject_zone(pcb, "SIG", [(102, 104), (118, 104), (118, 106), (102, 106)])
+    board = L.load(pcb)
+    assert any(z.net == "SIG" and z.filled for z in board.zones)
+    items = steps._handroute_copper_items(board, "SIG", ["F.Cu"])
+    assert len(steps._handroute_islands(items)) == 1
+    rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
+    assert rep["remaining_islands"]["SIG"] == 1
+    assert "SIG" not in rep.get("routed_nets", [])
+
+
+def test_foreign_zone_blocks_path(tmp_path):
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)], layers=["F.Cu"], margin=2.0)
+    _inject_zone(pcb, "OTHER", [(109, 100), (111, 100), (111, 120), (109, 120)])
+    rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
+    assert rep["remaining_islands"].get("SIG", 0) >= 2 or "SIG" not in rep.get("routed_nets", [])
