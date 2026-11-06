@@ -330,34 +330,79 @@ def run_handroute(
                 min(eb[2], max(p0.x, p1.x) + margin),
                 min(eb[3], max(p0.y, p1.y) + margin),
             )
-            g = grid_mod.Grid(bbox, res, len(layers))
+            # Grid.around covers the bbox; free/viaok arrays carry per-layer occupancy.
+            import numpy as np
+
+            g = grid_mod.Grid.around(bbox, res)
+            if g.nx < 1 or g.ny < 1:
+                continue
+            layer_idxs = list(range(len(layers)))
+            free = {li: np.ones((g.ny, g.nx), dtype=bool) for li in layer_idxs}
+            viaok = np.ones((g.ny, g.nx), dtype=bool)
             cl = float(rules["clearance"]) + float(rules["track_w"]) / 2
+
+            def _block_rect(li: int, x0: float, y0: float, x1: float, y1: float) -> None:
+                ix0, iy0 = g.cell(x0, y0)
+                ix1, iy1 = g.cell(x1, y1)
+                xa, xb = sorted((ix0, ix1))
+                ya, yb = sorted((iy0, iy1))
+                xa, xb = max(0, xa), min(g.nx - 1, xb)
+                ya, yb = max(0, ya), min(g.ny - 1, yb)
+                if xa <= xb and ya <= yb:
+                    free[li][ya : yb + 1, xa : xb + 1] = False
+
             for op in b.pads():
                 if op.net != net_name:
                     for li, lay in enumerate(layers):
                         if lay in op.layers or "*.Cu" in op.layers:
-                            g.block_rect(li, op.x - op.w / 2 - cl, op.y - op.h / 2 - cl, op.x + op.w / 2 + cl, op.y + op.h / 2 + cl)
+                            _block_rect(
+                                li,
+                                op.x - op.w / 2 - cl,
+                                op.y - op.h / 2 - cl,
+                                op.x + op.w / 2 + cl,
+                                op.y + op.h / 2 + cl,
+                            )
             s_li = 0 if (not p0.layers or layers[0] in p0.layers or "*.Cu" in p0.layers) else min(1, len(layers) - 1)
             g_li = 0 if (not p1.layers or layers[0] in p1.layers or "*.Cu" in p1.layers) else min(1, len(layers) - 1)
-            start = (s_li, *g.ij(p0.x, p0.y))
-            goal = (g_li, *g.ij(p1.x, p1.y))
-            path = grid_mod.astar(g, [start], {goal})
+            six, siy = g.cell(p0.x, p0.y)
+            gix, giy = g.cell(p1.x, p1.y)
+            if not (0 <= six < g.nx and 0 <= siy < g.ny and 0 <= gix < g.nx and 0 <= giy < g.ny):
+                continue
+            # Own terminals must stay walkable even if clearance from nearby copper nibbled them.
+            free[s_li][siy, six] = True
+            free[g_li][giy, gix] = True
+            start = (s_li, siy, six)
+            goal = (g_li, giy, gix)
+            hr = cfg.get("handroute") or {}
+            via_cost = float(hr.get("via_cost", 1.6))
+            pitch = grid_mod.via_pitch_cells(float(rules["via_h"]), float(rules.get("hole_hole", rules.get("hole_to_hole", 0.25))), res)
+            cost_mult = {li: (1.0 if li == 0 else float((hr.get("inner") or {}).get("cost", 4.0))) for li in layer_idxs}
+            path = grid_mod.astar(
+                free,
+                viaok,
+                {start},
+                {goal},
+                layer_idxs,
+                cost_mult,
+                res,
+                via_cost,
+                pitch,
+                max_expand=int(hr.get("max_expand", 2_500_000)),
+            )
             if path:
-                simp = grid_mod.simplify(path)
+                runs = grid_mod.simplify(path, lambda ix, iy: g.xy(ix, iy))
+                seg_pairs, _vias = grid_mod.runs_to_segments(runs)
                 segs = []
-                for (l0, i0, j0), (l1, i1, j1) in zip(simp, simp[1:], strict=False):
-                    if l0 == l1:
-                        x0, y0 = g.xy(i0, j0)
-                        x1, y1 = g.xy(i1, j1)
-                        segs.append({
-                            "net": net_name,
-                            "layer": layers[l0],
-                            "x0": round(x0, 4),
-                            "y0": round(y0, 4),
-                            "x1": round(x1, 4),
-                            "y1": round(y1, 4),
-                            "width": float(rules["track_w"]),
-                        })
+                for l0, a, b in seg_pairs:
+                    segs.append({
+                        "net": net_name,
+                        "layer": layers[l0],
+                        "x0": round(a[0], 4),
+                        "y0": round(a[1], 4),
+                        "x1": round(b[0], 4),
+                        "y1": round(b[1], 4),
+                        "width": float(rules["track_w"]),
+                    })
                 routed[net_name] = segs
 
         all_tracks = [s for segs in routed.values() for s in segs]

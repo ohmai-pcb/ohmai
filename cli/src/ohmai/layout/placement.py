@@ -309,6 +309,9 @@ def gap(a: Box, b: Box) -> float:
     return math.hypot(dx, dy)
 
 
+box_gap = gap  # fanout / steps alias
+
+
 def overlap(a: Box, b: Box, tol: float = 0.005) -> bool:
     return min(a[2], b[2]) - max(a[0], b[0]) > tol and min(a[3], b[3]) - max(a[1], b[1]) > tol
 

@@ -143,3 +143,87 @@ def test_moved_pads_preserves_drill():
     assert len(moved) == 1
     assert moved[0].drill == 0.9
     assert abs(moved[0].w - 1.5) < 1e-9
+
+
+def test_box_gap_alias():
+    a = (0.0, 0.0, 1.0, 1.0)
+    b = (2.0, 0.0, 3.0, 1.0)
+    assert L.box_gap is L.gap
+    assert L.box_gap(a, b) == L.gap(a, b) == 1.0
+
+
+def test_run_fanout_and_handroute_smoke(tmp_path: Path):
+    """Call the real step entry points so missing aliases / Grid API mismatches fail here."""
+    import json
+
+    from ohmai.layout import config as lcfg
+    from ohmai.layout import steps
+    from ohmai.project import Project
+
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    layout_dir = hw / "layout"
+    layout_dir.mkdir()
+    pcb = hw / "t.kicad_pcb"
+    # Two SMD pads on GND (fanout target via planes) and a short SIG net for handroute.
+    pcb.write_text(
+        F.board(
+            [
+                F.two_pad("R1", 110.0, 110.0, "SIG", "GND"),
+                F.two_pad("R2", 114.0, 110.0, "SIG", "GND"),
+            ],
+            edge=(100.0, 100.0, 130.0, 130.0),
+        ),
+        encoding="utf-8",
+    )
+    (hw / "t.kicad_pro").write_text(
+        json.dumps(
+            {
+                "net_settings": {
+                    "classes": [
+                        {
+                            "name": "Default",
+                            "clearance": 0.1,
+                            "track_width": 0.15,
+                            "via_diameter": 0.45,
+                            "via_drill": 0.2,
+                        }
+                    ],
+                    "netclass_patterns": [],
+                },
+                "board": {
+                    "design_settings": {
+                        "rules": {
+                            "min_hole_clearance": 0.2,
+                            "min_hole_to_hole": 0.25,
+                            "min_copper_edge_clearance": 0.2,
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text(
+        "planes: {GND: B.Cu}\n"
+        "fanout:\n  escape: [{ref: R1}, {ref: R2}]\n",
+        encoding="utf-8",
+    )
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+
+    fo = steps.run_fanout(cfg, dry_run=True)
+    assert "vias_added" in fo
+    assert isinstance(fo["vias"], list)
+    # R1/R2 pad 2 are GND SMD — fanout should plan at least one via without AttributeError.
+    assert fo["vias_added"] >= 1
+
+    staged = layout_dir / "handroute-staged.kicad_pcb"
+    hr = steps.run_handroute(cfg, action="route", nets=["SIG"], staged=staged, dry_run=False)
+    assert hr["action"] == "route"
+    assert "routed_nets" in hr
+    assert "segments_added" in hr
+    # Straight open board: SIG between R1.1 and R2.1 should route.
+    assert "SIG" in hr["routed_nets"]
+    assert hr["segments_added"] >= 1
+    assert staged.is_file()
