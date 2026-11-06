@@ -53,6 +53,15 @@ def _pair_clearance(rules: dict, net_a: str, net_b: str) -> float:
     return max(_class_for_net(rules, net_a)["clearance"], _class_for_net(rules, net_b)["clearance"])
 
 
+def _sort_handroute_nets(rules: dict, nets: list[str]) -> list[str]:
+    """Thin-first for multi-net handroute: narrower netclass width first, then name.
+
+    Wide power copper laid early can block later 0.6–0.8 mm nets; sorting ascending
+    by track width (stable by name) lets thin nets claim corridors first.
+    """
+    return sorted(nets, key=lambda n: (_class_for_net(rules, n)["width"], n))
+
+
 def _clamp_via_size(rules: dict, via_d: float, via_h: float) -> tuple[float, float]:
     """Prefer netclass via size, but never below board / .kicad_dru floors (or annular)."""
     min_d = float(rules.get("min_via_d") or 0.0)
@@ -742,6 +751,8 @@ def run_handroute(
             keep_vias, keep_tracks = _kept_handroute_from_staged(pcb, Path(staged), set(target_nets))
         board = L.load(route_src)
         rules = cfg["rules_resolved"]
+        # Thin-first: narrower class before wider so 1.0 mm BATT/STEREO does not block later thin nets.
+        target_nets = _sort_handroute_nets(rules, list(target_nets))
         res = float((cfg.get("grid") or {}).get("res", 0.05))
         eb = board.edge_box or (95.0, 95.0, 125.0, 155.0)
         layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])

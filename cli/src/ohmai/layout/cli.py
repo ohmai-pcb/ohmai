@@ -235,7 +235,7 @@ def add_parser(sub) -> None:
     po.add_argument("--json", action="store_true")
     po.set_defaults(fn=cmd_pour)
 
-    hr = ls.add_parser("handroute", help="grid A* hand-router for tail nets, route freeze, and staged verification")
+    hr = ls.add_parser("handroute", help="grid A* for tail nets (thin-first by netclass width; prefer pours then retry missed nets), freeze, staged apply")
     hr.add_argument("action", nargs="?", default="status", choices=["status", "route", "freeze", "apply"])
     hr.add_argument("--nets", help="comma-separated net names to route")
     hr.add_argument("--staged", nargs="?", const="auto", help="write routed tracks to a staged .kicad_pcb copy")

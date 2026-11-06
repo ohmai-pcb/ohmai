@@ -78,6 +78,54 @@ def test_class_for_net_resolves_power_width():
     assert steps._pair_clearance(rules, "VIN", "SIG") == 0.25
 
 
+def test_sort_handroute_nets_thin_first_by_width_then_name():
+    """Narrower netclass width is attempted before wider; same width is stable by name."""
+    rules = {
+        "classes": {
+            "Default": {"clearance": 0.1, "width": 0.2, "via_d": 0.45, "via_h": 0.2},
+            "Power": {"clearance": 0.25, "width": 0.6, "via_d": 0.6, "via_h": 0.3},
+            "Batt": {"clearance": 0.3, "width": 1.0, "via_d": 0.8, "via_h": 0.4},
+        },
+        "patterns": [("^VIN$", "Power"), ("^BATT$", "Batt"), ("^VBUS", "Power")],
+        "track_w": 0.2,
+        "clearance": 0.1,
+        "via_d": 0.45,
+        "via_h": 0.2,
+    }
+    # Wide-first input must reorder: Default (SIG) -> Power (VBUS_CD, VIN) -> Batt (BATT).
+    assert steps._sort_handroute_nets(rules, ["BATT", "VIN", "SIG", "VBUS_CD"]) == [
+        "SIG", "VBUS_CD", "VIN", "BATT"
+    ]
+
+
+def test_handroute_multi_net_attempts_thin_before_wide(tmp_path: Path, monkeypatch):
+    """run_handroute must sort thin-first before attempting nets (spy on sorter)."""
+    cfg, _pcb = _proj(
+        tmp_path,
+        classes=[
+            {"name": "Default", "clearance": 0.1, "track_width": 0.2, "via_diameter": 0.45, "via_drill": 0.2},
+            {"name": "Power", "clearance": 0.25, "track_width": 0.6, "via_diameter": 0.6, "via_drill": 0.3},
+        ],
+        patterns=[{"pattern": "^VIN$", "netclass": "Power"}],
+    )
+    seen: list[list[str]] = []
+    real = steps._sort_handroute_nets
+
+    def spy(rules, nets):
+        out = real(rules, nets)
+        seen.append(list(nets))
+        seen.append(list(out))
+        return out
+
+    monkeypatch.setattr(steps, "_sort_handroute_nets", spy)
+    hr = steps.run_handroute(cfg, action="route", nets=["VIN", "SIG"], staged=None, dry_run=True)
+    assert seen, "expected _sort_handroute_nets to be called"
+    assert seen[0] == ["VIN", "SIG"]
+    assert seen[1] == ["SIG", "VIN"]
+    # Routing still succeeds for both when space allows.
+    assert "VIN" in hr["routed_nets"]
+
+
 def test_handroute_power_net_uses_netclass_width_not_default(tmp_path: Path):
     cfg, _pcb = _proj(tmp_path)
     hr = steps.run_handroute(cfg, action="route", nets=["VIN", "SIG"], staged=None, dry_run=True)
