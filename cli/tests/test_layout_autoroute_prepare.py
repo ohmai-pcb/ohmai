@@ -123,3 +123,55 @@ def test_prepare_autoroute_subset_nets(tmp_path: Path):
     assert "(net /A\n" in text
     assert "(net GND\n" not in text
     assert any("subset nets=" in x for x in res["dsn_log"])
+
+
+def test_freerouting_java_bin_honors_env(tmp_path: Path, monkeypatch):
+    java = tmp_path / "java"
+    java.write_text("#!/bin/sh\n")
+    java.chmod(0o755)
+    monkeypatch.setenv("FREEROUTING_JAVA", str(java))
+    assert steps._freerouting_java_bin() == str(java.resolve())
+
+
+def test_run_autoroute_fails_on_npe_empty_ses(tmp_path: Path, monkeypatch):
+    jar = tmp_path / "freerouting.jar"
+    jar.write_bytes(b"pk")
+    java = tmp_path / "java"
+    java.write_text("#!/bin/sh\n")
+    java.chmod(0o755)
+    monkeypatch.setenv("FREEROUTING_JAVA", str(java))
+    dsn = tmp_path / "board.dsn"
+    dsn.write_text("(pcb x)\n", encoding="utf-8")
+    ses = tmp_path / "board.ses"
+    # protect-only SES (no type route) — must FAIL
+    ses.write_text(
+        '(session "x"\n  (wiring\n'
+        '    (wire (path B.Cu 1000  0 0  1 1)(net VSYS_BB)(type protect))\n'
+        "  )\n)\n",
+        encoding="utf-8",
+    )
+
+    class FakeProc:
+        returncode = 0
+        stdout = "2026 ERROR  Error during routing passes\nNullPointerException: to_trace_entries is null\n"
+        stderr = ""
+
+    monkeypatch.setattr(steps.subprocess if hasattr(steps, "subprocess") else __import__("subprocess"),
+                        "run", lambda *a, **k: FakeProc(), raising=False)
+    import subprocess as sp
+    monkeypatch.setattr(sp, "run", lambda *a, **k: FakeProc())
+
+    prepared = {
+        "cmd": [str(java), "-jar", str(jar), "-de", str(dsn), "-do", str(ses)],
+        "patched_dsn": str(dsn),
+        "raw_dsn": str(dsn),
+        "dsn_edited": True,
+        "ses_out": str(ses),
+        "timeout_sec": 5,
+    }
+    res = steps.run_autoroute(prepared)
+    assert res["ok"] is False
+    assert res["returncode"] != 0
+    assert "freerouting_npe" in res["fail_reasons"] or "routing_pass_error" in res["fail_reasons"]
+    assert "ses_no_route_copper" in res["fail_reasons"]
+    assert res["ses_route_wires"] == 0

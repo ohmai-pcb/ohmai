@@ -154,11 +154,14 @@ def cmd_autoroute(a) -> int:
     if a.json:
         print(json.dumps(out, indent=2))
     else:
-        print(f"autoroute: exit={run['returncode']}, dsn_edited={res['dsn_edited']}, "
-              f"ses={res['ses_out']}, jar={res['jar']}")
+        print(f"autoroute: exit={run['returncode']}, ok={run.get('ok')}, dsn_edited={res['dsn_edited']}, "
+              f"ses={res['ses_out']}, jar={res['jar']}, java={run.get('java') or res.get('java')}, "
+              f"route_wires={run.get('ses_route_wires')}, route_vias={run.get('ses_route_vias')}")
+        if run.get("fail_reasons"):
+            print(f"autoroute: FAIL ({', '.join(run['fail_reasons'])})", file=sys.stderr)
         if run.get("stderr_tail"):
             print(run["stderr_tail"], file=sys.stderr)
-    return 0 if run["returncode"] == 0 else 1
+    return 0 if run.get("ok") else 1
 
 
 def cmd_pour(a) -> int:

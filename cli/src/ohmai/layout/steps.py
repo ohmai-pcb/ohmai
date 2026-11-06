@@ -612,6 +612,25 @@ def _freerouting_jar() -> str:
     return "freerouting.jar"
 
 
+def _freerouting_java_bin() -> str:
+    """Path to the Java binary that runs Freerouting (FREEROUTING_JAVA, else java on PATH)."""
+    import shutil
+
+    env = os.environ.get("FREEROUTING_JAVA") or os.environ.get("OHMAI_FREEROUTING_JAVA")
+    if env:
+        p = Path(env)
+        if p.is_file():
+            return str(p.resolve())
+        # Allow FREEROUTING_JAVA=/path/to/java-home or .../bin
+        for cand in (p / "bin" / "java", p / "java"):
+            if cand.is_file():
+                return str(cand.resolve())
+    which = shutil.which("java")
+    if which:
+        return which
+    return "java"
+
+
 def prepare_autoroute(
     cfg: dict,
     dsn_in: Path | None = None,
@@ -667,8 +686,9 @@ def prepare_autoroute(
         dsn_edited = True
 
     jar = _freerouting_jar()
+    java_bin = _freerouting_java_bin()
     cmd = [
-        "java",
+        java_bin,
         "-Djava.awt.headless=true",
         "-jar",
         jar,
@@ -700,6 +720,7 @@ def prepare_autoroute(
         "timeout_sec": parse_timeout_sec(eff_timeout),
         "via_costs": eff_via_costs,
         "jar": jar,
+        "java": java_bin,
         "nets": nets,
         "exclude": exclude,
         "cmd": cmd,
@@ -707,10 +728,15 @@ def prepare_autoroute(
 
 
 def run_autoroute(prepared: dict) -> dict:
-    """Execute the Freerouting command from prepare_autoroute; returns returncode + log tails."""
+    """Execute Freerouting; FAIL when the log shows a routing error or the SES adds no route copper."""
+    import re
     import subprocess
 
     cmd = list(prepared["cmd"])
+    # Prefer FREEROUTING_JAVA even if prepare baked a stale "java" token.
+    java_bin = _freerouting_java_bin()
+    if cmd:
+        cmd[0] = java_bin
     jar = Path(cmd[cmd.index("-jar") + 1]) if "-jar" in cmd else Path("freerouting.jar")
     if not jar.is_file() and jar.name == str(jar):
         raise FileNotFoundError(
@@ -718,6 +744,14 @@ def run_autoroute(prepared: dict) -> dict:
         )
     if not jar.is_file():
         raise FileNotFoundError(f"{jar}: freerouting jar not found")
+    if java_bin == "java" and not Path(java_bin).is_file():
+        # bare name — require it resolve on PATH
+        import shutil
+        if not shutil.which("java"):
+            raise FileNotFoundError(
+                "java not found on PATH; set FREEROUTING_JAVA to the java binary "
+                "(see toolchain.lock / env.sh)"
+            )
     de = Path(prepared["patched_dsn"] if prepared.get("dsn_edited") else prepared["raw_dsn"])
     if not de.is_file():
         raise FileNotFoundError(f"{de}: DSN input missing (export Specctra to {prepared['raw_dsn']} first)")
@@ -729,15 +763,43 @@ def run_autoroute(prepared: dict) -> dict:
         timeout=timeout + 30,
         cwd=str(Path(prepared["ses_out"]).resolve().parent),
     )
+
     def _tail(s: str, n: int = 40) -> str:
         lines = (s or "").splitlines()
         return "\n".join(lines[-n:])
+
+    log = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    ses_path = Path(prepared["ses_out"])
+    ses_text = ses_path.read_text(encoding="utf-8", errors="replace") if ses_path.is_file() else ""
+    # Freerouting marks pre-existing copper as protect; new autoroutes are type route.
+    route_wires = len(re.findall(r"\(wire \(path [^\n]*\)\(net [^)]*\)\(type route\)\)", ses_text))
+    route_vias = len(re.findall(r"\(via [^\n]*\(type route\)\)", ses_text))
+    error_pass = bool(re.search(r"Error during routing passes", log, re.I))
+    npe = bool(re.search(r"NullPointerException|to_trace_entries is null", log))
+    ok = (proc.returncode == 0) and (not error_pass) and (not npe) and (route_wires + route_vias > 0)
+    # Freerouting often exits 0 after a mid-pass crash — force failure for the CLI.
+    rc = 0 if ok else (proc.returncode if proc.returncode else 1)
+    reasons = []
+    if error_pass:
+        reasons.append("routing_pass_error")
+    if npe:
+        reasons.append("freerouting_npe")
+    if route_wires + route_vias == 0:
+        reasons.append("ses_no_route_copper")
+    if proc.returncode != 0:
+        reasons.append(f"java_exit_{proc.returncode}")
     return {
-        "returncode": proc.returncode,
-        "ses_exists": Path(prepared["ses_out"]).is_file(),
+        "returncode": rc,
+        "ok": ok,
+        "fail_reasons": reasons,
+        "java": java_bin,
+        "ses_exists": ses_path.is_file(),
+        "ses_route_wires": route_wires,
+        "ses_route_vias": route_vias,
         "stdout_tail": _tail(proc.stdout),
         "stderr_tail": _tail(proc.stderr),
     }
+
 
 
 
