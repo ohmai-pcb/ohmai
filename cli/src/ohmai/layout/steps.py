@@ -23,6 +23,36 @@ def parse_timeout_sec(t_str: str) -> int:
     return int(parts[0])
 
 
+def _class_for_net(rules: dict, net: str) -> dict:
+    """Netclass width/clearance/via for `net` from rules_resolved; Default / top-level fallback."""
+    classes = rules.get("classes") or {}
+    patterns = rules.get("patterns") or []
+    cname = grid_mod.netclass(patterns, net) if patterns else "Default"
+    default = classes.get("Default") or {}
+    cls = {
+        "width": default.get("width", rules.get("track_w", 0.15)),
+        "clearance": default.get("clearance", rules.get("clearance", 0.1)),
+        "via_d": default.get("via_d", rules.get("via_d", 0.45)),
+        "via_h": default.get("via_h", rules.get("via_h", 0.2)),
+    }
+    if cname in classes:
+        for k, v in classes[cname].items():
+            if v is not None:
+                cls[k] = v
+    return {
+        "name": cname if cname in classes else "Default",
+        "width": float(cls.get("width") or rules.get("track_w", 0.15)),
+        "clearance": float(cls.get("clearance") or rules.get("clearance", 0.1)),
+        "via_d": float(cls.get("via_d") or rules.get("via_d", 0.45)),
+        "via_h": float(cls.get("via_h") or rules.get("via_h", 0.2)),
+    }
+
+
+def _pair_clearance(rules: dict, net_a: str, net_b: str) -> float:
+    """KiCad-style clearance: max of the two netclasses' clearance values."""
+    return max(_class_for_net(rules, net_a)["clearance"], _class_for_net(rules, net_b)["clearance"])
+
+
 def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> dict:
     pcb = Path(cfg["board"])
     if not pcb.is_file():
@@ -49,6 +79,7 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
     target_refs = {spec["ref"] for spec in escape_specs if isinstance(spec, dict) and "ref" in spec}
 
     planned_vias: list[dict] = []
+    fo_track_fallback = float(fo.get("track_w") or 0.25)
     for p in all_pads:
         if p.hole or not p.net:
             continue
@@ -59,34 +90,41 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         # Already has a same-net via within 1.2 mm?
         if any(v.net == p.net and math.hypot(v.x - p.x, v.y - p.y) <= 1.2 for v in b.vias):
             continue
+        nc = _class_for_net(rules, p.net)
+        p_via_d = float(nc["via_d"])
+        p_via_h = float(nc["via_h"])
+        # Netclass width when a non-Default class matches; else fanout.track_w fallback.
+        p_track_w = float(nc["width"]) if nc["name"] != "Default" else fo_track_fallback
         placed = None
         for r_step in steps:
-            dist = max(p.w, p.h) / 2 + via_d / 2 + r_step
+            dist = max(p.w, p.h) / 2 + p_via_d / 2 + r_step
             for k in range(angles):
                 ang = 2 * math.pi * k / angles
                 vx = round(p.x + dist * math.cos(ang), 4)
                 vy = round(p.y + dist * math.sin(ang), 4)
-                if eb and (vx - via_d / 2 < eb[0] + edge_cl or vx + via_d / 2 > eb[2] - edge_cl or
-                           vy - via_d / 2 < eb[1] + edge_cl or vy + via_d / 2 > eb[3] - edge_cl):
+                if eb and (vx - p_via_d / 2 < eb[0] + edge_cl or vx + p_via_d / 2 > eb[2] - edge_cl or
+                           vy - p_via_d / 2 < eb[1] + edge_cl or vy + p_via_d / 2 > eb[3] - edge_cl):
                     continue
-                if any(math.hypot(vx - hx, vy - hy) < (via_h / 2 + hr + hole_hole) for hx, hy, hr in existing_holes):
+                if any(math.hypot(vx - hx, vy - hy) < (p_via_h / 2 + hr + hole_hole) for hx, hy, hr in existing_holes):
                     continue
-                v_box = (vx - via_d / 2, vy - via_d / 2, vx + via_d / 2, vy + via_d / 2)
+                v_box = (vx - p_via_d / 2, vy - p_via_d / 2, vx + p_via_d / 2, vy + p_via_d / 2)
                 if any(o.net != p.net and L.box_gap(v_box, (o.x - o.w / 2, o.y - o.h / 2, o.x + o.w / 2, o.y + o.h / 2)) < pad_gap
                        for o in all_pads):
                     continue
+                # Require pad copper connection: always carry stub endpoints (no orphan vias).
                 placed = {"ref": p.ref, "pad": p.num, "net": p.net, "x": vx, "y": vy,
-                          "pad_x": p.x, "pad_y": p.y, "layer": p.layers[0] if p.layers else "F.Cu"}
-                existing_holes.append((vx, vy, via_h / 2))
+                          "pad_x": p.x, "pad_y": p.y, "layer": p.layers[0] if p.layers else "F.Cu",
+                          "size": p_via_d, "drill": p_via_h, "width": p_track_w}
+                existing_holes.append((vx, vy, p_via_h / 2))
                 break
             if placed:
                 break
-        if placed:
+        if placed and "pad_x" in placed and "pad_y" in placed:
             planned_vias.append(placed)
 
     target = staged or (pcb if not dry_run else None)
     if target is not None:
-        _append_copper_to_pcb(pcb, target, planned_vias, [], via_d, via_h, float(fo.get("track_w") or 0.25))
+        _append_copper_to_pcb(pcb, target, planned_vias, [], via_d, via_h, fo_track_fallback)
 
     return {
         "board": str(pcb),
@@ -112,6 +150,9 @@ def _append_copper_to_pcb(
         if len(n) >= 3:
             net_map[str(n[2])] = int(n[1])
     for v in vias:
+        # Orphan via (no pad stub) would trip via_dangling — refuse to write it.
+        if "pad_x" not in v or "pad_y" not in v:
+            continue
         nid = net_map.get(v["net"], 0)
         tree.append([
             "via",
@@ -121,15 +162,14 @@ def _append_copper_to_pcb(
             ["layers", "F.Cu", "B.Cu"],
             ["net", str(nid)],
         ])
-        if "pad_x" in v and "pad_y" in v:
-            tree.append([
-                "segment",
-                ["start", str(v["pad_x"]), str(v["pad_y"])],
-                ["end", str(v["x"]), str(v["y"])],
-                ["width", str(default_w)],
-                ["layer", v.get("layer", "F.Cu")],
-                ["net", str(nid)],
-            ])
+        tree.append([
+            "segment",
+            ["start", str(v["pad_x"]), str(v["pad_y"])],
+            ["end", str(v["x"]), str(v["y"])],
+            ["width", str(v.get("width", default_w))],
+            ["layer", v.get("layer", "F.Cu")],
+            ["net", str(nid)],
+        ])
     for t in tracks:
         nid = net_map.get(t["net"], 0)
         tree.append([
@@ -341,20 +381,30 @@ def run_handroute(
     if action == "route":
         if not pcb.is_file():
             raise FileNotFoundError(f"{pcb}: board not found")
-        board = L.load(pcb)
+        # Staged chaining: continue from an existing staged PCB (fanout copper) when present.
+        src = pcb
+        if staged is not None and Path(staged).is_file() and Path(staged).resolve() != pcb.resolve():
+            src = Path(staged)
+        board = L.load(src)
         rules = cfg["rules_resolved"]
         res = float((cfg.get("grid") or {}).get("res", 0.05))
         eb = board.edge_box or (95.0, 95.0, 125.0, 155.0)
         layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])
         routed: dict[str, list[dict]] = {}
+        # Copper laid earlier in this call — later nets must clear it.
+        fresh_tracks: list[dict] = []
         target_nets = nets or []
         if not target_nets:
             raise ValueError("handroute route requires --nets (refusing empty success)")
+        import numpy as np
+
         for net_name in target_nets:
             net_pads = [p for p in board.pads() if p.net == net_name]
             if len(net_pads) < 2:
                 continue
             p0, p1 = net_pads[0], net_pads[1]
+            nc = _class_for_net(rules, net_name)
+            track_w = float(nc["width"])
             margin = float((cfg.get("handroute") or {}).get("search_margin", 8.0))
             bbox = (
                 max(eb[0], min(p0.x, p1.x) - margin),
@@ -363,15 +413,12 @@ def run_handroute(
                 min(eb[3], max(p0.y, p1.y) + margin),
             )
             # Grid.around covers the bbox; free/viaok arrays carry per-layer occupancy.
-            import numpy as np
-
             g = grid_mod.Grid.around(bbox, res)
             if g.nx < 1 or g.ny < 1:
                 continue
             layer_idxs = list(range(len(layers)))
             free = {li: np.ones((g.ny, g.nx), dtype=bool) for li in layer_idxs}
             viaok = np.ones((g.ny, g.nx), dtype=bool)
-            cl = float(rules["clearance"]) + float(rules["track_w"]) / 2
 
             def _block_rect(li: int, x0: float, y0: float, x1: float, y1: float) -> None:
                 ix0, iy0 = g.cell(x0, y0)
@@ -383,17 +430,53 @@ def run_handroute(
                 if xa <= xb and ya <= yb:
                     free[li][ya : yb + 1, xa : xb + 1] = False
 
+            def _block_disk(li: int, x: float, y: float, r: float) -> None:
+                _block_rect(li, x - r, y - r, x + r, y + r)
+
+            def _block_thick_seg(li: int, x0: float, y0: float, x1: float, y1: float, half: float) -> None:
+                length = math.hypot(x1 - x0, y1 - y0)
+                n = max(1, int(math.ceil(length / max(res * 0.5, 1e-6))))
+                for i in range(n + 1):
+                    t = i / n
+                    _block_disk(li, x0 + t * (x1 - x0), y0 + t * (y1 - y0), half)
+
+            # Inflate obstacles by clearance + half our track width so wide power tracks don't short.
             for op in board.pads():
-                if op.net != net_name:
-                    for li, lay in enumerate(layers):
-                        if lay in op.layers or "*.Cu" in op.layers:
-                            _block_rect(
-                                li,
-                                op.x - op.w / 2 - cl,
-                                op.y - op.h / 2 - cl,
-                                op.x + op.w / 2 + cl,
-                                op.y + op.h / 2 + cl,
-                            )
+                if op.net == net_name:
+                    continue
+                grow = _pair_clearance(rules, net_name, op.net) + track_w / 2
+                for li, lay in enumerate(layers):
+                    if lay in op.layers or "*.Cu" in op.layers:
+                        _block_rect(
+                            li,
+                            op.x - op.w / 2 - grow,
+                            op.y - op.h / 2 - grow,
+                            op.x + op.w / 2 + grow,
+                            op.y + op.h / 2 + grow,
+                        )
+            for seg in board.segments:
+                if seg.net == net_name:
+                    continue
+                if seg.layer not in layers:
+                    continue
+                li = layers.index(seg.layer)
+                grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + track_w / 2
+                _block_thick_seg(li, seg.x0, seg.y0, seg.x1, seg.y1, grow)
+            for v in board.vias:
+                if v.net == net_name:
+                    continue
+                grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
+                for li in layer_idxs:
+                    _block_disk(li, v.x, v.y, grow)
+            for seg in fresh_tracks:
+                if seg["net"] == net_name:
+                    continue
+                if seg["layer"] not in layers:
+                    continue
+                li = layers.index(seg["layer"])
+                grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + track_w / 2
+                _block_thick_seg(li, seg["x0"], seg["y0"], seg["x1"], seg["y1"], grow)
+
             s_li = 0 if (not p0.layers or layers[0] in p0.layers or "*.Cu" in p0.layers) else min(1, len(layers) - 1)
             g_li = 0 if (not p1.layers or layers[0] in p1.layers or "*.Cu" in p1.layers) else min(1, len(layers) - 1)
             six, siy = g.cell(p0.x, p0.y)
@@ -407,7 +490,7 @@ def run_handroute(
             goal = (g_li, giy, gix)
             hr = cfg.get("handroute") or {}
             via_cost = float(hr.get("via_cost", 1.6))
-            pitch = grid_mod.via_pitch_cells(float(rules["via_h"]), float(rules.get("hole_hole", rules.get("hole_to_hole", 0.25))), res)
+            pitch = grid_mod.via_pitch_cells(float(nc["via_h"]), float(rules.get("hole_hole", rules.get("hole_to_hole", 0.25))), res)
             cost_mult = {li: (1.0 if li == 0 else float((hr.get("inner") or {}).get("cost", 4.0))) for li in layer_idxs}
             path = grid_mod.astar(
                 free,
@@ -434,17 +517,18 @@ def run_handroute(
                         "y0": round(a[1], 4),
                         "x1": round(bpt[0], 4),
                         "y1": round(bpt[1], 4),
-                        "width": float(rules["track_w"]),
+                        "width": track_w,
                     })
                 routed[net_name] = segs
+                fresh_tracks.extend(segs)
 
         all_tracks = [s for segs in routed.values() for s in segs]
         dst = staged or (pcb if not dry_run else None)
         if dst is not None:
             if all_tracks:
-                _append_copper_to_pcb(pcb, dst, [], all_tracks, float(rules["via_d"]), float(rules["via_h"]), float(rules["track_w"]))
+                _append_copper_to_pcb(src, dst, [], all_tracks, float(rules["via_d"]), float(rules["via_h"]), float(rules["track_w"]))
             elif staged and staged != pcb:
-                shutil.copy2(pcb, staged)
+                shutil.copy2(src, staged)
         return {
             "action": action,
             "board": str(pcb),
