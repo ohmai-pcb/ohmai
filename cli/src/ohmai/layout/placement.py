@@ -157,6 +157,43 @@ def _rect_box(cx, cy, w, h, deg) -> Box:
     return min(xs), min(ys), max(xs), max(ys)
 
 
+def _pad_box(p, cx, cy, w, h, deg) -> Box:
+    """Pad bbox incl. custom-pad primitives (anchor `size` alone can be 0.005 mm)."""
+    x0, y0, x1, y1 = _rect_box(cx, cy, w, h, deg)
+    prim = sexp.first(p, "primitives")
+    if not prim:
+        return x0, y0, x1, y1
+    pts: list[tuple[float, float]] = []
+    for g in prim[1:]:
+        if not isinstance(g, list) or not g:
+            continue
+        wn = _f(g, "width", 1)
+        half = (wn[0] if wn else 0.0) / 2
+        local: list[tuple[float, float]] = []
+        if g[0] == "gr_poly":
+            pl = sexp.first(g, "pts")
+            for xy in (pl[1:] if pl else []):
+                if isinstance(xy, list) and xy and xy[0] == "xy":
+                    local.append((float(xy[1]), float(xy[2])))
+        elif g[0] in ("gr_rect", "gr_line"):
+            a, b = _f(g, "start"), _f(g, "end")
+            if a and b:
+                local += [tuple(a), tuple(b), (a[0], b[1]), (b[0], a[1])]
+        elif g[0] == "gr_circle":
+            c, e = _f(g, "center"), _f(g, "end")
+            if c and e:
+                r = math.hypot(e[0] - c[0], e[1] - c[1])
+                local += [(c[0] - r, c[1] - r), (c[0] + r, c[1] + r), (c[0] - r, c[1] + r), (c[0] + r, c[1] - r)]
+        for lx, ly in local:
+            for ox, oy in ((-half, -half), (half, -half), (half, half), (-half, half)):
+                rx, ry = rotate(lx + ox, ly + oy, deg)
+                pts.append((cx + rx, cy + ry))
+    if pts:
+        x0 = min(x0, *(q[0] for q in pts)); y0 = min(y0, *(q[1] for q in pts))
+        x1 = max(x1, *(q[0] for q in pts)); y1 = max(y1, *(q[1] for q in pts))
+    return x0, y0, x1, y1
+
+
 def _graphic_points(g) -> list[tuple[float, float]]:
     head = g[0]
     if head in ("fp_line", "fp_rect"):
@@ -273,7 +310,7 @@ def load(path: Path) -> Board:
             net = (net_n[2] if len(net_n) > 2 else nets.get(net_n[1], "")) if net_n else ""
             lay = sexp.first(p, "layers")
             layers = tuple(lay[1:]) if lay else ()
-            fp.pads.append(Pad(ref, p[1], x + dx, y + dy, _rect_box(x + dx, y + dy, size[0], size[1], pdeg), net,
+            fp.pads.append(Pad(ref, p[1], x + dx, y + dy, _pad_box(p, x + dx, y + dy, size[0], size[1], pdeg), net,
                                layers, hole=len(p) > 2 and p[2] in ("thru_hole", "np_thru_hole"),
                                drill=_drill(p)))
         fps[ref] = fp

@@ -247,3 +247,37 @@ def test_fanout_skips_via_on_nonet_epad(tmp_path):
         assert not L.overlap(L.grow(stub, 0.12), epad.box, 0.0), (
             f"fanout stub to ({v['x']},{v['y']}) overlaps no-net EPAD"
         )
+
+
+def test_custom_epad_box_includes_primitives_and_blocks_route(tmp_path):
+    """Q5/Q6/Q7 regression: custom EPAD with (size 0.005 0.005) + gr_poly primitive.
+
+    Pad box must come from the primitive polygon, and handroute must not place
+    F.Cu track or vias through it.
+    """
+    epad = {"ref": "Q1", "lib": "kb:DSOP", "x": 110, "y": 105, "rot": 0,
+            "pads": [("9", 0, 0, 0.005, 0.005, "")], "cy": (-2.3, -2.3, 2.3, 2.3)}
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105, "NET_A"), _pad("B", 117, 105, "NET_A"), epad],
+                     layers=["F.Cu"], margin=4.0)
+    txt = pcb.read_text()
+    i = txt.index('(pad "9" smd rect')
+    j = txt.index("(size 0.005 0.005)", i) + len("(size 0.005 0.005)")
+    prim = ("\n\t\t\t(primitives\n\t\t\t\t(gr_poly\n\t\t\t\t\t(pts\n\t\t\t\t\t\t(xy -2.125 -1.75) "
+            "(xy 2.125 -1.75) (xy 2.125 1.75) (xy -2.125 1.75)\n\t\t\t\t\t)\n"
+            "\t\t\t\t\t(width 0.1)\n\t\t\t\t\t(fill yes)\n\t\t\t\t)\n\t\t\t)")
+    txt = txt[:i] + txt[i:j].replace("smd rect", "smd custom") + prim + txt[j:]
+    pcb.write_text(txt)
+    ep = next(p for p in L.load(pcb).pads() if p.ref == "Q1" and p.num == "9")
+    assert ep.w > 4.2 and ep.h > 3.5, ep.box
+    staged = tmp_path / "staged.kicad_pcb"
+    steps.run_handroute(cfg, "route", ["NET_A"], staged=staged)
+    st = L.load(staged)
+    for v in st.vias:
+        vb = (v.x - v.size / 2, v.y - v.size / 2, v.x + v.size / 2, v.y + v.size / 2)
+        assert not L.overlap(vb, ep.box, 0.0)
+    for s in st.segments:
+        if s.layer != "F.Cu":
+            continue
+        hw = s.width / 2
+        sb = (min(s.x0, s.x1) - hw, min(s.y0, s.y1) - hw, max(s.x0, s.x1) + hw, max(s.y0, s.y1) + hw)
+        assert not L.overlap(sb, ep.box, 0.0), s
