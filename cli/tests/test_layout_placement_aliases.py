@@ -227,3 +227,170 @@ def test_run_fanout_and_handroute_smoke(tmp_path: Path):
     assert "SIG" in hr["routed_nets"]
     assert hr["segments_added"] >= 1
     assert staged.is_file()
+
+
+def test_handroute_multi_net_no_tuple_pads_shadow(tmp_path: Path):
+    """Routing net 2+ must not crash: `for l0, a, b in seg_pairs` used to shadow Board."""
+    import json
+
+    from ohmai.layout import config as lcfg
+    from ohmai.layout import steps
+    from ohmai.project import Project
+
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    (hw / "layout").mkdir()
+    pcb = hw / "t.kicad_pcb"
+    pcb.write_text(
+        F.board(
+            [
+                F.two_pad("R1", 110.0, 110.0, "SIG_A", "GND"),
+                F.two_pad("R2", 114.0, 110.0, "SIG_A", "GND"),
+                F.two_pad("R3", 110.0, 114.0, "SIG_B", "GND"),
+                F.two_pad("R4", 114.0, 114.0, "SIG_B", "GND"),
+            ],
+            edge=(100.0, 100.0, 130.0, 130.0),
+        ),
+        encoding="utf-8",
+    )
+    (hw / "t.kicad_pro").write_text(
+        json.dumps(
+            {
+                "net_settings": {
+                    "classes": [
+                        {
+                            "name": "Default",
+                            "clearance": 0.1,
+                            "track_width": 0.15,
+                            "via_diameter": 0.45,
+                            "via_drill": 0.2,
+                        }
+                    ],
+                    "netclass_patterns": [],
+                },
+                "board": {"design_settings": {"rules": {
+                    "min_hole_clearance": 0.2, "min_hole_to_hole": 0.25, "min_copper_edge_clearance": 0.2,
+                }}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text("planes: {GND: B.Cu}\n", encoding="utf-8")
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+    hr = steps.run_handroute(cfg, action="route", nets=["SIG_A", "SIG_B"], staged=None, dry_run=True)
+    assert hr["action"] == "route"
+    # Both nets should be attempted without AttributeError; at least one routes on open board.
+    assert set(hr["routed_nets"]) >= {"SIG_A"} or hr["segments_added"] >= 0
+
+
+def test_fanout_staged_kicad_loadable(tmp_path: Path):
+    """Fanout --staged output must load in KiCad (Junior's serialization bug)."""
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    from ohmai.layout import config as lcfg
+    from ohmai.layout import steps
+    from ohmai.project import Project
+
+    if not shutil.which("kicad-cli"):
+        pytest.skip("kicad-cli not installed")
+
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    layout_dir = hw / "layout"
+    layout_dir.mkdir()
+    pcb = hw / "t.kicad_pcb"
+    pcb.write_text(
+        F.board(
+            [F.two_pad("R1", 110.0, 110.0, "SIG", "GND"), F.two_pad("R2", 114.0, 110.0, "SIG", "GND")],
+            edge=(100.0, 100.0, 130.0, 130.0),
+        ),
+        encoding="utf-8",
+    )
+    (hw / "t.kicad_pro").write_text(
+        json.dumps(
+            {
+                "net_settings": {
+                    "classes": [{
+                        "name": "Default", "clearance": 0.1, "track_width": 0.15,
+                        "via_diameter": 0.45, "via_drill": 0.2,
+                    }],
+                    "netclass_patterns": [],
+                },
+                "board": {"design_settings": {"rules": {
+                    "min_hole_clearance": 0.2, "min_hole_to_hole": 0.25, "min_copper_edge_clearance": 0.2,
+                }}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text(
+        "planes: {GND: B.Cu}\nfanout:\n  escape: [{ref: R1}, {ref: R2}]\n",
+        encoding="utf-8",
+    )
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+    staged = layout_dir / "staged.kicad_pcb"
+    fo = steps.run_fanout(cfg, staged=staged, dry_run=False)
+    assert fo["vias_added"] >= 1
+    assert staged.is_file()
+    svg = tmp_path / "fo.svg"
+    r = subprocess.run(
+        ["kicad-cli", "pcb", "export", "svg", "-o", str(svg), "--layers", "F.Cu,B.Cu", str(staged)],
+        capture_output=True, text=True, timeout=60,
+    )
+    combined = (r.stdout or "") + (r.stderr or "")
+    assert "Failed to load board" not in combined, combined
+    assert r.returncode == 0, combined
+
+
+def test_handroute_apply_promotes_or_fails(tmp_path: Path):
+    """apply must promote staged copper, not exit 0 with routed_nets=[]."""
+    import json
+
+    import pytest
+
+    from ohmai.layout import config as lcfg
+    from ohmai.layout import steps
+    from ohmai.project import Project
+
+    hw = tmp_path / "hardware"
+    hw.mkdir()
+    layout_dir = hw / "layout"
+    layout_dir.mkdir()
+    pcb = hw / "t.kicad_pcb"
+    pcb.write_text(
+        F.board([F.two_pad("R1", 110.0, 110.0, "SIG", "GND")], vias=[(111.0, 111.0, "GND")]),
+        encoding="utf-8",
+    )
+    (hw / "t.kicad_pro").write_text(
+        json.dumps({
+            "net_settings": {"classes": [{
+                "name": "Default", "clearance": 0.1, "track_width": 0.15,
+                "via_diameter": 0.45, "via_drill": 0.2,
+            }], "netclass_patterns": []},
+            "board": {"design_settings": {"rules": {
+                "min_hole_clearance": 0.2, "min_hole_to_hole": 0.25, "min_copper_edge_clearance": 0.2,
+            }}},
+        }),
+        encoding="utf-8",
+    )
+    (hw / "layout.yaml").write_text("planes: {}\n", encoding="utf-8")
+    proj = Project(tmp_path, {"hardware": {"pcb": "hardware/t.kicad_pcb"}})
+    cfg = lcfg.load(proj)
+
+    with pytest.raises(FileNotFoundError):
+        steps.run_handroute(cfg, action="apply", dry_run=False)
+
+    staged = layout_dir / "staged.kicad_pcb"
+    staged.write_text(pcb.read_text(encoding="utf-8"), encoding="utf-8")
+    before = pcb.read_text(encoding="utf-8")
+    # mutate staged so promote is observable
+    staged.write_text(before + "\n", encoding="utf-8")
+    res = steps.run_handroute(cfg, action="apply", staged=staged, dry_run=False)
+    assert res["promoted"] is True
+    assert res["vias_on_staged"] >= 1

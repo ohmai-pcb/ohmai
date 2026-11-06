@@ -20,8 +20,13 @@ def drc(project: Project, opts: dict) -> Result:
     if not project.pcb.is_file():
         return Result("drc", FAIL, f"{project.pcb} not found")
     out = project.out / "drc.json"
-    kicad.run(["pcb", "drc", "--format", "json", "--severity-all", "--schematic-parity", "-o", str(out),
-               str(project.pcb)], log=project.out / "drc.log")
+    # Drop any prior report so a failed load cannot reuse stale counts.
+    if out.is_file():
+        out.unlink()
+    r = kicad.run(["pcb", "drc", "--format", "json", "--severity-all", "--schematic-parity", "-o", str(out),
+                   str(project.pcb)], log=project.out / "drc.log")
+    if kicad.load_failed(r):
+        return Result("drc", FAIL, "Failed to load board (see out/drc.log)")
     try:
         d = json.loads(out.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:

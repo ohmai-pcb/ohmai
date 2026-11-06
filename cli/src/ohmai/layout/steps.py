@@ -277,30 +277,30 @@ def run_handroute(
     routes_path = Path(cfg["routes"])
 
     if action == "status":
-        b = L.load(pcb) if pcb.is_file() else None
+        board = L.load(pcb) if pcb.is_file() else None
         routes_data = json.loads(routes_path.read_text(encoding="utf-8")) if routes_path.is_file() else {}
         return {
             "action": "status",
             "board": str(pcb),
             "base_exists": base_path.is_file(),
             "routes_exists": routes_path.is_file(),
-            "segments_on_board": len(b.segments) if b else 0,
-            "vias_on_board": len(b.vias) if b else 0,
+            "segments_on_board": len(board.segments) if board else 0,
+            "vias_on_board": len(board.vias) if board else 0,
             "hand_routed_nets": sorted((routes_data.get("routes") or {}).keys()) if isinstance(routes_data, dict) else [],
         }
 
     if action == "freeze":
         if not pcb.is_file():
             raise FileNotFoundError(f"{pcb}: board not found")
-        b = L.load(pcb)
+        board = L.load(pcb)
         snap = {
             "segments": [
                 {"net": s.net, "layer": s.layer, "x0": s.x0, "y0": s.y0, "x1": s.x1, "y1": s.y1, "width": s.width}
-                for s in b.segments
+                for s in board.segments
             ],
             "vias": [
                 {"net": v.net, "x": v.x, "y": v.y, "size": v.size, "drill": v.drill}
-                for v in b.vias
+                for v in board.vias
             ],
         }
         if not dry_run:
@@ -308,18 +308,50 @@ def run_handroute(
             base_path.write_text(json.dumps(snap, indent=2) + "\n", encoding="utf-8")
         return {"action": "freeze", "base": str(base_path), "segments": len(snap["segments"]), "vias": len(snap["vias"])}
 
-    if action in ("route", "apply"):
+    if action == "apply":
+        # Promote staged copper onto the live board. Do not silently succeed with an empty no-op.
+        src = staged or (Path(cfg["work_dir"]) / "staged.kicad_pcb")
+        if not src.is_file():
+            raise FileNotFoundError(f"{src}: staged board not found (run fanout/handroute --staged first)")
+        if src.resolve() == pcb.resolve():
+            raise ValueError("handroute apply: staged path is the live board; refusing no-op promote")
+        # Cheap validity: must parse as kicad_pcb and contain at least one via or segment.
+        tree = sexp.parse(src.read_text(encoding="utf-8", errors="replace"))
+        if not isinstance(tree, list) or not tree or tree[0] != "kicad_pcb":
+            raise ValueError(f"{src}: not a kicad_pcb")
+        n_via = sum(1 for _ in sexp.walk(tree, "via"))
+        n_seg = sum(1 for _ in sexp.walk(tree, "segment"))
+        if n_via + n_seg == 0:
+            raise ValueError(f"{src}: staged board has no vias/segments to apply")
+        if not dry_run:
+            pcb.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, pcb)
+        return {
+            "action": "apply",
+            "board": str(pcb),
+            "staged": str(src),
+            "dry_run": dry_run,
+            "routed_nets": [],
+            "segments_added": n_seg,
+            "vias_on_staged": n_via,
+            "promoted": not dry_run,
+            "routes": {},
+        }
+
+    if action == "route":
         if not pcb.is_file():
             raise FileNotFoundError(f"{pcb}: board not found")
-        b = L.load(pcb)
+        board = L.load(pcb)
         rules = cfg["rules_resolved"]
         res = float((cfg.get("grid") or {}).get("res", 0.05))
-        eb = b.edge_box or (95.0, 95.0, 125.0, 155.0)
+        eb = board.edge_box or (95.0, 95.0, 125.0, 155.0)
         layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])
         routed: dict[str, list[dict]] = {}
         target_nets = nets or []
+        if not target_nets:
+            raise ValueError("handroute route requires --nets (refusing empty success)")
         for net_name in target_nets:
-            net_pads = [p for p in b.pads() if p.net == net_name]
+            net_pads = [p for p in board.pads() if p.net == net_name]
             if len(net_pads) < 2:
                 continue
             p0, p1 = net_pads[0], net_pads[1]
@@ -351,7 +383,7 @@ def run_handroute(
                 if xa <= xb and ya <= yb:
                     free[li][ya : yb + 1, xa : xb + 1] = False
 
-            for op in b.pads():
+            for op in board.pads():
                 if op.net != net_name:
                     for li, lay in enumerate(layers):
                         if lay in op.layers or "*.Cu" in op.layers:
@@ -393,14 +425,15 @@ def run_handroute(
                 runs = grid_mod.simplify(path, lambda ix, iy: g.xy(ix, iy))
                 seg_pairs, _vias = grid_mod.runs_to_segments(runs)
                 segs = []
-                for l0, a, b in seg_pairs:
+                # NOTE: do not name the endpoint `b` — that shadowed the Board and crashed on net 2+.
+                for l0, a, bpt in seg_pairs:
                     segs.append({
                         "net": net_name,
                         "layer": layers[l0],
                         "x0": round(a[0], 4),
                         "y0": round(a[1], 4),
-                        "x1": round(b[0], 4),
-                        "y1": round(b[1], 4),
+                        "x1": round(bpt[0], 4),
+                        "y1": round(bpt[1], 4),
                         "width": float(rules["track_w"]),
                     })
                 routed[net_name] = segs
