@@ -203,8 +203,12 @@ def _fanout_escape_ok(
     v_box = _disk_box(vx, vy, v_r)
     stub_box = _thick_seg_box(pad.x, pad.y, vx, vy, stub_half)
 
-    def _cl(other_net: str) -> float:
+    def _cl(other_net: str, other_pad=None) -> float:
         # Max of pair clearance and fanout pad_gap so dense QFN toes still clear.
+        # Same-footprint pads are already denser than power netclass clearance (0.4 mm
+        # pitch vs 0.5 mm BATT); use pad_gap only between toes of this IC.
+        if other_pad is not None and getattr(other_pad, "ref", None) == pad.ref:
+            return pad_gap
         return max(_pair_clearance(rules, pad.net, other_net or ""), pad_gap)
 
     # Foreign pads (full boxes, including EPAD). No-net is never same-net.
@@ -213,7 +217,7 @@ def _fanout_escape_ok(
             continue
         # Layer-aware for stub; vias pierce all copper layers.
         stub_hit = (not o.layers) or stub_layer in o.layers or "*.Cu" in o.layers
-        cl = _cl(o.net)
+        cl = _cl(o.net, o)
         if L.overlap(L.grow(v_box, cl), o.box, 0.0):
             return False
         if stub_hit and L.overlap(L.grow(stub_box, cl), o.box, 0.0):
@@ -247,6 +251,9 @@ def _fanout_escape_ok(
             return False
 
     # Zones / keepouts.
+    # Vias intentionally pierce plane pours (GND/power); the pour refill punches clearance.
+    # Treating filled-zone AABBs as via walls blocked every non-GND escape on poured boards.
+    # Keepouts still forbid vias. Stubs still cannot run through a foreign pour on stub_layer.
     for znet, zlayers, zbox, keepout_no_via in zones:
         if keepout_no_via:
             if L.overlap(v_box, zbox, 0.0) or L.overlap(stub_box, zbox, 0.0):
@@ -255,17 +262,17 @@ def _fanout_escape_ok(
         if _same_net(znet, pad.net):
             continue
         cl = _cl(znet)
-        layer_hit = (not zlayers) or stub_layer in zlayers or any(l.endswith(".Cu") for l in zlayers)
-        if L.overlap(L.grow(v_box, cl), zbox, 0.0):
-            return False
-        if layer_hit and L.overlap(L.grow(stub_box, cl), zbox, 0.0):
+        stub_layer_hit = (not zlayers) or stub_layer in zlayers
+        if stub_layer_hit and L.overlap(L.grow(stub_box, cl), zbox, 0.0):
             return False
 
     # Already-accepted fanout copper this call.
     for pv in planned:
         if _same_net(pv["net"], pad.net):
             continue
-        cl = _cl(pv["net"])
+        # Escape vias from the same IC use pad_gap, not power netclass clearance.
+        same_ic = str(pv.get("ref") or "") == pad.ref
+        cl = pad_gap if same_ic else _cl(pv["net"])
         ob = _disk_box(pv["x"], pv["y"], float(pv["size"]) / 2)
         if L.overlap(L.grow(v_box, cl), ob, 0.0):
             return False
@@ -312,8 +319,150 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
     planned_vias: list[dict] = []
     skipped: list[dict] = []
     fo_track_fallback = float(fo.get("track_w") or 0.25)
+    thin_stub = min(fo_track_fallback, 0.15)
+
+    def _size_attempts_for(pad) -> list[tuple[float, float, float]]:
+        nc = _class_for_net(rules, pad.net)
+        p_via_d, p_via_h = _clamp_via_size(rules, float(nc["via_d"]), float(nc["via_h"]))
+        p_track_w = float(nc["width"]) if nc["name"] != "Default" else fo_track_fallback
+        attempts = [(p_via_d, p_via_h, p_track_w)]
+        def_d, def_h = _clamp_via_size(rules, float(rules["via_d"]), float(rules["via_h"]))
+        if (def_d < p_via_d - 1e-9) or (def_h < p_via_h - 1e-9):
+            attempts.append((def_d, def_h, thin_stub))
+        elif thin_stub < p_track_w - 1e-9:
+            # Same via floor, but a thinner escape stub helps adjacent QFN toes diverge.
+            attempts.append((p_via_d, p_via_h, thin_stub))
+        return attempts
+
+    def _angle_order(pad, n_ang: int, planned: list[dict]) -> list[float]:
+        """Prefer bearings that diverge from nearby same-IC escape vias already planned."""
+        base = [2 * math.pi * k / n_ang for k in range(n_ang)]
+        neighbors = [
+            pv for pv in planned
+            if str(pv.get("ref") or "") == pad.ref
+            and math.hypot(float(pv["x"]) - pad.x, float(pv["y"]) - pad.y) <= 2.5
+        ]
+        if not neighbors:
+            # No neighbor yet: alternate a few degrees off due-east by pad row so the
+            # next toe can claim the opposite diverge before pair-resolve is needed.
+            try:
+                pn = int(str(pad.num))
+            except ValueError:
+                pn = 0
+            bias = (math.pi / 36) if (pn % 2) else (-math.pi / 36)  # ±5°
+            # Outward from footprint centroid if known.
+            same = [q for q in all_pads if q.ref == pad.ref]
+            if same:
+                cx = sum(q.x for q in same) / len(same)
+                cy = sum(q.y for q in same) / len(same)
+                outward = math.atan2(pad.y - cy, pad.x - cx) + bias
+            else:
+                outward = bias
+
+            def _near_out(a: float) -> float:
+                return abs((a - outward + math.pi) % (2 * math.pi) - math.pi)
+
+            return sorted(base, key=_near_out)
+        # Mean bearing of neighbors from this pad; sort angles by angular distance to that
+        # bearing so parallel east/east collisions lose to +/- a few degrees.
+        bearings = [math.atan2(float(pv["y"]) - pad.y, float(pv["x"]) - pad.x) for pv in neighbors]
+        mean = math.atan2(
+            sum(math.sin(b) for b in bearings) / len(bearings),
+            sum(math.cos(b) for b in bearings) / len(bearings),
+        )
+
+        def _away(a: float) -> float:
+            d = abs((a - mean + math.pi) % (2 * math.pi) - math.pi)
+            return -d  # larger angular separation first
+
+        return sorted(base, key=_away)
+
+    def _try_place(pad, planned: list[dict], holes: list, n_ang: int | None = None) -> dict | None:
+        stub_layer = pad.layers[0] if pad.layers else "F.Cu"
+        n_ang = int(n_ang or angles)
+        for attempt_i, (cand_d, cand_h, cand_w) in enumerate(_size_attempts_for(pad)):
+            for r_step in steps:
+                dist = max(pad.w, pad.h) / 2 + cand_d / 2 + r_step
+                for ang in _angle_order(pad, n_ang, planned):
+                    vx = round(pad.x + dist * math.cos(ang), 4)
+                    vy = round(pad.y + dist * math.sin(ang), 4)
+                    if eb and (vx - cand_d / 2 < eb[0] + edge_cl or vx + cand_d / 2 > eb[2] - edge_cl or
+                               vy - cand_d / 2 < eb[1] + edge_cl or vy + cand_d / 2 > eb[3] - edge_cl):
+                        continue
+                    if any(math.hypot(vx - hx, vy - hy) < (cand_h / 2 + hr + hole_hole) for hx, hy, hr in holes):
+                        continue
+                    if not _fanout_escape_ok(
+                        pad=pad, vx=vx, vy=vy, via_d=cand_d, stub_w=cand_w, stub_layer=stub_layer,
+                        rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
+                        planned=planned, pad_gap=pad_gap,
+                    ):
+                        continue
+                    return {
+                        "ref": pad.ref, "pad": pad.num, "net": pad.net, "x": vx, "y": vy,
+                        "pad_x": pad.x, "pad_y": pad.y, "layer": stub_layer,
+                        "size": cand_d, "drill": cand_h, "width": cand_w,
+                        "via_relaxed": attempt_i > 0,
+                    }
+        return None
+
+    def _pair_resolve(pad_a, pad_b, planned: list[dict], holes: list) -> tuple[dict, dict] | None:
+        """Search diverging escapes for two same-IC toes that greedily blocked each other."""
+        stub_layer_a = pad_a.layers[0] if pad_a.layers else "F.Cu"
+        # 5° grid: 7.5° (48) misses the ±2–5° diverge slots QFN 0.4 mm toes need.
+        n_ang = max(angles, 72)
+
+        def _pair_angles(pad, n: int, planned_local: list[dict]) -> list[float]:
+            ordered = _angle_order(pad, n, planned_local)
+            # Only search the outward cone — full-circle 72² is too slow and never wins for QFN toes.
+            same = [q for q in all_pads if q.ref == pad.ref]
+            if not same:
+                return ordered
+            cx = sum(q.x for q in same) / len(same)
+            cy = sum(q.y for q in same) / len(same)
+            outward = math.atan2(pad.y - cy, pad.x - cx)
+            cone = []
+            for a in ordered:
+                d = abs((a - outward + math.pi) % (2 * math.pi) - math.pi)
+                if d <= math.radians(50):
+                    cone.append(a)
+            return cone or ordered
+
+        for attempt_a_i, (da, ha, wa) in enumerate(_size_attempts_for(pad_a)):
+            for ra in steps:
+                dist_a = max(pad_a.w, pad_a.h) / 2 + da / 2 + ra
+                for ang_a in _pair_angles(pad_a, n_ang, planned):
+                    ax = round(pad_a.x + dist_a * math.cos(ang_a), 4)
+                    ay = round(pad_a.y + dist_a * math.sin(ang_a), 4)
+                    if eb and (ax - da / 2 < eb[0] + edge_cl or ax + da / 2 > eb[2] - edge_cl or
+                               ay - da / 2 < eb[1] + edge_cl or ay + da / 2 > eb[3] - edge_cl):
+                        continue
+                    if any(math.hypot(ax - hx, ay - hy) < (ha / 2 + hr + hole_hole) for hx, hy, hr in holes):
+                        continue
+                    if not _fanout_escape_ok(
+                        pad=pad_a, vx=ax, vy=ay, via_d=da, stub_w=wa, stub_layer=stub_layer_a,
+                        rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
+                        planned=planned, pad_gap=pad_gap,
+                    ):
+                        continue
+                    trial_a = {
+                        "ref": pad_a.ref, "pad": pad_a.num, "net": pad_a.net, "x": ax, "y": ay,
+                        "pad_x": pad_a.x, "pad_y": pad_a.y, "layer": stub_layer_a,
+                        "size": da, "drill": ha, "width": wa, "via_relaxed": attempt_a_i > 0,
+                    }
+                    planned_ab = planned + [trial_a]
+                    holes_ab = holes + [(ax, ay, ha / 2)]
+                    trial_b = _try_place(pad_b, planned_ab, holes_ab, n_ang=n_ang)
+                    if trial_b:
+                        return trial_a, trial_b
+        return None
+
+    pending_pads: list = []
     for p in all_pads:
         if p.hole or not p.net:
+            continue
+        # No-connect / schematic-unconnected pads do not need escapes and steal
+        # dense QFN toe slots from real nets (e.g. U1.21 blocking VSYS_BB U1.22).
+        if str(p.net).startswith("unconnected-") or str(p.net).startswith("Net-(unconnected-"):
             continue
         if target_refs and p.ref not in target_refs:
             continue
@@ -322,53 +471,89 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         # Already has a same-net via within 1.2 mm?
         if any(v.net == p.net and math.hypot(v.x - p.x, v.y - p.y) <= 1.2 for v in b.vias):
             continue
+        pending_pads.append(p)
+
+    # Dense QFN toes: place priority / fat power nets before drivers (HIDRV/LODRV)
+    # so SW/VSYS can claim diverging east slots before a neighbor steals them.
+    priority_nets = {str(n) for n in (fo.get("priority_nets") or [])}
+    priority_classes = {str(n) for n in (fo.get("priority_classes") or ["SW_NODE", "BATT_12V", "STEREO_12V"])}
+
+    def _pad_priority(pad) -> tuple:
+        nc = _class_for_net(rules, pad.net)
+        is_pri = (pad.net in priority_nets) or (nc.get("name") in priority_classes)
+        # Among priority, thinner stub pitch first (south→north by y) so pair-resolve
+        # sees neighbors; non-priority last.
+        return (0 if is_pri else 1, pad.ref, float(pad.y), str(pad.num))
+
+    pending_pads.sort(key=_pad_priority)
+
+    for p in pending_pads:
         nc = _class_for_net(rules, p.net)
-        p_via_d, p_via_h = _clamp_via_size(rules, float(nc["via_d"]), float(nc["via_h"]))
-        # Netclass width when a non-Default class matches; else fanout.track_w fallback.
-        p_track_w = float(nc["width"]) if nc["name"] != "Default" else fo_track_fallback
-        stub_layer = p.layers[0] if p.layers else "F.Cu"
-        # Try netclass via first; if no slot (dense QFN toes), fall back to the thinner
-        # project default via so escape stubs can leave fine-pitch pads.
-        size_attempts = [(p_via_d, p_via_h, p_track_w)]
-        def_d, def_h = _clamp_via_size(rules, float(rules["via_d"]), float(rules["via_h"]))
-        if (def_d < p_via_d - 1e-9) or (def_h < p_via_h - 1e-9):
-            size_attempts.append((def_d, def_h, min(p_track_w, fo_track_fallback)))
-        placed = None
-        for attempt_i, (cand_d, cand_h, cand_w) in enumerate(size_attempts):
-            for r_step in steps:
-                # Ring from full pad extent (EPAD / large pads), not a centre point.
-                dist = max(p.w, p.h) / 2 + cand_d / 2 + r_step
-                for k in range(angles):
-                    ang = 2 * math.pi * k / angles
-                    vx = round(p.x + dist * math.cos(ang), 4)
-                    vy = round(p.y + dist * math.sin(ang), 4)
-                    if eb and (vx - cand_d / 2 < eb[0] + edge_cl or vx + cand_d / 2 > eb[2] - edge_cl or
-                               vy - cand_d / 2 < eb[1] + edge_cl or vy + cand_d / 2 > eb[3] - edge_cl):
-                        continue
-                    if any(math.hypot(vx - hx, vy - hy) < (cand_h / 2 + hr + hole_hole) for hx, hy, hr in existing_holes):
-                        continue
-                    if not _fanout_escape_ok(
-                        pad=p, vx=vx, vy=vy, via_d=cand_d, stub_w=cand_w, stub_layer=stub_layer,
-                        rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
-                        planned=planned_vias, pad_gap=pad_gap,
-                    ):
-                        continue
-                    # Require pad copper connection: always carry stub endpoints (no orphan vias).
-                    placed = {"ref": p.ref, "pad": p.num, "net": p.net, "x": vx, "y": vy,
-                              "pad_x": p.x, "pad_y": p.y, "layer": stub_layer,
-                              "size": cand_d, "drill": cand_h, "width": cand_w,
-                              "via_relaxed": attempt_i > 0}
-                    existing_holes.append((vx, vy, cand_h / 2))
-                    break
-                if placed:
-                    break
-            if placed:
-                break
-        if placed and "pad_x" in placed and "pad_y" in placed:
+        pri = (p.net in priority_nets) or (nc.get("name") in priority_classes)
+        placed = _try_place(p, planned_vias, existing_holes, n_ang=(max(angles, 72) if pri else angles))
+        if placed:
             planned_vias.append(placed)
+            existing_holes.append((placed["x"], placed["y"], float(placed["drill"]) / 2))
         else:
-            # No legal escape — skip rather than plant a short / illegal via.
             skipped.append({"ref": p.ref, "pad": p.num, "net": p.net, "reason": "no_legal_escape"})
+
+    # Pair-resolve: skipped priority toe next to a same-IC planned escape → rip neighbor
+    # and search diverging slots so 0.4 mm QFN pitch can host two 0.45 mm vias.
+    if skipped:
+        still_skipped: list[dict] = []
+        for sk in skipped:
+            nc_sk = _class_for_net(rules, sk["net"])
+            if sk["net"] not in priority_nets and nc_sk.get("name") not in priority_classes:
+                still_skipped.append(sk)
+                continue
+            pad_b = next((p for p in pending_pads if p.ref == sk["ref"] and str(p.num) == str(sk["pad"])), None)
+            if pad_b is None:
+                still_skipped.append(sk)
+                continue
+            # Nearest same-IC planned via within 1.5 mm of this pad.
+            nbr_i = None
+            nbr_dist = 1e9
+            for i, pv in enumerate(planned_vias):
+                if str(pv.get("ref") or "") != pad_b.ref:
+                    continue
+                d = math.hypot(float(pv["x"]) - pad_b.x, float(pv["y"]) - pad_b.y)
+                if d < nbr_dist and d <= 1.5:
+                    nbr_dist = d
+                    nbr_i = i
+            if nbr_i is None:
+                still_skipped.append(sk)
+                continue
+            nbr = planned_vias[nbr_i]
+            pad_a = next(
+                (p for p in pending_pads if p.ref == nbr["ref"] and str(p.num) == str(nbr["pad"])),
+                None,
+            )
+            if pad_a is None:
+                still_skipped.append(sk)
+                continue
+            # Rip neighbor via from planned + holes, then pair-search.
+            planned_rest = [pv for i, pv in enumerate(planned_vias) if i != nbr_i]
+            holes_rest = [
+                h for h in existing_holes
+                if not (abs(h[0] - float(nbr["x"])) < 1e-6 and abs(h[1] - float(nbr["y"])) < 1e-6)
+            ]
+            pair = _pair_resolve(pad_a, pad_b, planned_rest, holes_rest)
+            if not pair:
+                # Try opposite order (B first as A).
+                pair = _pair_resolve(pad_b, pad_a, planned_rest, holes_rest)
+                if pair:
+                    pair = (pair[1], pair[0])  # keep (pad_a_escape, pad_b_escape) naming loose
+            if not pair:
+                still_skipped.append(sk)
+                continue
+            esc_a, esc_b = pair
+            # If opposite-order returned swapped nets, keep both escapes regardless of label.
+            planned_vias = planned_rest + [esc_a, esc_b]
+            existing_holes = holes_rest + [
+                (esc_a["x"], esc_a["y"], float(esc_a["drill"]) / 2),
+                (esc_b["x"], esc_b["y"], float(esc_b["drill"]) / 2),
+            ]
+        skipped = still_skipped
 
     target = staged or (pcb if not dry_run else None)
     if target is not None:
