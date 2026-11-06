@@ -620,6 +620,8 @@ def prepare_autoroute(
     timeout: str | None = None,
     via_costs: int | None = None,
     threads: int | None = None,
+    nets: str | None = None,
+    exclude: str | None = None,
 ) -> dict:
     ar = cfg["autoroute"]
     work = Path(cfg["work_dir"])
@@ -654,7 +656,13 @@ def prepare_autoroute(
             signal_layers,
             inner_layer=cfg.get("inner_signal_layer"),
             inner_nets=ar.get("inner_nets"),
+            nets=nets,
+            exclude=exclude,
         )
+        if nets:
+            dsn_log = list(dsn_log) + [f"subset nets={nets!r}"]
+        if exclude:
+            dsn_log = list(dsn_log) + [f"exclude nets={exclude!r}"]
         patched_dsn.write_text(patched, encoding="utf-8")
         dsn_edited = True
 
@@ -692,6 +700,8 @@ def prepare_autoroute(
         "timeout_sec": parse_timeout_sec(eff_timeout),
         "via_costs": eff_via_costs,
         "jar": jar,
+        "nets": nets,
+        "exclude": exclude,
         "cmd": cmd,
     }
 

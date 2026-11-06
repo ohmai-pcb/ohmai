@@ -131,6 +131,8 @@ def cmd_autoroute(a) -> int:
             timeout=a.timeout,
             via_costs=a.via_costs,
             threads=a.threads,
+            nets=a.nets,
+            exclude=a.exclude_nets,
         )
     except Exception as e:
         print(f"ohmai layout autoroute: {e}", file=sys.stderr)
@@ -244,6 +246,9 @@ def add_parser(sub) -> None:
     ar.add_argument("--timeout", default="00:10:00", help="per-run timeout HH:MM:SS (default from layout.yaml: 00:10:00)")
     ar.add_argument("--via-costs", type=int, default=None, help="via cost penalty (default: 50)")
     ar.add_argument("--threads", type=int, default=None, help="router thread count")
+    ar.add_argument("--nets", default=None,
+                    help="regex of nets to keep in the DSN network (scoped Freeroute; others dropped)")
+    ar.add_argument("--exclude-nets", default=None, help="regex of nets to drop from the DSN network")
     ar.add_argument("--prepare-only", action="store_true", help="only prepare DSN and print router config")
     ar.add_argument("--json", action="store_true")
     ar.set_defaults(fn=cmd_autoroute)
