@@ -964,8 +964,12 @@ def run_handroute(
                 grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
                 for li in layer_idxs:
                     _block_disk(li, v.x, v.y, grow)
+            # Keepouts (unfilled) block. Foreign *filled* pours must not: their AABB
+            # can cover most of a layer (GND/power planes) and zero out free/viaok.
+            # Same-net filled pours are terminals via _handroute_copper_items; KiCad
+            # pour clearance around tracks handles copper-to-pour spacing later.
             for z in getattr(board, "zones", []) or []:
-                if _same_net(z.net, net_name):
+                if getattr(z, "filled", True):
                     continue
                 if z.layer not in layers:
                     continue
@@ -1000,6 +1004,27 @@ def run_handroute(
                 grow = float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + track_w / 2
                 for li in layer_idxs:
                     _block_disk(li, v["x"], v["y"], grow)
+
+            # Own copper must stay seedable. Foreign clearance+half-width inflation can
+            # cover a whole tiny pad (island terminal sizes → 0) even though that pad was
+            # skipped in the obstacle loop. Restore free on same-net shapes before A*.
+            import numpy as np
+            from shapely import intersects_xy
+            for _, shapes in items:
+                for li, shape in shapes.items():
+                    if li not in free:
+                        continue
+                    x0, y0, x1, y1 = shape.bounds
+                    ix0, iy0 = g.cell(x0, y0)
+                    ix1, iy1 = g.cell(x1, y1)
+                    xa, xb = max(0, min(ix0, ix1)), min(g.nx - 1, max(ix0, ix1))
+                    ya, yb = max(0, min(iy0, iy1)), min(g.ny - 1, max(iy0, iy1))
+                    if xa > xb or ya > yb:
+                        continue
+                    ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
+                    mask = intersects_xy(shape, g.x0 + (xs + 0.5) * g.res,
+                                         g.y0 + (ys + 0.5) * g.res)
+                    free[li][ya:yb + 1, xa:xb + 1] |= mask
 
             # Include whole islands, not just pad centres. A via contributes all
             # its layers, so a fanout stub offers an escape beyond a boxed-in pad.

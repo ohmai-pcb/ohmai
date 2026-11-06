@@ -294,18 +294,21 @@ def test_load_exposes_filled_zones_from_stereo_pcb():
     assert any(z.net == "VBUS_CD" and z.layer == "F.Cu" for z in filled)
 
 
-def _inject_zone(pcb: Path, net: str, pts: list[tuple[float, float]], layer: str = "F.Cu") -> None:
+def _inject_zone(pcb: Path, net: str, pts: list[tuple[float, float]], layer: str = "F.Cu", *, filled: bool = True) -> None:
     raw = pcb.read_text().rstrip()
     assert raw.endswith(")")
     xy = " ".join(f"(xy {x} {y})" for x, y in pts)
+    fill_node = (
+        f'\t\t(filled_polygon (layer "{layer}") (pts {xy}))\n'
+        if filled else ""
+    )
     zone = f"""
 \t(zone
 \t\t(net 1)
 \t\t(net_name "{net}")
 \t\t(layer "{layer}")
 \t\t(polygon (pts {xy}))
-\t\t(filled_polygon (layer "{layer}") (pts {xy}))
-\t)
+{fill_node}\t)
 """
     pcb.write_text(raw[:-1] + zone + ")\n")
 
@@ -323,8 +326,38 @@ def test_filled_zone_merges_pad_islands(tmp_path):
     assert "SIG" not in rep.get("routed_nets", [])
 
 
-def test_foreign_zone_blocks_path(tmp_path):
+def test_foreign_filled_zone_does_not_aabb_block_route(tmp_path):
+    """Filled pour AABBs must not wall off free space (stereo GND/power planes)."""
     cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)], layers=["F.Cu"], margin=2.0)
-    _inject_zone(pcb, "OTHER", [(109, 100), (111, 100), (111, 120), (109, 120)])
+    _inject_zone(pcb, "OTHER", [(109, 100), (111, 100), (111, 120), (109, 120)], filled=True)
+    rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
+    assert rep["routed_nets"] == ["SIG"]
+    assert rep["remaining_islands"]["SIG"] == 1
+
+
+def test_unfilled_keepout_zone_blocks_path(tmp_path):
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)], layers=["F.Cu"], margin=2.0)
+    _inject_zone(pcb, "", [(109, 100), (111, 100), (111, 120), (109, 120)], filled=False)
     rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
     assert rep["remaining_islands"].get("SIG", 0) >= 2 or "SIG" not in rep.get("routed_nets", [])
+
+
+def test_tiny_pad_seedable_under_foreign_clearance(tmp_path):
+    """Foreign clearance inflation must not wipe terminal cells off a tiny same-net pad."""
+    # Fat foreign pad between two SIG pads; left SIG is tiny so inflation covers it.
+    tiny = _pad("A", 103, 105, size=(0.2, 0.2))
+    far = _pad("B", 117, 105, size=(0.6, 0.6))
+    wall = _pad("W", 105.2, 105, net="OTHER", size=(2.0, 2.0))
+    cfg, pcb = _case(tmp_path, [tiny, far, wall], layers=["F.Cu"], margin=3.0)
+    cfg["rules_resolved"] = {"track_w": 0.6, "clearance": 0.25, "via_d": 0.6, "via_h": 0.3,
+                             "hole_hole": 0.25,
+                             "classes": {"Default": {"width": 0.6, "clearance": 0.25,
+                                                     "via_d": 0.6, "via_h": 0.3}},
+                             "patterns": []}
+    board = L.load(pcb)
+    items = steps._handroute_copper_items(board, "SIG", ["F.Cu"])
+    assert len(steps._handroute_islands(items)) == 2
+    rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
+    # Seedable terminals under foreign clearance → A* can bridge (remaining 1).
+    assert rep["remaining_islands"]["SIG"] == 1
+    assert "SIG" in rep.get("routed_nets", [])
