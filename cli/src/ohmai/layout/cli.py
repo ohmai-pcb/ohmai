@@ -118,51 +118,55 @@ def cmd_fanout(a) -> int:
 
 
 def cmd_autoroute(a) -> int:
-    from ohmai.layout import steps
+    from ohmai.layout import router_log, steps
 
     p = _project()
-    cfg = _cfg(p, a)
-    dsn_in = (p.root / a.dsn) if a.dsn and not Path(a.dsn).is_absolute() else (Path(a.dsn) if a.dsn else None)
+    cfg, prepared, run = {}, {}, {}
+    error = None
+    code = 1
     try:
-        res = steps.prepare_autoroute(
-            cfg,
-            dsn_in=dsn_in,
-            passes=a.passes,
-            opt_passes=a.opt_passes,
-            timeout=a.timeout,
-            via_costs=a.via_costs,
-            threads=a.threads,
-            nets=a.nets,
-            exclude=a.exclude_nets,
-        )
-    except Exception as e:
-        print(f"ohmai layout autoroute: {e}", file=sys.stderr)
-        return 1
-    if a.prepare_only:
-        if a.json:
-            print(json.dumps(res, indent=2))
+        cfg = _cfg(p, a)
+        dsn_in = (p.root / a.dsn) if a.dsn and not Path(a.dsn).is_absolute() else (Path(a.dsn) if a.dsn else None)
+        prepared = steps.prepare_autoroute(cfg, dsn_in=dsn_in, passes=a.passes,
+            opt_passes=a.opt_passes, timeout=a.timeout, via_costs=a.via_costs,
+            threads=a.threads, nets=a.nets, exclude=a.exclude_nets)
+        if a.prepare_only:
+            run = {"ok": False, "fail_reasons": ["prepare_only_not_routed"]}
+            code = 0
         else:
-            print(f"autoroute: passes={res['passes']}, opt_passes={res['opt_passes']}, timeout={res['timeout']}, "
-                  f"dsn_edited={res['dsn_edited']}, jar={res['jar']}")
-            print("cmd:", " ".join(res["cmd"]))
-        return 0
-    try:
-        run = steps.run_autoroute(res)
-    except Exception as e:
+            run = steps.run_autoroute(prepared)
+            code = 0 if run.get("ok") else 1
+    except (Exception, KeyboardInterrupt) as e:
+        error = str(e) or type(e).__name__
+        code = 130 if isinstance(e, KeyboardInterrupt) else 1
+        for stream in ("stdout", "stderr"):
+            text = getattr(e, stream, None)
+            if text:
+                if isinstance(text, bytes):
+                    text = text.decode(errors="replace")
+                run[stream + "_tail"] = "\n".join(text.splitlines()[-100:])
         print(f"ohmai layout autoroute: {e}", file=sys.stderr)
+    try:
+        record = router_log.append_run(p.root, cfg, prepared, run, vars(a), error, a.prepare_only)
+    except Exception as e:
+        print(f"ohmai layout autoroute: evidence logging failed: {e}", file=sys.stderr)
         return 1
-    out = {**res, **run}
+    out = {**prepared, **run, "run_log_id": record["id"], "drc_status": record["drc_status"]}
     if a.json:
         print(json.dumps(out, indent=2))
     else:
-        print(f"autoroute: exit={run['returncode']}, ok={run.get('ok')}, dsn_edited={res['dsn_edited']}, "
-              f"ses={res['ses_out']}, jar={res['jar']}, java={run.get('java') or res.get('java')}, "
-              f"route_wires={run.get('ses_route_wires')}, route_vias={run.get('ses_route_vias')}")
+        print(f"autoroute: ok={run.get('ok')}, route_wires={run.get('ses_route_wires')}, "
+              f"route_vias={run.get('ses_route_vias')}, log={record['id']}, DRC={record['drc_status']}")
         if run.get("fail_reasons"):
             print(f"autoroute: FAIL ({', '.join(run['fail_reasons'])})", file=sys.stderr)
         if run.get("stderr_tail"):
             print(run["stderr_tail"], file=sys.stderr)
-    return 0 if run.get("ok") else 1
+    if record["measurement_errors"] or record["worse_nets"]:
+        return 1
+    if record["drc_delta"] and any(record["drc_delta"][k] > 0 for k in
+                                    ("nonzone_clearance", "safety", "connection_width", "shorts", "crossings")):
+        return 1
+    return code
 
 
 def cmd_pour(a) -> int:
@@ -269,6 +273,8 @@ def add_parser(sub) -> None:
     ar.add_argument("--exclude-nets", default=None, help="regex of nets to drop from the DSN network")
     ar.add_argument("--prepare-only", action="store_true", help="only prepare DSN and print router config")
     ar.add_argument("--json", action="store_true")
+    ar.add_argument("--drc-before", help="full JSON DRC before the staged import (measurement evidence)")
+    ar.add_argument("--drc-after", help="full JSON DRC after staged import and refill; regressions return nonzero")
     ar.set_defaults(fn=cmd_autoroute)
 
     po = ls.add_parser("pour", help="verify plane continuity (pieces == 1) and narrowest neck width + (x, y) location")

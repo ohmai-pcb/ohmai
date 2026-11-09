@@ -968,6 +968,7 @@ def prepare_autoroute(
         "timeout": eff_timeout,
         "timeout_sec": parse_timeout_sec(eff_timeout),
         "via_costs": eff_via_costs,
+        "threads": eff_threads,
         "jar": jar,
         "java": java_bin,
         "nets": nets,
@@ -1065,6 +1066,10 @@ def run_autoroute(prepared: dict) -> dict:
         "ses_exists": ses_path.is_file(),
         "ses_route_wires": route_wires,
         "ses_route_vias": route_vias,
+        "ignored_options": [line for line in log.splitlines() if "Unknown settings property" in line],
+        "stack_signature": "\n".join(line.strip() for line in log.splitlines()
+                                      if "NullPointerException" in line or "merge_entries_in_front" in line
+                                      or "combine_at_start" in line),
         "stdout_tail": _tail(proc.stdout),
         "stderr_tail": _tail(proc.stderr),
     }
