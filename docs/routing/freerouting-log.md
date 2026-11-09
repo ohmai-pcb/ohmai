@@ -87,3 +87,25 @@ builds for the three earlier diagnostic invocations were not retained.
 
 See [router selection](router-selection.md). Preserve unknown measurements as null
 in machine logs. Do not file or upload upstream issues without owner approval.
+
+## Other retained reduction/control invocations (same date)
+
+These are separate runs, not extra placement attempts recommended by the procedure.
+They use the same stereo `a70513b` source; isolated DSN edits are indicated below.
+For each: exact JDK build and complete command/options were not retained; native
+before/after DRC deltas are **unmeasured** (source baseline 258, clearance 55);
+no candidate was promoted. `wires/vias` here means parsed non-fix/protect **SES
+records**, not verified new physical progress. Custom SAFETY export remains a
+known gap but was not measured in these controls. All paths are evidence-bundle
+relative. Each DSN still needs a standalone minimal reduction before upstream filing.
+
+| Run ID | Freerouting | Scoped/diagnostic input DSN | SES records wires/vias | Outcome / crash / upstream candidate | Repro output / minimal-repro note |
+|---|---|---|---:|---|---|
+| FR-20261109-05 | 2.2.4 | `excluded-keepout.dsn`; common nine-net scope | 1/0 | Same `to_trace_entries` / merge/combine NPE; upstream yes | `excluded-keepout-2.2.4/{stdout,stderr}.txt`; excluded-copper keepout control does not remove crash |
+| FR-20261109-06 | 2.2.4 | `pruned.dsn`; common scope | 1/0 | Same NPE; upstream yes | `pruned/{stdout,stderr}.txt`; preserve this pruned control while reducing fixed wire chains |
+| FR-20261109-07 | 2.2.4 | `no-wire-diagnostic.dsn`; wire-removal isolation control | 111/19 | No NPE seen, session completed; rule-gap candidate only, not accepted | `no-wire-diagnostic/{stdout,stderr}.txt`; destructive diagnostic, not a geometry-preserving workaround |
+| FR-20261109-08 | 2.2.4 | `wire-only.dsn`; wire/via isolation control | 1/0 | Same NPE; upstream yes | `wire-only/{stdout,stderr}.txt`; retained wires alone still trigger failure |
+| FR-20261109-09 | 2.2.4 | `via-only.dsn`; complementary isolation control | 113/19 | No NPE seen, session completed; rule-gap candidate only | `via-only/{stdout,stderr}.txt`; removing fixed wires changes behavior, not a valid final-board repair |
+| FR-20261109-10 | 2.2.4 | `coalesced.dsn`; fixed-chain coalescing control | 103/17 | No NPE seen, session completed; rule-gap candidate only | `coalesced/{stdout,stderr}.txt`; reduce degree-two chain conversion while retaining every vertex |
+| FR-20261109-11 | 2.2.4 | `canonical-all.dsn`; canonicalized fixed-wire control | 113/20 | No NPE seen, session completed; rule-gap candidate only | `canonical-all/{stdout,stderr}.txt`; compare geometry-preserving canonicalization against failing raw chains |
+| FR-20261109-12 | 2.1.0 | Input path/scope not retained | unavailable | No retained SES or completed-session evidence; no NPE seen; analytics SSL `CompletionException` appears while routing continues; not a proven fix | `fr21/run.log`; last retained output reaches pass 30; command/input/reduction must be recovered before upstream filing |
