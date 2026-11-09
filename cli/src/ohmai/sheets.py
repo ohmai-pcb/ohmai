@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Sheet instances of a hierarchical schematic and the `--sheet <name>` scope used by per-sheet gates."""
 
 from __future__ import annotations

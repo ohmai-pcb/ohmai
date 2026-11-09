@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Testing OhmAI
 
 OhmAI's checks gate real hardware, so they are tested the way a design would be. Four layers, all run by
@@ -52,7 +53,7 @@ Any difference fails. Read `ohmai golden <name> --diff`. If the change is intend
 it: `ohmai golden <name> --accept --reason "why"`. That writes `snapshots/*.txt` and logs the reason, the
 changed artefacts and the toolchain in `snapshots/MANIFEST.yaml`. Commit snapshots on their own.
 
-Goldens today: **ldo-led** (header → AP2112K-3.3 → 3V3 → R + LED, two sheets, no layout). **pico-k**
+Goldens today: **ldo-led** (header → AP2112K-3.3 → 3V3 → R + LED, two sheets, no layout). **reference-board**
 becomes a golden by reference once its owner freezes a revision (`tests/golden/README.md`). It is never
 copied or modified.
 

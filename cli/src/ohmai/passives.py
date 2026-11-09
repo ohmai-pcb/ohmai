@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Autonomous passive package swap helper (`ohmai passives swap` / `ohmai parts swap`).
 
 Allows resizing standard passives (R, C, L, FB across 0402..1206 / 2016..3030) during Schematic and Layout

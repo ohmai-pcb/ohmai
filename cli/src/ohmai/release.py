@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`ohmai release rev-X`: preflight, fab outputs via kicad-cli, manifest, optional local tag.
 
 Never pushes. The GitHub release (gerbers/BOM/PnP) is made by CI (KiBot) when the tag is pushed,

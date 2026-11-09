@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Pour pieces and necks (ohmai.layout.pourgeom). Needs shapely."""
 
 from __future__ import annotations

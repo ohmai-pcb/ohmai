@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Regression evidence for issue #1: malformed BOMs and bounded check loops."""
 import csv
 import json

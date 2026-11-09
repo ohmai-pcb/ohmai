@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Pure regression coverage for native candidate gates; no KiCad required."""
 from ohmai.layout import native_guard as guard
 

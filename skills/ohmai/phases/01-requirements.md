@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 1: Requirements
 
 **Goal:** a spec the owner can lock. Branch `phase/requirements`. Check `ohmai check requirements`.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Vetted import of KiCad symbols/footprints the pinned libraries lack (`ohmai kicad-libs import|fetch|verify|list`).
 
 A missing library part is a tool problem the agent solves with this command, never owner homework.
@@ -492,7 +493,7 @@ def _easyeda2kicad() -> list[str]:
 
     if importlib.util.find_spec("easyeda2kicad"):
         return [sys.executable, "-m", "easyeda2kicad"]
-    raise SystemExit("ohmai kicad-libs fetch: easyeda2kicad not installed (pip install easyeda2kicad; MIT, "
+    raise SystemExit("ohmai kicad-libs fetch: easyeda2kicad not installed (pip install easyeda2kicad; AGPL-3.0, subprocess only, "
                      "run as a subprocess)")
 
 

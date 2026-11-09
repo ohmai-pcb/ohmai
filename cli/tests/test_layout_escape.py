@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Escape-room rules and the free-area scan on FICTIONAL boards (ohmai.layout.fixture); no KiCad needed."""
 
 from __future__ import annotations
@@ -196,7 +197,7 @@ def test_cli_fit(tmp_path, monkeypatch, capsys):
 
 
 def test_fit_ignore_courtyard_still_counts_pads(tmp_path):
-    """pico-k D-029: --ignore J4 hid the castellated pads, and a 'fitting' cap shorted them."""
+    """reference-board D-029: --ignore J4 hid the castellated pads, and a 'fitting' cap shorted them."""
     b = load(tmp_path, [F.two_pad("J4", 110.0, 110.0, "/GP26", "/GP27"), F.two_pad("C2", 104.0, 104.0, "/A", "GND")])
     j = b.footprints["J4"]
     pad = j.pads[0]

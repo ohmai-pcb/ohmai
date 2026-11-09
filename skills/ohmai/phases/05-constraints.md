@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 5: Per-part constraints from datasheets
 
 **Goal:** a reviewed `parts/constraints/<PART>.yaml` for every IC and every part that has rules. **This is

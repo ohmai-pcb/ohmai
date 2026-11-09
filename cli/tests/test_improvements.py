@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Unit tests for the 7 OhmAI workflow and tool improvements."""
 
 from __future__ import annotations
@@ -312,7 +313,7 @@ def test_improvement6_7_pre_push_guard_and_auto_installed_hooks(tmp_path: Path):
     assert "pre-push" in msg
 
     # Clean repo with non-localhost email passes check_pre_push
-    subprocess.run(["git", "-C", str(proj_dir), "config", "user.email", "bot@users.noreply.github.com"], check=True)
+    subprocess.run(["git", "-C", str(proj_dir), "config", "user.email", "bot@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(proj_dir), "config", "user.name", "ohmai-bot"], check=True)
     subprocess.run(
         ["git", "-C", str(proj_dir), "commit", "--amend", "--reset-author", "--no-edit"],

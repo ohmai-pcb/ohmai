@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """RFQ documents must stand alone: no internal tags, file paths or agent notes."""
 
 from __future__ import annotations

@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
 """Golden projects: rebuild a reference project from its sources, diff its outputs with approved snapshots.
 
 <tests>/golden/<name>/
     golden.yaml      what to build and compare (below)
     src/             the sources, overlaid on a fresh `ohmai new` project (base: template), or
-                     `source: <path>` + `ref: <git ref>` for a full project repo (pico-k, once frozen)
+                     `source: <path>` + `ref: <git ref>` for a full project repo (reference-board, once frozen)
     snapshots/       approved outputs (<artefact>.txt) + MANIFEST.yaml (toolchain used, approval log)
 
 golden.yaml:

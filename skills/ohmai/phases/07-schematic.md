@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 7: Schematic
 
 **Goal:** a schematic that matches the architecture, the constraints and the expected nets.
@@ -95,7 +96,7 @@ never `shortcut:` debt. End every stop/gate: `Skipped / not checked: …; residu
 - **Common minimal sheet size:** root and every sub-sheet use the same paper size (`paper:` in each
   `hardware/gen/layout/*.yaml`), the smallest standard size (A4 before A3 before A2) on which every sheet
   fits cleanly. Mixed sizes FAIL `readability`. Record the chosen size in STATUS.md.
-- Background: the previous project (pico-k) required a clean readability pass; a dogfood board first reached its
+- Background: an earlier internal reference project required a clean readability pass; a dogfood board first reached its
   review gate with 167 readability problems recorded as debt. That was a skill/process failure, now closed.
 
 ## Per-sheet gate, then the project gate

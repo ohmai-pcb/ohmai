@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Check registry. Each check returns a Result; `ohmai check` prints them and writes out/summary.md."""
 
 from __future__ import annotations

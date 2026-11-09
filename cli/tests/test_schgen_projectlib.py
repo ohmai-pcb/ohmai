@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """schgen Lib: project hardware/lib fallback and space-indented (imported) symbols."""
 from pathlib import Path
 

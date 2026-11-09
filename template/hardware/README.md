@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # hardware/
 
 KiCad 9 project: `{{project_slug}}.kicad_pro`, `.kicad_sch` (root sheet), `.kicad_pcb`.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Minimal S-expression reader for KiCad files (.kicad_sch, kicadsexpr netlists).
 
 parse(text) -> nested lists; atoms are str (quotes removed), with originally-quoted

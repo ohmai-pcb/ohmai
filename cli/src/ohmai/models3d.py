@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Project-level 3D STEP model fetcher, missing-model detector, and dummy STEP generator.
 
 Fetches only the official KiCad `.step` models referenced by a project's PCB into

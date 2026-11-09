@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- ohmai:template docs/tool-issues.md -->
 # Project tool issues and limits — mandatory close-out report
 

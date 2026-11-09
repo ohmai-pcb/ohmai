@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """ohmai parts search against a tiny FICTIONAL jlcparts-schema database."""
 
 import json

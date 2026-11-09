@@ -1,4 +1,5 @@
-"""Thin wrapper around kicad-cli (headless KiCad 8/9)."""
+# SPDX-License-Identifier: Apache-2.0
+"""Thin wrapper around kicad-cli (headless KiCad 9.x)."""
 
 from __future__ import annotations
 
@@ -27,7 +28,7 @@ def run(args: list[str], log: Path | None = None, timeout: int = 600,
         cwd: Path | str | None = None) -> subprocess.CompletedProcess:
     exe = kicad_cli()
     if not exe:
-        raise FileNotFoundError("kicad-cli not found (install KiCad 8 or 9, or set KICAD_CLI)")
+        raise FileNotFoundError("kicad-cli not found (install KiCad 9.x, or set KICAD_CLI)")
     r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=timeout,
                        cwd=str(cwd) if cwd is not None else None)
     if log is not None:

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Execution helpers for `ohmai layout {fanout,autoroute,pour,handroute}`."""
 
 from __future__ import annotations
@@ -852,8 +853,8 @@ def _freerouting_jar() -> str:
         if env and Path(env).is_file():
             return str(Path(env).resolve())
     for cand in (
-        Path("/workspace/.toolcache/freerouting/freerouting-2.2.4.jar"),
-        Path("/workspace/.toolcache/freerouting/freerouting-2.1.0.jar"),
+        Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ohmai/freerouting/freerouting-2.2.4.jar",
+        Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ohmai/freerouting/freerouting-2.1.0.jar",
         Path.home() / ".cache/ohmai/freerouting/freerouting.jar",
     ):
         if cand.is_file():

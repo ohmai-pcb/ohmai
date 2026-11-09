@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """kicad-libs import/fetch/verify/list: vetted project-local parts, tables, manifest, lib-refs integration."""
 
 from __future__ import annotations

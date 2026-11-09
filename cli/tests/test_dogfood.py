@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Dogfooding fixes: decision-log sync, unbound connectors/ICs, passive-mpn, status --set-phase/--gate."""
 
 from types import SimpleNamespace

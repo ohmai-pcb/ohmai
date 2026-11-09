@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Consecutive check failure signatures; coordinates are evidence, not identity."""
 from __future__ import annotations
 

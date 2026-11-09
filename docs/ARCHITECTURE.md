@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Architecture
 
 OhmAI has three parts: a **skill** that tells an agent how to run a hardware project, a **template** that
@@ -145,3 +146,8 @@ See `docs/TESTING.md`. In short: the **known-bad** suite plants one mistake per 
 on it and PASS on a clean twin; **golden** projects rebuild from sources and must match approved
 snapshots; `ohmai upgrade` runs both before a tier-1 pin moves; the weekly **canary** runs both against the
 newest KiCad and libraries and only reports.
+
+## External converter licensing
+`easyeda2kicad` is AGPL-3.0, not MIT. Invoke it only as a separate optional subprocess; never import or bundle it in the agent plugin. KiCad/pcbnew, Freerouting, EasyEDA/LCSC CAD data, KiBot and SKiDL/InSpice remain external tools/data, with their own licenses and terms. The native pcbnew refill lives in the `_REFILL` script string in `layout/native_guard.py` and is executed only by a separate Python process. It is not imported into the Apache CLI process.
+
+The separate `_skidl_runner.py` executable imports SKiDL only in its own interpreter. Core modules must not import the runner, SKiDL/InSpice or pcbnew; package validation checks these direct-import boundaries. Neither runner nor the CLI is included in the guidance-only plugin.

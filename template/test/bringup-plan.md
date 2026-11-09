@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- ohmai:template: fill in, then delete this line. Write this BEFORE boards arrive (phase 12 starts at fab order). -->
 # Bring-up plan: {{project_name}} rev-A
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Per-part constraints files (parts/constraints/*.yaml): load, schema-validate, semantic checks."""
 
 from __future__ import annotations

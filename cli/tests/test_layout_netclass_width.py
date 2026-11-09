@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Netclass-aware handroute/fanout width, clearance inflation, fanout stubs, staged chaining."""
 
 from __future__ import annotations

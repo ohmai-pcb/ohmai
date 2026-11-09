@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Document checks: the file exists and the template marker has been removed; STATUS.md open questions."""
 
 from __future__ import annotations

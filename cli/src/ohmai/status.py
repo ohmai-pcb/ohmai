@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Parse STATUS.md: YAML front matter + 'Locked decisions' table + 'Open questions' checklist."""
 
 from __future__ import annotations

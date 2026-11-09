@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """ohmai adopt: put an existing (foreign) KiCad repo under the OhmAI checks without rewriting it.
 
 Writes, never overwriting an existing file (an existing one gets the new content next to it as *.adopted.*):

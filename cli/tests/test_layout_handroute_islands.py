@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Handroute terminals are distinct copper islands, never just the first two pads."""
 from pathlib import Path
 
@@ -284,7 +285,12 @@ def test_custom_epad_box_includes_primitives_and_blocks_route(tmp_path):
 
 
 def test_load_exposes_filled_zones_from_stereo_pcb():
-    stereo = Path("/workspace/projects/usb-c-12v-stereo/hardware/usb-c-12v-stereo.kicad_pcb")
+    import os
+
+    external_board = os.environ.get("OHMAI_ROUTING_TEST_BOARD")
+    if not external_board:
+        pytest.skip("Set OHMAI_ROUTING_TEST_BOARD to a redistributable external fixture")
+    stereo = Path(external_board)
     if not stereo.is_file():
         pytest.skip("stereo PCB not present")
     board = L.load(stereo)
@@ -311,6 +317,7 @@ def _inject_zone(pcb: Path, net: str, pts: list[tuple[float, float]], layer: str
 {fill_node}\t)
 """
     pcb.write_text(raw[:-1] + zone + ")\n")
+
 
 
 def test_filled_zone_merges_pad_islands(tmp_path):

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Grid router core (ohmai.layout.grid): A*, via spacing, simplification, rip bookkeeping. Needs numpy."""
 
 from __future__ import annotations

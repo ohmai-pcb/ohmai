@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 9: Enclosure and IP (if relevant)
 
 **Goal:** the board fits, mounts, seals and cools in its enclosure. Branch `phase/enclosure`.

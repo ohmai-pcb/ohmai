@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Build tiny kicadsexpr netlists for tests (no KiCad needed)."""
 
 from __future__ import annotations

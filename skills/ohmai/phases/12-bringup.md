@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 12: Bring-up and test
 
 **Goal:** prove each requirement on real boards, with ready-to-run bring-up test code prepared before boards arrive.

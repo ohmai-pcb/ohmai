@@ -1,0 +1,16 @@
+OhmAI
+Copyright 2026 TODO: COPYRIGHT HOLDER TO BE DECIDED BY THE OWNER.
+
+This placeholder MUST be resolved before public release. It does not assert a
+copyright holder or replace contributor attribution.
+
+OhmAI core, skill, documentation and original templates are licensed Apache-2.0.
+Designs users create are theirs; this notice does not impose an OhmAI license on
+user hardware designs. Redistributed OhmAI guidance retains its Apache notices.
+
+Optional external programs are not included in the agent-plugin payload:
+KiCad/pcbnew and Freerouting (GPL), KiBot and easyeda2kicad (AGPL), and
+SKiDL/InSpice. CAD data from KiCad libraries, EasyEDA or LCSC is not bundled.
+Their licenses/terms apply independently; this notice does not relicense them.
+Python dependencies are separately installed under their respective licenses;
+no third-party dependency code is vendored in the plugin.

@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 ## Gate: phase N <name>
 
 **Owner decision requested:** <what merging this PR locks>

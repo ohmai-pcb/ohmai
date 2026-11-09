@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The 12 OhmAI phases and the checks each one runs."""
 
 from __future__ import annotations

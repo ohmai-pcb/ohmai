@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 10: BOM lock
 
 **Goal:** the fab buys exactly what was approved. Branch `phase/bom`. Check `ohmai check bom`.

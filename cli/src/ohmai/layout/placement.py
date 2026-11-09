@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Placement model read straight from a .kicad_pcb (no KiCad needed): footprints, pads, courtyards, vias, tracks.
 
 Geometry is axis-aligned boxes: a pad is the bounding box of its rotated rectangle (exact at 0/90/180/270 degrees,

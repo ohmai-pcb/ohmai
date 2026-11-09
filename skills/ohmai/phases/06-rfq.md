@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 6: Supplier questions and RFQs
 
 **Goal:** answers to what datasheets do not say: custom magnetics, cables, enclosures, quotes, lead times.

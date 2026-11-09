@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """mcu-pin-budget: pin shortfall fails at Phase 2/4, not at the Phase 7 MCU sheet."""
 
 from __future__ import annotations

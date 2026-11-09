@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """BOM checks: structure, 3 sourcing rules (generic, non-generic, single-source), lock, and diff."""
 
 from __future__ import annotations

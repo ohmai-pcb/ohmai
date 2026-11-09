@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Append-only, project-local Freerouting evidence. Never promotes SES copper."""
 from __future__ import annotations
 

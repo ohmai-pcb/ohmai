@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Git/LFS integration tests must operate only on disposable homes."""
 import os
 import shutil

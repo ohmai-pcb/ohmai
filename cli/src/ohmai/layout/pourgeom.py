@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Pour integrity on a layer shared by a pour and signals (shapely; no KiCad): piece count, neck width, and neck (x, y).
 
 The pour is the real zone fill or a model (zone outline minus other-net copper grown by the zone clearance), so a

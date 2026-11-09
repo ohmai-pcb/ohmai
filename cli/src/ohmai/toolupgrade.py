@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`ohmai upgrade <tool> <version>`: move one tier-1 pin, only after the golden + known-bad suites pass.
 
 1. The candidate must be installed and selectable: `--path` (KICAD_CLI, FREEROUTING_JAR, OHMAI_IBOM_DIR,

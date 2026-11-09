@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Independent review gates
 
 OhmAI gates that check facts line by line (constraints, schematic, layout, BOM, safety plan, manual)

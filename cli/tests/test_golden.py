@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Golden projects: snapshot compare/accept logic (no KiCad) and the real rebuild (KiCad + libs)."""
 
 import shutil

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Local marketplace documented contract subset",
+  "type": "object",
+  "required": [
+    "name",
+    "owner",
+    "plugins",
+    "description"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "owner": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "plugins": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "source"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "const": "ohmai"
+          },
+          "source": {
+            "type": "string",
+            "pattern": "^\\./(?:plugins/ohmai)?$"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10
+    }
+  }
+}

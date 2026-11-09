@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Datasheets
 
 One PDF per part, named `<PART>.pdf` (e.g. `TPS63001.pdf`). Stored with Git LFS (see `.gitattributes`).

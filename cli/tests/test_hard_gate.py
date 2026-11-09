@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Schematic readability is a hard part of the review gate, and all sheets share one paper size."""
 
 from __future__ import annotations

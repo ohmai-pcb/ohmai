@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Phase 11: fab outputs can be generated (preview in out/fab-preview, never committed)."""
 
 from __future__ import annotations

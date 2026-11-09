@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`ohmai parts search`: optional parametric search in a local jlcparts database (phase 4 candidates).
 
 jlcparts (github.com/yaqwsx/jlcparts, MIT) builds an offline SQLite snapshot of the JLCPCB/LCSC catalogue.

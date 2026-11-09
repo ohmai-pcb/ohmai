@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Rewrite cli/requirements.lock (pip --require-hashes format) from the exact pins in cli/constraints.txt.
 
 Every distribution file PyPI publishes for a pinned version is hashed, so one lock serves every platform and

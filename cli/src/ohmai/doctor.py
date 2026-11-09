@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
 """`ohmai doctor`: environment self-check (works in a project and in any git repo, e.g. the OhmAI repo itself)."""
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,6 +45,11 @@ def run(cwd: Path) -> list[Item]:
         else:
             out.append(Item("hooks", "WARN", msg + ": commits without an OhmAI-Author trailer are not rejected"))
     cli = kicad.kicad_cli()
-    out.append(Item("kicad-cli", "PASS" if cli else "WARN", str(cli) if cli else
-                    "not found: DRC/ERC/netlist checks are skipped"))
+    version = kicad.version() if cli else None
+    valid = bool(version and re.match(r"^9\.\d+\.\d+", version))
+    out.append(Item("kicad-cli", "PASS" if valid else "FAIL",
+                    f"{cli}: {version}" if valid else
+                    f"KiCad 9.x required; found {version or 'no working kicad-cli'}. "
+                    "Install KiCad 9.x on the execution computer, put kicad-cli on PATH (or set KICAD_CLI), "
+                    "then rerun ohmai doctor. Plugin installation alone does not enable ERC/DRC."))
     return out

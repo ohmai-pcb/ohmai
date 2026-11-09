@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Schematic checks via kicad-cli: sheet-load, ERC, netlist diff, render."""
 
 from __future__ import annotations

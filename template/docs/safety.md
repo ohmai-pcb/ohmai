@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- ohmai:template: fill in, then delete this line. Gate: owner approves before parts freeze (phase 3). -->
 # Safety and compliance plan: {{project_name}}
 

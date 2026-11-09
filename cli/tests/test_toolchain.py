@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Toolchain lock: ohmai lock, check toolchain, kicad-app/kicad-libs against the lock, Python dep pins."""
 
 from __future__ import annotations

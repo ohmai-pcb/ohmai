@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Layout steps (phase 8)
 
 Project settings live in `hardware/layout.yaml` (or the file named by ohmai.yaml `layout.config`). Board rules
@@ -9,7 +10,7 @@ name, reference, layer and area comes from the project file.
 
 Placement rules for fine-pitch QFN/QFP parts, checked on the placed board before routing. They come from a
 4-layer board whose autorouter plateaued at 22-75 open connections until the placement around its QFN-60 was
-reworked (pico-k D-021); every rule is one of the things that rework had to fix.
+reworked (reference-board D-021); every rule is one of the things that rework had to fix.
 
 | Rule | Fails when |
 |---|---|

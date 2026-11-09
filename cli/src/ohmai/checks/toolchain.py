@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`toolchain` check: installed tools vs the project's toolchain.lock.yaml (see ohmai/toolchain.py)."""
 
 from __future__ import annotations

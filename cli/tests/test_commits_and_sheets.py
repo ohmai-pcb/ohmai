@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Commit trailers (check commits, hook, ohmai commit, review authors) and phase-7 schematic checks."""
 
 from __future__ import annotations
@@ -274,7 +275,7 @@ def test_passives_look_through_series_resistor(proj):
     assert _tst(proj, ["100n", "100n"], r_value="10k").status == "FAIL"   # nominal 1k: ±5 %
 
 
-# ---------- readability: text placement rules added after pico-k Reviewer-A F1/F13/F14/F15 ----------
+# ---------- readability: text placement rules added after reference-board Reviewer-A F1/F13/F14/F15 ----------
 
 PWR_LIB = ('(symbol "power:VCC" (power) (property "Reference" "#PWR" (at 0 0 0)) (property "Value" "VCC" (at 0 -3.81 0))'
            ' (symbol "VCC_1_1" (pin power_in line (at 0 0 90) (length 0) (name "VCC") (number "1"))))')
@@ -303,7 +304,7 @@ def test_readability_power_text_on_foreign_junction():
 def test_readability_title_overflow():
     fails, _ = analyze(_sheet2("", "short"))
     assert not any("title:" in f for f in fails)
-    fails, _ = analyze(_sheet2("", "pico-k: 5 Pico edge, castellations, test pads (Pico 2 datasheet Fig. 2, §3.1)"))
+    fails, _ = analyze(_sheet2("", "reference-board: 5 Pico edge, castellations, test pads (Pico 2 datasheet Fig. 2, §3.1)"))
     assert any("title:" in f for f in fails), fails
 
 
@@ -373,6 +374,10 @@ def test_hooks_install_outside_a_project(tmp_path, monkeypatch, capsys):
 
 @needs_git
 def test_doctor_warns_without_hook(tmp_path, monkeypatch, capsys):
+    from ohmai import kicad
+
+    monkeypatch.setattr(kicad, "kicad_cli", lambda: "fictional-kicad-cli")
+    monkeypatch.setattr(kicad, "version", lambda: "9.0.2")
     d = tmp_path / "plain"
     d.mkdir()
     git(d, "init", "-q")

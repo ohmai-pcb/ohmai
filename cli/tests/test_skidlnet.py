@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """skidl-netlist: partition compare (no SKiDL needed), WARN without SKiDL, SKiDL stays out of process."""
 
 import sys

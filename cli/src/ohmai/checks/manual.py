@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """User-manual checks.
 
 `manual-warnings` (phases 2-3): every manual warning ID (MW-xx) named in the architecture or safety

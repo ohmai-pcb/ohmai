@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Datasheet manifest (`datasheets/manifest.yaml`): generate, fetch, and verify SHA-256 digests."""
 
 from __future__ import annotations

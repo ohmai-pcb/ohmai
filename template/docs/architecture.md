@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- ohmai:template: fill in, then delete this line. Gate: the owner picks an option (phase 2). -->
 # Architecture: {{project_name}}
 

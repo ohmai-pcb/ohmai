@@ -1,11 +1,12 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # AGENTS.md: contributing to the OhmAI tool repo
 
 For agents and humans changing OhmAI itself. (Rules for agents working *in a generated project* live in
 `template/AGENTS.md`.)
 
 ## Layout
-- `skill/SKILL.md` is the entry skill. Keep it short and imperative; details belong in `skill/phases/`.
-- `skill/phases/NN-<id>.md` has one file per phase. The ids must match `cli/src/ohmai/phases.py`.
+- `skills/ohmai/SKILL.md` is canonical; `skill` is a compatibility symlink. Details belong in `skills/ohmai/phases/`.
+- `skills/ohmai/phases/NN-<id>.md` has one file per phase. The ids must match `cli/src/ohmai/phases.py`.
 - `template/` is copied verbatim by `ohmai new`. Placeholders: `{{project_name}}`, `{{project_slug}}`,
   `{{idea}}`, `{{ohmai_version}}`, `{{date}}`, `{{uuid}}`. Docs that must be filled start with
   `<!-- ohmai:template ... -->`. `ohmai check docs:<file>` fails while the marker is present.
@@ -58,3 +59,6 @@ Tests must not need KiCad: use `--netlist` / `opts["netlist"]` with a fixture ne
 - **Repo-relative paths**: Never write machine-local absolute paths (`/Users/...`, `/home/...`, `/workspace/...`, `/tmp/...`) or local worktree/venv names in tracked files or commit messages.
 - **Date-only & neutral prose**: Use `YYYY-MM-DD` dates without `HH:MM` timestamps, and paraphrase owner decisions in neutral specification prose instead of quoting chat messages verbatim.
 - **No cross-project leakage**: Never reference unrelated projects or files outside this repository.
+
+## Plugin release work
+Read `INSTALL.md` and `docs/PLUGIN-PACKAGING.md`; package only the allowlisted guidance artifact. Run version/manifest/payload tests and the private-history audit before any approved public release. The compact optional host trigger is `docs/AGENT-NUDGE.md`.

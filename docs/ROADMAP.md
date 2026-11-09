@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Roadmap
 
 Versions apply to the tool (CLI + skill + template), all versioned together.
@@ -32,7 +33,7 @@ Everything below ships in 0.1.0.
 - CI and the weekly canary verified on GitHub (kicad/kicad:9.0 container, sticky comment, KiBot release);
   first real `ohmai upgrade` (kicad-cli 9.0.x) through the suites.
 - Multi-unit symbols (op-amps, gates, MCU banks) in `schematic build`, pin-map and gen-netlist.
-- pico-k frozen at rev-A and added as a golden project (with layout: drc + gerbers), if ready.
+- reference-board frozen at rev-A and added as a golden project (with layout: drc + gerbers), if ready.
 - `ohmai new --github` (owner-approved `gh repo create` + first push).
 
 ## v0.3: design-intent checks

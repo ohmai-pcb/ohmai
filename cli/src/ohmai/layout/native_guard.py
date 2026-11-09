@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Native candidate-only refill/DRC guard; KiCad runs exclusively as subprocesses."""
 from __future__ import annotations
 

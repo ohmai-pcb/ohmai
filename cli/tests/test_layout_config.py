@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Layout config: defaults, unknown keys, board rules from the .kicad_pro (FICTIONAL project)."""
 
 from __future__ import annotations

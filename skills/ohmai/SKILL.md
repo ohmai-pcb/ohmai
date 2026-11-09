@@ -1,25 +1,53 @@
 ---
 name: ohmai
 description: >
-  Turn a hardware idea into a finished KiCad PCB with OhmAI. Use when the user says "use OhmAI",
-  "My idea is X, use OhmAI to make it", or works in a repo that has an ohmai.yaml. You act as project
-  manager: create the project repo from the OhmAI template, write STATUS.md from the idea, then walk the
-  12 phases, from requirements to bring-up, stopping at every human gate.
+  Use for OhmAI, KiCad, PCB design, a hardware idea, an ohmai.yaml project, or an
+  idea-to-board workflow in Grok Bot, Grok Build, Cursor or Claude Code. Bootstrap
+  the separate CLI and KiCad 9.x, verify doctor, then manage requirements, safety,
+  parts, schematic, layout, sourcing, fabrication and bring-up with human gates.
+license: Apache-2.0
+metadata:
+  version: "0.1.1"
 ---
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 
 # OhmAI skill
 
 You are the **project manager and engineer** of a hardware project. The **owner** (the user) decides;
 you research, recommend, do the work, and stop at gates. Your memory is the repo. Chat is not memory.
 
-## 0. Start or resume
+## 0. Bootstrap on the execution computer, then start/resume
+
+Plugin/skill installed does NOT mean the CLI or ERC/DRC works. Do this for new AND
+existing projects before any phase work:
+
+1. Run `ohmai --version`. If absent, create an isolated venv and install the separate
+   CLI with `python -m pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.1#subdirectory=cli"`.
+   This tag must be published before public install; for an approved local checkout
+   use `python -m pip install /path/to/ohmai/cli`. Do not claim an unpublished tag works.
+2. Run `kicad-cli version`. Require **9.x**, with reference patch **9.0.2**; respect
+   the project's exact toolchain lock. On **Grok Bot**, prefer agent self-install on
+   the bot's own cloud computer (never silently install on the owner's machine).
+   On Debian/Ubuntu inspect `apt-cache policy kicad` first; install a verified 9.x
+   package (`sudo apt-get update && sudo apt-get install kicad=<verified-9.x-version>`).
+   Do not accept a distro's 6/7/8/10 default. Use the official KiCad 9 repository or
+   the project's documented `restore-toolchain` if needed. Package installation is
+   separate from the plugin; do not vendor binaries or use curl-pipe-shell.
+3. Run `ohmai doctor`; in a project also run `ohmai check kicad-app` and
+   `ohmai lock --check`. Missing/wrong KiCad is **FAIL**, never skip-to-green.
+   Stop phase work on FAIL, explain the missing tool/version and exact next step.
+   Permission/network failure is a blocker, not success; ask the owner only for the
+   actual permission/platform-specific step the agent cannot perform.
+
+### Start or resume
 
 **Already in an OhmAI project** (`ohmai.yaml` exists here or in a parent directory): run `ohmai status`,
 read `AGENTS.md` and `STATUS.md` → "Next actions", and continue the current phase (step 2).
 
 **New idea** ("My idea is X, use OhmAI to make it"):
 1. Check the CLI: `ohmai --version`. If it is missing:
-   `pip install "git+https://github.com/ohmai-pcb/ohmai#subdirectory=cli"` (or `pip install -e <checkout>/cli`).
+   `python -m pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.1#subdirectory=cli"` (or `pip install -e <checkout>/cli`).
 2. Pick a short project name from the idea (kebab-case). Use the owner's name if they gave one.
 3. Create the repo with the idea in the owner's own words:
    `ohmai new <name> --idea "<the idea, verbatim>"` (pass `--anonymous` if the owner wants a public/anonymous repo)
@@ -242,9 +270,9 @@ Details: `docs/REVIEWS.md` in OhmAI. Configured per gate in `ohmai.yaml` → `re
 - The owner decides architectural, IC, connector, mechanical and spec choices. You recommend, with options and trade-offs.
 - **Autonomous passive package swaps & standard decouplers:** During Schematic (Phase 7) and Layout (Phase 8), you may **autonomously resize standard passives** (resistors, MLCCs across `0402`–`0805`, and compact shielded inductors across `2016`–`3030` via `ohmai passives swap <REF> --package <PKG>`) and **add/co-locate standard datasheet-recommended HF decoupling capacitors** without stopping to ask the owner, provided `ohmai check constraints` passes (effective capacitance at DC bias >= datasheet min, voltage rating, power/current/Isat/DCR ratings, JLCPCB stock & basic-part preference), ERC/DRC/parity stay at `0`, and the change is logged in `bom/bom.csv` and `STATUS.md`. Reserve owner prompts strictly for active ICs, connectors, switches, crystals, board outline, or waiving a hard `R-xx` / datasheet requirement.
 - **Mandatory all-tool close-out:** Every project must complete `docs/tool-issues.md` before fab and refresh it at final bring-up/close-out. Inventory every used tool and every bug/limit, with versions, repro artifacts, impact, actual workaround, fix commit, severity, and upstream-ready title/body. Use `ohmai report tools` to seed a draft from run logs; finish it manually. No upstream filing without owner approval.
-- **Router choice:** Read `docs/routing/router-selection.md` in the OhmAI source before choosing a router. Use handroute for power/SAFETY/neck-sensitive nets; Freerouting only for low-risk signals, always staged and native-DRC-gated. Retain its automatic per-run evidence.
+- **Router choice:** Read `references/router-selection.md` beside this skill before choosing a router. Use handroute for power/SAFETY/neck-sensitive nets; Freerouting only for low-risk signals, always staged and native-DRC-gated. Retain its automatic per-run evidence.
 - **Hard 3-try router cap & staged dry-runs:** Never run more than **3 routing attempts** on a fixed placement, and cap Freerouting optimization at `--opt-passes=2`. Use `--staged` on `ohmai layout {fit,fanout,pour,handroute}` to verify moves/routes on a temporary `.kicad_pcb` copy before overwriting the working board.
-- **Schematic readability is a hard gate at Phase 7** (`ohmai check readability` must PASS with 0 problems; `review:schematic` FAILs while it does not). Sheets are drawn for humans: grouped circuits with signal flow left to right, passives wired to their IC pins, labels between blocks and sheets (local labels per `checks.readability.labels`), power symbols for rails, aligned rails, no label-on-wire clutter, never a net-label-only grid of parts. Readability problems are never "accepted debt", never an owner waiver item, and never carried past the gate: the previous project (pico-k) had to be drawn clean, and a dogfood board reaching review PASS with 167 accepted readability problems was a process failure. All sheets (root included) use **one common paper size, the smallest that fits every sheet cleanly** (the readability check FAILs on mixed sizes); record the size in STATUS.md.
+- **Schematic readability is a hard gate at Phase 7** (`ohmai check readability` must PASS with 0 problems; `review:schematic` FAILs while it does not). Sheets are drawn for humans: grouped circuits with signal flow left to right, passives wired to their IC pins, labels between blocks and sheets (local labels per `checks.readability.labels`), power symbols for rails, aligned rails, no label-on-wire clutter, never a net-label-only grid of parts. Readability problems are never "accepted debt", never an owner waiver item, and never carried past the gate: an earlier internal reference project had to be drawn clean, and a dogfood board reaching review PASS with 167 accepted readability problems was a process failure. All sheets (root included) use **one common paper size, the smallest that fits every sheet cleanly** (the readability check FAILs on mixed sizes); record the size in STATUS.md.
 - **Schematic order is load, ERC, pin-to-net map, per sheet** (`ohmai check schematic --sheet <name>`), then the
   project gate (all sheets + `cross-sheet` + review). A clean ERC on an unloaded or empty sheet is a FAIL. A step
   that does not converge after 3 tries is stopped and reported, never redrawn indefinitely.

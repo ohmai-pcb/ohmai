@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Phase 3: Safety and compliance plan
 
 **Goal:** know the ratings and spacing before parts freeze. Branch `phase/safety`. Check `ohmai check safety`.

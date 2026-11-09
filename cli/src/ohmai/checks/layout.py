@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Layout checks: DRC with schematic parity."""
 
 from __future__ import annotations

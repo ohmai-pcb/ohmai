@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """ohmai command line."""
 
 from __future__ import annotations
@@ -452,13 +453,26 @@ def cmd_skill(a) -> int:
     if a.action == "path":
         print(src)
         return 0
-    dest = Path(a.dest).expanduser().resolve()
+    src = src.resolve()
+    raw_dest = Path(a.dest).expanduser()
+    if raw_dest.is_symlink():
+        print("ohmai skill install: destination must not be a symlink", file=sys.stderr)
+        return 1
+    dest = raw_dest.resolve()
+    if dest == src or src in dest.parents or dest in src.parents:
+        print("ohmai skill install: destination overlaps the canonical skill", file=sys.stderr)
+        return 1
     if dest.exists():
         if not a.force:
             print(f"ohmai skill install: {dest} exists (use --force to replace)", file=sys.stderr)
             return 1
-        shutil.rmtree(dest)
-    shutil.copytree(src, dest)
+        from datetime import datetime
+        from time import time_ns
+
+        backup = dest.with_name(f"{dest.name}.bak.{datetime.now():%Y%m%d-%H%M%S}.{time_ns()}")
+        dest.rename(backup)
+        print(f"Previous skill backed up to {backup}")
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("*.bak*", "__pycache__"))
     print(f"Installed OhmAI skill {__version__} to {dest}")
     return 0
 

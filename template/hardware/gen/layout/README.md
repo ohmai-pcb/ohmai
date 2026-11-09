@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # hardware/gen/layout: datasheet-figure schematic layouts
 
 `ohmai schematic build [--layout DIR]` reads `_root.yaml` plus one `<sheet>.yaml` per functional block and

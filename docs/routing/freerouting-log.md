@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Freerouting evidence log
 
 One entry per invocation. Never infer DRC success from an SES file or Java exit 0.
@@ -16,7 +17,7 @@ historical fields remain unknown rather than guessed. All dates are 2026-11-09.
 The three crash entries are distinct retained diagnostic invocations, not a claim
 that only three crashes occurred during reduction experiments.
 
-Common board: usb-c-12v-stereo, copper `a70513b` (docs-only `3a8a459`). Scope:
+Common board (anonymized label): reference-power-board, copper `a70513b` (docs-only `3a8a459`). Scope:
 `3V3_LOGIC,STEREO_12V,V_BATT_PROT,STEREO_SRC,CHASSIS,VDDA,BATT_P,ACC_OUT,VBUS_20V`;
 exclude `GND,SW2_NODE,VSYS_BB`. Freerouting 2.2.4. Baseline KiCad unconnected: 258;
 non-zone clearance: 55. Crashes were not imported, so after-DRC and emitted new
@@ -76,7 +77,7 @@ builds for the three earlier diagnostic invocations were not retained.
   non-zone clearance **55 → 66 (+11)**, including **10 new SAFETY violations**.
   Crash: none. **Rejected for promotion**, not a clean board.
 - Ignored rule: custom `.kicad_dru` SAFETY footprint/spade/fuse clearances (2.00 mm).
-- DSN: `$OHMAI_ROUTING_EVIDENCE/validated-autoroute/usb-c-12v-stereo.dsn`;
+- DSN: `$OHMAI_ROUTING_EVIDENCE/validated-autoroute/reference-power-board.dsn`;
   options/run counters: `validated-autoroute/report.json`; measurements:
   `validated-autoroute/drc-refilled.json` and refilled candidate PCB.
 - Minimal-repro note: compare the patched DSN's allowed routes against native

@@ -1,7 +1,12 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # AGENTS.md: rules for any agent working in this project
 
 This is an OhmAI hardware project (template from OhmAI {{ohmai_version}}). The owner decides. Agents research,
 recommend and do the work, and stop at every gate.
+
+For OhmAI/KiCad/PCB work, load the installed OhmAI skill (`ohmai skill path`),
+complete its CLI/KiCad 9.x bootstrap and run `ohmai doctor`, then follow the pinned
+phase guide. Skill installation alone does not enable ERC/DRC.
 
 ## Read first, in this order
 1. `STATUS.md`: the current phase, locked decisions and open questions. **The spec wins over chat.** If a

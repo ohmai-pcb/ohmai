@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Project discovery and config (ohmai.yaml at the project root)."""
 
 from __future__ import annotations

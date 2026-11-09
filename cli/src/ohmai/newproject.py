@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """`ohmai new`: create a project repo from the template."""
 
 from __future__ import annotations
@@ -85,8 +86,8 @@ def create(dest: Path, idea: str, name: str | None = None, git: bool = True, ano
         _git(dest, "add", "-A")
         ident = []
         if _git(dest, "config", "user.email", check=False).returncode != 0:
-            ident = ["-c", "user.name=ohmai-bot", "-c", "user.email=343224981+ohmai-bot@users.noreply.github.com"]
-            log.append("no git identity configured: initial commit authored as ohmai-bot <343224981+ohmai-bot@users.noreply.github.com>")
+            ident = ["-c", "user.name=ohmai-bot", "-c", "user.email=ohmai@example.invalid"]
+            log.append("no git identity configured: initial commit authored as ohmai-bot <ohmai@example.invalid>")
         from ohmai import trailers as tr
 
         trailer = tr.format_trailer({"name": "ohmai new", "kind": "agent", "vendor": "OhmAI",

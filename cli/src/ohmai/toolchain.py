@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Toolchain version lock: `toolchain.lock.yaml` per project, `ohmai lock`, `ohmai check toolchain`.
 
 Two tiers (owner decision 2026-10-15):

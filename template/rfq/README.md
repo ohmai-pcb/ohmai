@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # RFQs and supplier questions
 
 One file per supplier question or RFQ: `rfq/<supplier>-<topic>.md`. Each file is a **standalone vendor

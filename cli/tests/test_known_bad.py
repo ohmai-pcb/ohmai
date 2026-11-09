@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Known-bad suite: each fixture's planted mistake is caught by its check, and its clean twin passes."""
 
 from __future__ import annotations

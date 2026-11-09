@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- ohmai:template: fill in, then delete this line. Drafted from phase 3, finalized in phase 12. Checked by `ohmai check bringup` (manual). -->
 # User instructions: {{project_name}}
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Grid router core for `ohmai layout handroute` (numpy; no KiCad): A* over copper layers on a raster, path
 simplification, the via spacing rules, and the hand-route record bookkeeping.
 

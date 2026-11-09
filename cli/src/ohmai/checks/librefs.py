@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """lib-refs: every symbol (lib_id) and footprint the schematic or BOM names must resolve through the
 project's sym-lib-table / fp-lib-table. Missing libraries are a tool problem, not owner homework: import a
 vetted part with `ohmai kicad-libs import` (manufacturer or Ultra Librarian export) into hardware/lib/,

@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Decision log: {{project_name}}
 
 Append-only. One entry per owner decision, written the same day. Add a matching row to the STATUS.md

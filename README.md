@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # ⚡ OhmAI
 
 **Turn a one-line hardware idea into a datasheet-verified, DRC-clean KiCad 9 project — with an AI agent doing the legwork and you in the driver's seat.**
@@ -7,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB.svg)](https://www.python.org/)
 [![Status: v0.1 Experimental](https://img.shields.io/badge/Status-v0.1_Experimental-orange.svg)](#what-works-today-vs-current-limitations)
 
-[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**CLI Reference**](#cli-overview) · [**Example Project (`pico-k`)**](https://github.com/ohmai-pcb/pico-k)
+[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**CLI Reference**](#cli-overview)
 
 ---
 
@@ -39,6 +40,8 @@ Your agent researches parts, extracts pin tables and layout rules with exact dat
 
 ---
 
+Plugin/skill installation for Cursor, Grok Build, Grok Bot and Claude Code: [INSTALL.md](INSTALL.md). The prepared 0.1.1 plugin is guidance only; external tools are separate.
+
 ## Why OhmAI exists
 
 Left to their own devices on a PCB project, LLM agents tend to guess pin numbers, invent passive values, pick single-source parts that are out of stock, or declare victory while DRC has dozens of unconnected nets.
@@ -55,7 +58,7 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 
 ## What works today vs. current limitations
 
-> **Status: v0.1 (experimental / early-stage).** Tested end-to-end on our first reference-level dogfood board ([`pico-k`](https://github.com/ohmai-pcb/pico-k): RP2350A + TPS63001 + MAX31856 Type-K thermocouple board through Phase 11 fab dry-run and Phase 12 bring-up prep; not yet physically fabricated). See [ROADMAP](docs/ROADMAP.md).
+> **Status: v0.1 (experimental / early-stage).** Internal reference-board validation has reached fab dry-run and bring-up preparation; no public example board or physical fabrication is claimed. See [ROADMAP](docs/ROADMAP.md).
 
 ### Works well in v0.1
 - **Datasheet constraint extraction & citation checking (`ohmai check constraints`, `ohmai datasheets`):** Catching pinout/direction mistakes, missing pull-ups, and unverified datasheet claims before schematic capture begins. Tracking datasheet URLs, SHA-256 digests, and cited pages in `datasheets/manifest.yaml` without committing binary `.pdf` blobs.

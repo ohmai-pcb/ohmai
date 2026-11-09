@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Read a KiCad kicadsexpr netlist into plain dicts."""
 
 from __future__ import annotations
