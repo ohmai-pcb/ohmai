@@ -257,6 +257,7 @@ def test_handroute_layer_change_writes_via(tmp_path: Path):
 
 def test_handroute_opposite_layer_pads_emit_via(tmp_path: Path):
     """Pads on opposite copper layers force a via; run_handroute must write it (not discard _vias)."""
+    from ohmai.layout import fixture as F
     hw = tmp_path / "hardware"
     hw.mkdir()
     (hw / "layout").mkdir()
@@ -327,6 +328,7 @@ def test_staged_handroute_rerun_does_not_double_segments(tmp_path: Path):
 
 def test_fanout_via_blocked_by_foreign_epad(tmp_path: Path):
     """Fanout must not place an escape via in/on a foreign EPAD (generator + overlap check)."""
+    from ohmai.layout import fixture as F
     hw = tmp_path / "hardware"
     hw.mkdir()
     (hw / "layout").mkdir()
@@ -401,6 +403,7 @@ def test_staged_project_rules_copied_alongside(tmp_path: Path):
 
 def test_fanout_stub_blocked_by_foreign_pad(tmp_path: Path):
     """Escape stub/via that would cross a foreign pad must be rejected (skip, not short)."""
+    from ohmai.layout import fixture as F
     from ohmai.layout import placement as L
 
     hw = tmp_path / "hardware"
@@ -495,6 +498,7 @@ def test_fanout_via_size_respects_board_mins(tmp_path: Path):
 
 def test_fanout_epad_blocks_nearby_via_or_skips(tmp_path: Path):
     """EPAD-sized foreign pad must block nearby escape vias; skip if no clear site."""
+    from ohmai.layout import fixture as F
     from ohmai.layout import placement as L
 
     hw = tmp_path / "hardware"
@@ -558,6 +562,32 @@ def test_fanout_epad_blocks_nearby_via_or_skips(tmp_path: Path):
     vbus = [v for v in fo["vias"] if v["net"] == "VBUS"]
     skipped = [s for s in fo["skipped"] if s["net"] == "VBUS"]
     assert vbus or skipped
+
+
+def test_fanout_explicit_net_filter_overrides_escape_refs(tmp_path):
+    cfg, _ = _proj(tmp_path, layout="planes: {GND: B.Cu}\nfanout:\n  escape: [{ref: R1}]\n")
+    rep = steps.run_fanout(cfg, dry_run=True, nets="^GND$")
+    assert rep["vias"] and {v["net"] for v in rep["vias"]} == {"GND"}
+    assert {v["ref"] for v in rep["vias"]} == {"R1", "R2", "R3", "R4"}
+
+
+def test_fanout_excluded_pad_and_area(tmp_path):
+    cfg, _ = _proj(tmp_path)
+    rep = steps.run_fanout(cfg, dry_run=True, nets="^GND$",
+                           exclude_pads=["R1.2"], exclude_near=["R2.2:3"])
+    assert rep["vias"] and {v["ref"] for v in rep["vias"]} == {"R3", "R4"}
+    with pytest.raises(ValueError, match="unknown pad"):
+        steps.run_fanout(cfg, dry_run=True, exclude_near=["MISSING.1:2"])
+    with pytest.raises(ValueError, match="finite and positive"):
+        steps.run_fanout(cfg, dry_run=True, exclude_near=["R1.1:nan"])
+
+
+def test_fanout_exclusion_checks_entire_stub():
+    from types import SimpleNamespace
+    pad = SimpleNamespace(x=0, y=0)
+    # Endpoints outside the circle, but the stub crosses it.
+    assert steps._fanout_excluded(pad, 4, 0, 0.45, 0.15, [(2, 0, 0.5)])
+    assert not steps._fanout_excluded(pad, 4, 0, 0.45, 0.15, [(2, 2, 0.5)])
 
 
 def test_custom_footprint_clearance_is_resolved_and_enforced(tmp_path):

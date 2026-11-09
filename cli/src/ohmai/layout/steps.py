@@ -6,6 +6,7 @@ import fnmatch
 import json
 import math
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -303,7 +304,37 @@ def _fanout_escape_ok(
     return True
 
 
-def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> dict:
+def _fanout_exclusions(all_pads, specs):
+    """Resolve REF.PAD:radius to circles; reject typos rather than silently routing there."""
+    circles = []
+    for spec in specs:
+        try:
+            name, radius = spec.rsplit(":", 1)
+            ref, num = name.rsplit(".", 1)
+            radius = float(radius)
+        except (ValueError, AttributeError) as e:
+            raise ValueError("exclude-near must be REF.PAD:radius_mm") from e
+        if not math.isfinite(radius) or radius <= 0:
+            raise ValueError("exclude-near radius must be finite and positive")
+        found = [p for p in all_pads if p.ref == ref and str(p.num) == num]
+        if not found:
+            raise ValueError(f"exclude-near: unknown pad {name}")
+        circles.extend((p.x, p.y, radius) for p in found)
+    return circles
+
+
+def _fanout_excluded(pad, vx, vy, via_d, stub_w, circles):
+    if not circles:
+        return False
+    from shapely.geometry import LineString, Point
+    stub = LineString([(pad.x, pad.y), (vx, vy)])
+    return any(math.hypot(vx-x, vy-y) <= radius + via_d/2 or
+               stub.distance(Point(x, y)) <= radius + stub_w/2 for x, y, radius in circles)
+
+
+def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False,
+               nets: str | None = None, exclude_near: list[str] | None = None,
+               exclude_pads: list[str] | None = None) -> dict:
     pcb = Path(cfg["board"])
     if not pcb.is_file():
         raise FileNotFoundError(f"{pcb}: board not found")
@@ -322,6 +353,12 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
     # Materialize pads once: nested iteration over the generator would consume it and
     # skip foreign-pad collision checks for every escape after the first.
     all_pads = list(b.pads())
+    net_filter = re.compile(nets or fo.get("nets")) if (nets or fo.get("nets")) else None
+    circles = _fanout_exclusions(all_pads, list(fo.get("exclude_near") or []) + list(exclude_near or []))
+    excluded_pads = set(fo.get("exclude_pads") or []) | set(exclude_pads or [])
+    known_pads = {f"{p.ref}.{p.num}" for p in all_pads}
+    if excluded_pads - known_pads:
+        raise ValueError(f"exclude-pad: unknown pads {sorted(excluded_pads - known_pads)}")
     existing_holes = [(v.x, v.y, v.drill / 2) for v in b.vias] + [
         (p.x, p.y, p.drill / 2) for p in all_pads if p.hole
     ]
@@ -406,6 +443,8 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
                         continue
                     if any(math.hypot(vx - hx, vy - hy) < (cand_h / 2 + hr + hole_hole) for hx, hy, hr in holes):
                         continue
+                    if _fanout_excluded(pad, vx, vy, cand_d, cand_w, circles):
+                        continue
                     if not _fanout_escape_ok(
                         pad=pad, vx=vx, vy=vy, via_d=cand_d, stub_w=cand_w, stub_layer=stub_layer,
                         rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
@@ -459,6 +498,8 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
                         planned=planned, pad_gap=pad_gap,
                     ):
                         continue
+                    if _fanout_excluded(pad_a, ax, ay, da, wa, circles):
+                        continue
                     trial_a = {
                         "ref": pad_a.ref, "pad": pad_a.num, "net": pad_a.net, "x": ax, "y": ay,
                         "pad_x": pad_a.x, "pad_y": pad_a.y, "layer": stub_layer_a,
@@ -479,10 +520,16 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
         # dense QFN toe slots from real nets (e.g. U1.21 blocking VSYS_BB U1.22).
         if str(p.net).startswith("unconnected-") or str(p.net).startswith("Net-(unconnected-"):
             continue
-        if target_refs and p.ref not in target_refs:
+        if f"{p.ref}.{p.num}" in excluded_pads:
             continue
-        if not target_refs and p.net not in planes:
-            continue
+        if net_filter:
+            if not net_filter.search(p.net):
+                continue
+        else:
+            if target_refs and p.ref not in target_refs:
+                continue
+            if not target_refs and p.net not in planes:
+                continue
         # Already has a same-net via within 1.2 mm?
         if any(v.net == p.net and math.hypot(v.x - p.x, v.y - p.y) <= 1.2 for v in b.vias):
             continue

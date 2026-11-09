@@ -33,6 +33,7 @@ DEFAULTS: dict = {
     "rules": {"margin": 0.03, "via_hole_cu": None, "pth_hole_trk": None, "hole_hole": None, "edge": None},
     "fanout": {"clearance": None, "hole_trk": None, "hole_hole": None, "edge": None, "pad_gap": 0.12,
                "track_w": 0.25, "bridge_reach": 2.6, "steps": [0.30, 0.45, 0.65, 0.9, 1.2], "angles": 24,
+               "nets": None, "exclude_near": [], "exclude_pads": [],
                "channel": None, "escape": [], "stitch": None},
     "autoroute": {"lock": "toolchain.lock.yaml", "passes": 30, "timeout": "00:10:00", "via_costs": 50,
                   "opt_passes": 2, "threads": None, "netns": True, "inner_nets": None,

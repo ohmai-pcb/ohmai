@@ -57,7 +57,7 @@ evaluates `critical_loops:`, `keepouts:`, `layout_checklist:`, and `pour:` direc
 ## Layout CLI subcommands & `--staged` dry-runs
 
 - `ohmai layout fit <REF> --at x,y[,rot] [--scan] [--rules] [--staged]`
-- `ohmai layout fanout [--refs U1,...] [--staged]`
+- `ohmai layout fanout [--nets REGEX] [--exclude-pad REF.PAD] [--exclude-near REF.PAD:radius_mm] [--staged]`
 - `ohmai layout autoroute [--opt-passes 2] [--timeout 00:10:00]` (hard 3-try router cap on any fixed placement)
 - `ohmai layout pour [--staged]`
 - `ohmai layout handroute route --nets NET1,NET2 [--budget-seconds 60] [--max-total-expand 2500000] [--max-searches 128] [--staged]`
@@ -81,6 +81,19 @@ join at least two terminal islands to count as progress. JSON reports exhaustion
 stop reasons, unattempted nets, searches and expansions. Budget exhaustion returns
 nonzero and any generated copper is partial, not a completed route.
 
+### Fanout selection and protected areas
+
+`--nets '^GND$'` selects only matching pads, overriding the configured escape refs;
+it does not require editing `fanout.escape`. `--exclude-pad REF.PAD` skips a source
+pad. Repeat `--exclude-near REF.PAD:radius_mm` to protect circular areas: both the
+via disk and the entire stub must remain outside. Unknown pads and invalid radii
+are errors. YAML equivalents: `fanout.nets`, `exclude_pads` and `exclude_near`.
+
+Foreign-net class clearance is the maximum of the two classes. The IC toe-gap
+exception never lowers clearances of 1 mm or more. Custom `.kicad_dru` clearance
+rules with footprint selectors are conservatively applied to the whole selected
+footprint, even when their condition restricts a narrower pairing. This is not a
+full KiCad rule-expression evaluator; always run DRC with the project rules.
 
 ### Initial versus predicted connectivity
 

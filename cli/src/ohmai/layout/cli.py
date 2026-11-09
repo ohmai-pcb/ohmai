@@ -99,7 +99,8 @@ def cmd_fanout(a) -> int:
     cfg = _cfg(p, a)
     staged_path = _resolve_staged(p, cfg, getattr(a, "staged", None))
     try:
-        res = steps.run_fanout(cfg, staged=staged_path, dry_run=a.dry_run)
+        res = steps.run_fanout(cfg, staged=staged_path, dry_run=a.dry_run,
+                               nets=a.nets, exclude_near=a.exclude_near, exclude_pads=a.exclude_pad)
     except Exception as e:
         print(f"ohmai layout fanout: {e}", file=sys.stderr)
         return 1
@@ -246,6 +247,9 @@ def add_parser(sub) -> None:
     fo = ls.add_parser("fanout", help="escape vias on plane/signal pads and GND stitching grid")
     fo.add_argument("--staged", nargs="?", const="auto", help="write fanout copper to a staged .kicad_pcb copy")
     fo.add_argument("--dry-run", action="store_true", help="compute fanout vias without modifying the board")
+    fo.add_argument("--nets", help="regex of nets to fan out (overrides escape ref selection)")
+    fo.add_argument("--exclude-near", action="append", help="exclude via AND stub within REF.PAD:radius_mm; repeatable")
+    fo.add_argument("--exclude-pad", action="append", help="skip source REF.PAD; repeatable")
     fo.add_argument("--json", action="store_true")
     fo.set_defaults(fn=cmd_fanout)
 
