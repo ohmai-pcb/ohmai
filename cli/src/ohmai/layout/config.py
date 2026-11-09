@@ -117,10 +117,32 @@ def resolve_rules(cfg: dict) -> dict:
     min_via_d = float(r.get("min_via_diameter") or 0.0)
     min_via_h = float(r.get("min_through_hole_diameter") or 0.0)
     min_via_ann = float(r.get("min_via_annular_width") or 0.0)
+    pad_clearances = {}
     dru_path = Path(cfg["project_file"]).with_suffix(".kicad_dru")
     if dru_path.is_file():
         import re as _re
         dru = dru_path.read_text(encoding="utf-8", errors="replace")
+        from .. import sexp
+        # Conservative subset: positive footprint selectors. Apply their minimum to
+        # the whole footprint, not just the condition's narrower object pairing.
+        clean = _re.sub(r"(?m)^\s*#.*$", "", dru)
+        tree = sexp.parse("(rules " + clean + ")")
+        for rule in sexp.find(tree, "rule"):
+            cond = sexp.first(rule, "condition")
+            if not cond:
+                continue
+            refs = _re.findall(r"[AB]\.memberOfFootprint\('([^']+)'\)", str(cond[1]))
+            for constraint in sexp.find(rule, "constraint"):
+                if constraint[1] != "clearance":
+                    continue
+                minimum = sexp.first(constraint, "min")
+                if not minimum:
+                    continue
+                value = str(minimum[1])
+                if not _re.fullmatch(r"[0-9.]+mm", value):
+                    continue
+                for ref in refs:
+                    pad_clearances[ref] = max(pad_clearances.get(ref, 0), float(value[:-2]))
         for m in _re.finditer(
             r'\(constraint\s+via_diameter\s*\(min\s+([0-9.]+)\s*mm\)\)', dru
         ):
@@ -138,6 +160,7 @@ def resolve_rules(cfg: dict) -> dict:
         ):
             min_via_ann = max(min_via_ann, float(m.group(1)))
     out = {
+        "pad_clearances": pad_clearances,
         "classes": classes,
         "patterns": [(p["pattern"], p["netclass"]) for p in ns.get("netclass_patterns", []) or []],
         "via_d": cfg["via"]["d"] or classes["Default"].get("via_d") or 0.45,

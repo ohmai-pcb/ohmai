@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import math
 import os
@@ -65,6 +66,15 @@ def _pair_clearance(rules: dict, net_a: str | None, net_b: str | None) -> float:
     """
     return max(_class_for_net(rules, net_a)["clearance"], _class_for_net(rules, net_b)["clearance"])
 
+
+
+def _footprint_clearance(rules: dict, *refs: str) -> float:
+    return max((float(cl) for pattern, cl in rules.get("pad_clearances", {}).items()
+                if any(fnmatch.fnmatchcase(ref, pattern) for ref in refs)), default=0.0)
+
+
+def _pad_clearance(rules: dict, net: str, pad) -> float:
+    return max(_pair_clearance(rules, net, pad.net), _footprint_clearance(rules, pad.ref))
 
 
 def _handroute_try_widths(hr: dict, nc: dict, net_name: str) -> list[float]:
@@ -204,12 +214,16 @@ def _fanout_escape_ok(
     stub_box = _thick_seg_box(pad.x, pad.y, vx, vy, stub_half)
 
     def _cl(other_net: str, other_pad=None) -> float:
+        # Explicit custom footprint rules are never relaxed to an IC toe gap.
+        refs = (pad.ref, other_pad.ref) if other_pad is not None else (pad.ref,)
+        explicit = _footprint_clearance(rules, *refs)
         # Max of pair clearance and fanout pad_gap so dense QFN toes still clear.
         # Same-footprint pads are already denser than power netclass clearance (0.4 mm
         # pitch vs 0.5 mm BATT); use pad_gap only between toes of this IC.
-        if other_pad is not None and getattr(other_pad, "ref", None) == pad.ref:
-            return pad_gap
-        return max(_pair_clearance(rules, pad.net, other_net or ""), pad_gap)
+        if (other_pad is not None and getattr(other_pad, "ref", None) == pad.ref
+                and pad.ref.startswith("U") and _pair_clearance(rules, pad.net, other_net) < 1.0):
+            return max(pad_gap, explicit)
+        return max(explicit, _pair_clearance(rules, pad.net, other_net or ""), pad_gap)
 
     # Foreign pads (full boxes, including EPAD). No-net is never same-net.
     for o in all_pads:
@@ -272,7 +286,8 @@ def _fanout_escape_ok(
             continue
         # Escape vias from the same IC use pad_gap, not power netclass clearance.
         same_ic = str(pv.get("ref") or "") == pad.ref
-        cl = pad_gap if same_ic else _cl(pv["net"])
+        cl = pad_gap if (same_ic and pad.ref.startswith("U") and
+                          _pair_clearance(rules, pad.net, pv["net"]) < 1.0) else _cl(pv["net"])
         ob = _disk_box(pv["x"], pv["y"], float(pv["size"]) / 2)
         if L.overlap(L.grow(v_box, cl), ob, 0.0):
             return False
@@ -1308,8 +1323,6 @@ def run_handroute(
                 li: (1.0 if li == 0 else float((hr.get("inner") or {}).get("cost", 4.0)))
                 for li in layer_idxs
             }
-            from shapely import intersects_xy
-
             best = None  # (remaining, track_w, paths) — prefer fewer remaining islands
             for track_w in try_widths:
                 if budget.reason:
@@ -1355,7 +1368,7 @@ def run_handroute(
                 for op in board.pads():
                     if _same_net(op.net, net_name):
                         continue
-                    grow = _pair_clearance(rules, net_name, op.net) + track_w / 2
+                    grow = _pad_clearance(rules, net_name, op) + track_w / 2
                     for li, lay in enumerate(layers):
                         if (not op.layers) or lay in op.layers or "*.Cu" in op.layers:
                             _block_rect(
@@ -1365,7 +1378,7 @@ def run_handroute(
                                 op.box[2] + grow,
                                 op.box[3] + grow,
                             )
-                    via_grow = _pair_clearance(rules, net_name, op.net) + via_d_net / 2
+                    via_grow = _pad_clearance(rules, net_name, op) + via_d_net / 2
                     _block_viaok(
                         op.box[0] - via_grow,
                         op.box[1] - via_grow,
@@ -1423,25 +1436,9 @@ def run_handroute(
                     for li in layer_idxs:
                         _block_disk(li, v["x"], v["y"], grow)
 
-                # Own copper must stay seedable under foreign clearance inflation.
-                for _, shapes in items:
-                    for li, shape in shapes.items():
-                        if li not in free:
-                            continue
-                        x0, y0, x1, y1 = shape.bounds
-                        ix0, iy0 = g.cell(x0, y0)
-                        ix1, iy1 = g.cell(x1, y1)
-                        xa, xb = max(0, min(ix0, ix1)), min(g.nx - 1, max(ix0, ix1))
-                        ya, yb = max(0, min(iy0, iy1)), min(g.ny - 1, max(iy0, iy1))
-                        if xa > xb or ya > yb:
-                            continue
-                        ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
-                        mask = intersects_xy(
-                            shape,
-                            g.x0 + (xs + 0.5) * g.res,
-                            g.y0 + (ys + 0.5) * g.res,
-                        )
-                        free[li][ya:yb + 1, xa:xb + 1] |= mask
+                # Never reopen foreign clearance envelopes under own copper. Pads
+                # already inside a safety envelope may have no legal escape; do not
+                # manufacture an unsafe route by marking their interior free again.
 
                 terminals = [_handroute_terminal_cells(items, island, g, free) for island in islands]
                 paths = []

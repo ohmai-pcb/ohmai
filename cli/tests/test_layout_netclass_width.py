@@ -228,7 +228,6 @@ def test_netclass_staged_kicad_loadable(tmp_path: Path):
 def test_handroute_layer_change_writes_via(tmp_path: Path):
     """Layer-change points from runs_to_segments are written as vias in the PCB sexp."""
     from ohmai.layout import grid as grid_mod
-    from ohmai.layout import fixture as F
 
     cfg, pcb = _proj(tmp_path)
     # Simulate a path that flips F.Cu -> B.Cu at (112, 110).
@@ -258,7 +257,6 @@ def test_handroute_layer_change_writes_via(tmp_path: Path):
 
 def test_handroute_opposite_layer_pads_emit_via(tmp_path: Path):
     """Pads on opposite copper layers force a via; run_handroute must write it (not discard _vias)."""
-    from ohmai.layout import fixture as F
     hw = tmp_path / "hardware"
     hw.mkdir()
     (hw / "layout").mkdir()
@@ -329,7 +327,6 @@ def test_staged_handroute_rerun_does_not_double_segments(tmp_path: Path):
 
 def test_fanout_via_blocked_by_foreign_epad(tmp_path: Path):
     """Fanout must not place an escape via in/on a foreign EPAD (generator + overlap check)."""
-    from ohmai.layout import fixture as F
     hw = tmp_path / "hardware"
     hw.mkdir()
     (hw / "layout").mkdir()
@@ -404,7 +401,6 @@ def test_staged_project_rules_copied_alongside(tmp_path: Path):
 
 def test_fanout_stub_blocked_by_foreign_pad(tmp_path: Path):
     """Escape stub/via that would cross a foreign pad must be rejected (skip, not short)."""
-    from ohmai.layout import fixture as F
     from ohmai.layout import placement as L
 
     hw = tmp_path / "hardware"
@@ -499,7 +495,6 @@ def test_fanout_via_size_respects_board_mins(tmp_path: Path):
 
 def test_fanout_epad_blocks_nearby_via_or_skips(tmp_path: Path):
     """EPAD-sized foreign pad must block nearby escape vias; skip if no clear site."""
-    from ohmai.layout import fixture as F
     from ohmai.layout import placement as L
 
     hw = tmp_path / "hardware"
@@ -563,3 +558,33 @@ def test_fanout_epad_blocks_nearby_via_or_skips(tmp_path: Path):
     vbus = [v for v in fo["vias"] if v["net"] == "VBUS"]
     skipped = [s for s in fo["skipped"] if s["net"] == "VBUS"]
     assert vbus or skipped
+
+
+def test_custom_footprint_clearance_is_resolved_and_enforced(tmp_path):
+    from ohmai.layout import placement as L
+    cfg, pcb = _proj(tmp_path)
+    pcb.with_suffix(".kicad_dru").write_text('''(version 1)
+(rule "fictional safety" (constraint clearance (min 2.0mm))
+  (condition "A.memberOfFootprint('R2') && A.Net != B.Net"))''')
+    cfg["rules_resolved"] = lcfg.resolve_rules(cfg)
+    assert cfg["rules_resolved"]["pad_clearances"] == {"R2": 2.0}
+    pads = list(L.load(pcb).pads())
+    source = next(p for p in pads if p.ref == "R1" and p.net == "GND")
+    other = next(p for p in pads if p.ref == "R2" and p.net == "VIN")
+    # Put candidate via 1 mm from R2's copper: netclass clearance passes, custom 2 mm fails.
+    vx = other.box[0] - 1 - 0.225
+    args = dict(pad=source, vx=vx, vy=other.y, via_d=0.45, stub_w=0.15,
+                stub_layer="F.Cu", all_pads=[source, other], segments=[], vias=[],
+                zones=[], planned=[], pad_gap=0.12)
+    assert not steps._fanout_escape_ok(rules=cfg["rules_resolved"], **args)
+
+
+def test_safety_netclass_is_not_relaxed_between_same_ic_pads():
+    from types import SimpleNamespace
+    source = SimpleNamespace(ref='U1', net='SIG', x=0, y=0)
+    foreign = SimpleNamespace(ref='U1', net='SAFE', layers=['F.Cu'], box=(2.9, -0.2, 3.1, 0.2))
+    rules = {'classes': {'Default': {'clearance': 0.1}, 'SAFETY': {'clearance': 2.0}},
+             'patterns': [('^SAFE$', 'SAFETY')]}
+    assert not steps._fanout_escape_ok(pad=source, vx=1.5, vy=0, via_d=0.45, stub_w=0.15,
+                                       stub_layer='F.Cu', rules=rules, all_pads=[foreign],
+                                       segments=[], vias=[], zones=[], planned=[], pad_gap=0.12)

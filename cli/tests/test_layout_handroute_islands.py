@@ -424,3 +424,30 @@ def test_concave_filled_zone_does_not_merge_empty_bbox_space():
     items = steps._handroute_copper_items(board, 'SIG', ['F.Cu'])
     items.append(('SIG', {0: box(4, 5, 6, 7)}))
     assert len(steps._handroute_islands(items)) == 2
+
+
+def test_handroute_custom_safety_pad_envelope_stays_blocked(tmp_path, monkeypatch):
+    cfg, _ = _case(tmp_path, [_pad('A', 103, 105), _pad('B', 117, 105),
+                              _pad('FH2A', 110, 105, 'FOREIGN')])
+    cfg['rules_resolved']['pad_clearances'] = {'FH*': 2.0}
+    real = grid.astar
+
+    def spy(free, viaok, starts, goals, *args, **kwargs):
+        # Net bounds plus search_margin=1 give x=101.7 and y=103.7.
+        g = grid.Grid.around((101.7, 103.7, 118.3, 106.3), 0.1)
+        ix, iy = g.cell(108.5, 105)
+        assert not free[0][iy, ix] and not viaok[iy, ix]
+        return real(free, viaok, starts, goals, *args, **kwargs)
+
+    monkeypatch.setattr(grid, 'astar', spy)
+    result = steps.run_handroute(cfg, 'route', ['SIG'], dry_run=True)
+    assert result['initial_islands'] == {'SIG': 2}
+
+
+def test_handroute_does_not_unblock_own_pad_inside_safety_envelope(tmp_path):
+    cfg, _ = _case(tmp_path, [_pad('A', 103, 105), _pad('B', 117, 105),
+                              _pad('FH2B', 104, 105, 'FOREIGN')])
+    cfg['rules_resolved']['pad_clearances'] = {'FH*': 2.0}
+    result = steps.run_handroute(cfg, 'route', ['SIG'], dry_run=True)
+    assert result['remaining_islands'] == {'SIG': 2}
+    assert not result['routes']

@@ -93,3 +93,6 @@ proposed copper. The zone model keeps actual filled polygons, including concavit
 instead of treating their enclosing rectangles as copper. Refill and DRC remain
 the authority for the written board's connectivity.
 
+Handroute also respects resolved custom footprint safety clearances for both
+track and via occupancy. Copper inside a foreign safety envelope is never
+reopened as an A* seed merely because an own-net pad or track overlaps it.
