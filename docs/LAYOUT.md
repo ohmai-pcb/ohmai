@@ -60,7 +60,7 @@ evaluates `critical_loops:`, `keepouts:`, `layout_checklist:`, and `pour:` direc
 - `ohmai layout fanout [--refs U1,...] [--staged]`
 - `ohmai layout autoroute [--opt-passes 2] [--timeout 00:10:00]` (hard 3-try router cap on any fixed placement)
 - `ohmai layout pour [--staged]`
-- `ohmai layout handroute [--spec routes.yaml] [--staged]`
+- `ohmai layout handroute route --nets NET1,NET2 [--budget-seconds 60] [--max-total-expand 2500000] [--max-searches 128] [--staged]`
 
 ### Autoroute fixed-copper normalization
 
@@ -71,4 +71,13 @@ Wrapped paths, quoted net names and fractional coordinates are fixed too. SES
 progress counts multiline `network_out` copper (implicit route type), excluding
 explicit `protect` / `fix` items. Refill and DRC the candidate before promoting;
 a completed autorouter run is not a DRC pass.
+
+### Bounded handroute
+
+The time, total expansion and search-count caps are shared across every net and
+width attempt. Layout YAML keys are `handroute.budget_seconds`, `max_total_expand`
+and `max_searches`; `max_expand` remains the individual-search cap. A path must
+join at least two terminal islands to count as progress. JSON reports exhaustion,
+stop reasons, unattempted nets, searches and expansions. Budget exhaustion returns
+nonzero and any generated copper is partial, not a completed route.
 

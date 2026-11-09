@@ -132,3 +132,19 @@ def test_keep_records_manual_survives():
     auto = {"net": "N", "why": "a -> b"}
     other = {"net": "O", "why": "a -> b"}
     assert keep_records([man, auto, other], {"N"}) == [man, other]
+
+
+def test_astar_expired_shared_budget(monkeypatch):
+    budget = G.SearchBudget(seconds=1)
+    monkeypatch.setattr(G.time, "monotonic", lambda: budget.deadline + 1)
+    args = ({(0, 20, 5)}, {(0, 20, 60)}, [0, 1], {0: 1, 1: 1}, RES, 1.6, PITCH)
+    assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget) is None
+    assert budget.searches == budget.expanded == 0
+
+
+def test_astar_shared_search_cap():
+    budget = G.SearchBudget(max_searches=1)
+    args = ({(0, 20, 5)}, {(0, 20, 6)}, [0, 1], {0: 1, 1: 1}, RES, 1.6, PITCH)
+    assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget)
+    assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget) is None
+    assert budget.searches == 1

@@ -191,6 +191,11 @@ def cmd_handroute(a) -> int:
     p = _project()
     cfg = _cfg(p, a)
     staged_path = _resolve_staged(p, cfg, getattr(a, "staged", None))
+    cfg["handroute"] = dict(cfg.get("handroute") or {})
+    for key in ("budget_seconds", "max_total_expand", "max_searches"):
+        value = getattr(a, key, None)
+        if value is not None:
+            cfg["handroute"][key] = value
     nets = [n.strip() for n in a.nets.split(",") if n.strip()] if a.nets else None
     try:
         res = steps.run_handroute(cfg, action=a.action, nets=nets, staged=staged_path, dry_run=a.dry_run)
@@ -206,7 +211,9 @@ def cmd_handroute(a) -> int:
             print(f"handroute freeze: saved {res['segments']} segment(s), {res['vias']} via(s) to {res['base']}")
         else:
             print(f"handroute {a.action}: routed {len(res['routed_nets'])} net(s), {res['segments_added']} segment(s)")
-    return 0
+            if res.get("budget_exhausted"):
+                print(f"handroute stopped: {res['budget_exhausted']} (partial, not complete)", file=sys.stderr)
+    return 1 if res.get("budget_exhausted") else 0
 
 
 def add_parser(sub) -> None:
@@ -267,6 +274,9 @@ def add_parser(sub) -> None:
     hr.add_argument("action", nargs="?", default="status", choices=["status", "route", "freeze", "apply"])
     hr.add_argument("--nets", help="comma-separated net names to route")
     hr.add_argument("--staged", nargs="?", const="auto", help="write routed tracks to a staged .kicad_pcb copy")
+    hr.add_argument("--budget-seconds", type=float, help="total routing time budget (default 60s)")
+    hr.add_argument("--max-total-expand", type=int, help="total A* expansions across nets/widths")
+    hr.add_argument("--max-searches", type=int, help="total A* calls across nets/widths")
     hr.add_argument("--dry-run", action="store_true")
     hr.add_argument("--json", action="store_true")
     hr.set_defaults(fn=cmd_handroute)

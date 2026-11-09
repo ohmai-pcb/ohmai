@@ -1257,7 +1257,16 @@ def run_handroute(
         fresh_vias: list[dict] = []
         import numpy as np
 
+        hr = cfg.get("handroute") or {}
+        budget = grid_mod.SearchBudget(float(hr.get("budget_seconds", 60)),
+                                      int(hr.get("max_total_expand", 2_500_000)),
+                                      int(hr.get("max_searches", 128)))
+        stop_reasons = {}
+        unattempted = []
         for net_name in target_nets:
+            if budget.reason:
+                unattempted.append(net_name)
+                continue
             items = _handroute_copper_items(board, net_name, layers)
             islands = _handroute_islands(items)
             remaining_islands[net_name] = len(islands)
@@ -1294,11 +1303,14 @@ def run_handroute(
 
             best = None  # (remaining, track_w, paths) — prefer fewer remaining islands
             for track_w in try_widths:
+                if budget.reason:
+                    stop_reasons[net_name] = budget.reason
+                    break
                 free = {li: np.ones((g.ny, g.nx), dtype=bool) for li in layer_idxs}
                 viaok = np.ones((g.ny, g.nx), dtype=bool)
 
                 def _block_rect(li: int, x0: float, y0: float, x1: float, y1: float,
-                                _free=free) -> None:
+                                _free=free, g=g) -> None:
                     ix0, iy0 = g.cell(x0, y0)
                     ix1, iy1 = g.cell(x1, y1)
                     xa, xb = sorted((ix0, ix1))
@@ -1309,7 +1321,7 @@ def run_handroute(
                         _free[li][ya : yb + 1, xa : xb + 1] = False
 
                 def _block_viaok(x0: float, y0: float, x1: float, y1: float,
-                                 _viaok=viaok) -> None:
+                                 _viaok=viaok, g=g) -> None:
                     ix0, iy0 = g.cell(x0, y0)
                     ix1, iy1 = g.cell(x1, y1)
                     xa, xb = sorted((ix0, ix1))
@@ -1425,6 +1437,9 @@ def run_handroute(
                 terminals = [_handroute_terminal_cells(items, island, g, free) for island in islands]
                 paths = []
                 while len(terminals) > 1:
+                    if budget.reason:
+                        stop_reasons[net_name] = budget.reason
+                        break
                     for i, starts in enumerate(terminals):
                         if not starts:
                             continue
@@ -1434,13 +1449,18 @@ def run_handroute(
                         path = grid_mod.astar(
                             free, viaok, starts, goals, layer_idxs, cost_mult, res,
                             via_cost, pitch, max_expand=int(hr.get("max_expand", 2_500_000)),
+                            budget=budget,
                         )
                         if not path:
                             continue
-                        paths.append(path)
                         path_cells = set(path)
                         joined = {j for j, t in enumerate(terminals) if path_cells & t} | {i}
+                        if len(joined) < 2:
+                            # A malformed/zero-progress path must never restart the same loop.
+                            stop_reasons[net_name] = "no_progress"
+                            continue
                         merged = path_cells.union(*(terminals[j] for j in joined))
+                        paths.append(path)
                         terminals = [t for j, t in enumerate(terminals) if j not in joined] + [merged]
                         for before, after in zip(path, path[1:], strict=False):
                             if before[0] != after[0]:
@@ -1454,6 +1474,8 @@ def run_handroute(
                 if best is None or cand[0] < best[0] or (cand[0] == best[0] and cand[1] > best[1]):
                     # Prefer fewer remaining islands; tie-break prefer wider copper.
                     best = cand
+                if stop_reasons.get(net_name) == "no_progress":
+                    break
                 if rem <= 1:
                     break  # fully connected at this width
 
@@ -1511,6 +1533,11 @@ def run_handroute(
             "dry_run": dry_run,
             "routed_nets": sorted(routed.keys()),
             "remaining_islands": remaining_islands,
+            "budget_exhausted": budget.reason,
+            "stop_reasons": stop_reasons,
+            "unattempted_nets": unattempted,
+            "searches": budget.searches,
+            "expanded": budget.expanded,
             "segments_added": len(fresh_track_list),
             "vias_added": len(fresh_vias),
             "fanout_carried": len(carry_fanout),

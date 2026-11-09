@@ -43,6 +43,7 @@ DEFAULTS: dict = {
     "handroute": {"via_cost": 1.6, "plane_window": 4.0, "search_margin": 8.0, "neck_w": 0.15,
                   "neck_classes": ["Default"], "residual_neck": True, "alt_widths": OPEN, "no_inner": [], "no_rip": [], "rip_cap": 4,
                   "rip_pen": 0.4, "inner": {"cost": 4.0, "max_run": 2.5, "wide_w": 1.4, "narrow_pen": 0.3},
+                  "budget_seconds": 60.0, "max_searches": 128, "max_total_expand": 2500000,
                   "max_expand": 2500000, "solid_pads": OPEN, "manual": OPEN},
     "escape_room": None,
     "placement": None,

@@ -373,3 +373,30 @@ def test_handroute_try_widths_ladder():
     nc2 = {"name": "SW_NODE", "width": 0.8}
     assert steps._handroute_try_widths(hr2, nc2, "SW2_NODE") == [0.8, 0.4]
 
+
+
+def test_shared_expansion_budget_spans_nets(tmp_path):
+    cfg, _ = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105),
+                              _pad("C", 103, 110, "SECOND"), _pad("D", 117, 110, "SECOND")])
+    cfg["handroute"]["max_total_expand"] = 3
+    rep = steps.run_handroute(cfg, "route", ["SIG", "SECOND"], dry_run=True)
+    assert rep["expanded"] == 3
+    assert rep["budget_exhausted"] == "expansion_budget"
+    assert rep["unattempted_nets"] == ["SIG"]  # SECOND sorts first.
+    assert not rep["routes"]
+
+
+def test_zero_progress_path_never_repeats_loop(tmp_path, monkeypatch):
+    cfg, _ = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)])
+    calls = []
+
+    def broken(free, viaok, starts, goals, *args, **kwargs):
+        calls.append(1)
+        assert len(calls) <= 2
+        return [next(iter(starts))]
+
+    monkeypatch.setattr(grid, "astar", broken)
+    rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
+    assert rep["remaining_islands"] == {"SIG": 2}
+    assert rep["stop_reasons"] == {"SIG": "no_progress"}
+    assert not rep["routes"]

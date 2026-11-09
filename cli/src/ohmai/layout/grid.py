@@ -17,6 +17,7 @@ from __future__ import annotations
 import heapq
 import math
 import re
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -68,11 +69,39 @@ def near_path_via(parent: dict, s, y: int, x: int, pitch_cells: float) -> bool:
     return False
 
 
+class SearchBudget:
+    """Shared wall-clock, expansion and search caps across all nets and widths."""
+
+    def __init__(self, seconds=60.0, max_expand=2_500_000, max_searches=128):
+        if not math.isfinite(seconds) or seconds <= 0 or max_expand < 1 or max_searches < 1:
+            raise ValueError("routing budgets must be finite and positive")
+        self.deadline = time.monotonic() + seconds
+        self.max_expand = max_expand
+        self.max_searches = max_searches
+        self.expanded = 0
+        self.searches = 0
+
+    @property
+    def reason(self):
+        if time.monotonic() >= self.deadline:
+            return "time_budget"
+        if self.expanded >= self.max_expand:
+            return "expansion_budget"
+        if self.searches >= self.max_searches:
+            return "search_budget"
+        return None
+
+
 def astar(free: dict, viaok, starts, goals, layers, cost_mult: dict, res: float, via_cost: float,
-          pitch_cells: float, pen: dict | None = None, vpen=None, max_expand: int = 2_500_000):
+          pitch_cells: float, pen: dict | None = None, vpen=None, max_expand: int = 2_500_000,
+          budget: SearchBudget | None = None):
     """free[l]: NY x NX bool (track centre allowed), viaok: NY x NX bool, starts/goals: sets of (l, iy, ix).
     Returns the cell path [(l, iy, ix)] or None. Diagonal steps cost sqrt(2); a layer change costs via_cost (mm) and
     is refused within pitch_cells of the path's previous via."""
+    if budget is not None:
+        if budget.reason:
+            return None
+        budget.searches += 1
     if not goals or not starts:
         return None
     ny, nx = viaok.shape
@@ -96,6 +125,10 @@ def astar(free: dict, viaok, starts, goals, layers, cost_mult: dict, res: float,
     parent: dict = {}
     n = 0
     while pq:
+        # Search count is checked at entry; this in-flight search may finish at the cap.
+        if budget is not None and (budget.expanded >= budget.max_expand or
+                                   time.monotonic() >= budget.deadline):
+            return None
         _f, g, s, par = heapq.heappop(pq)
         if g > best.get(s, 1e18) + 1e-9 or s in parent:
             continue
@@ -107,6 +140,8 @@ def astar(free: dict, viaok, starts, goals, layers, cost_mult: dict, res: float,
                 path.append(parent[path[-1]])
             return path[::-1]
         n += 1
+        if budget is not None:
+            budget.expanded += 1
         if n > max_expand:
             return None
         for dy, dx, c in DIRS:
