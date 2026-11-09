@@ -148,3 +148,13 @@ def test_astar_shared_search_cap():
     assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget)
     assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget) is None
     assert budget.searches == 1
+
+
+def test_astar_cannot_cut_through_a_subfloor_diagonal_corner():
+    free = {0: np.zeros((3, 3), dtype=bool)}
+    free[0][1, 0] = free[0][0, 1] = True
+    viaok = np.zeros((3, 3), dtype=bool)
+    args = ({(0, 1, 0)}, {(0, 0, 1)}, [0], {0: 1}, 0.05, 1.6, 4)
+    assert G.astar(free, viaok, *args) is None
+    free[0][0, 0] = True
+    assert G.astar(free, viaok, *args) is not None

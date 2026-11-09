@@ -53,6 +53,7 @@ def _class_for_net(rules: dict, net: str | None) -> dict:
                 cls[k] = v
     return {
         "name": cname if cname in classes else "Default",
+        "min_width": max(0.127, float(cls.get("min_width") or rules.get("min_track_width") or 0.0)),
         "width": float(cls.get("width") or rules.get("track_w", 0.15)),
         "clearance": float(cls.get("clearance") or rules.get("clearance", 0.1)),
         "via_d": float(cls.get("via_d") or rules.get("via_d", 0.45)),
@@ -86,21 +87,22 @@ def _handroute_try_widths(hr: dict, nc: dict, net_name: str) -> list[float]:
     also try ~half width (floored at neck_w) and neck_w itself so dense power
     islands can still bridge without a project-specific alt list.
     """
-    full = float(nc["width"])
+    floor = max(0.127, float(nc.get("min_width") or 0.0))
+    full = max(float(nc["width"]), floor)
     out: list[float] = [full]
     alts = hr.get("alt_widths") or {}
     for key in (net_name, nc.get("name")):
         if not key:
             continue
         for w in alts.get(key) or []:
-            wf = float(w)
+            wf = max(float(w), floor)
             if 0 < wf < full - 1e-9 and all(abs(wf - x) > 1e-9 for x in out):
                 out.append(wf)
     allow_neck = bool(hr.get("residual_neck", True)) or (
         nc.get("name") in set(hr.get("neck_classes") or [])
     )
     if allow_neck:
-        neck = float(hr.get("neck_w") or 0.15)
+        neck = max(floor, float(hr.get("neck_w") or 0.15))
         # Prefer the widest residual that still fits: 3/4 → 1/2 → 2/5 → neck floor.
         for frac in (0.75, 0.5, 0.375):
             w = max(neck, round(full * frac, 3))
@@ -1185,7 +1187,7 @@ def _handroute_islands(items: list) -> list[list[int]]:
     return islands
 
 
-def _handroute_terminal_cells(items: list, island: list[int], g, free: dict) -> set:
+def _handroute_terminal_cells(items: list, island: list[int], g, free: dict, inset: float = 0.0, anchors: dict | None = None) -> set:
     """Rasterize copper centres, never overriding inflated foreign-copper obstacles.
 
     Own copper was never blocked. Filtering by free also avoids seeding A* inside
@@ -1199,6 +1201,11 @@ def _handroute_terminal_cells(items: list, island: list[int], g, free: dict) -> 
         for li, shape in items[i][1].items():
             if li not in free:
                 continue
+            core = shape.buffer(-inset) if inset else shape
+            if core.is_empty:
+                continue
+            if anchors is None:
+                shape = core
             x0, y0, x1, y1 = shape.bounds
             ix0, iy0 = g.cell(x0, y0)
             ix1, iy1 = g.cell(x1, y1)
@@ -1210,7 +1217,11 @@ def _handroute_terminal_cells(items: list, island: list[int], g, free: dict) -> 
             mask = intersects_xy(shape, g.x0 + (xs + 0.5) * g.res,
                                  g.y0 + (ys + 0.5) * g.res)
             mask &= free[li][ya:yb + 1, xa:xb + 1]
-            cells.update((li, int(y), int(x)) for y, x in zip(ys[mask], xs[mask], strict=True))
+            for y, x in zip(ys[mask], xs[mask], strict=True):
+                cell = (li, int(y), int(x))
+                cells.add(cell)
+                if anchors is not None:
+                    anchors.setdefault(cell, core)
     return cells
 
 
@@ -1220,6 +1231,7 @@ def run_handroute(
     nets: list[str] | None = None,
     staged: Path | None = None,
     dry_run: bool = False,
+    verify_drc: bool = False,
 ) -> dict:
     pcb = Path(cfg["board"])
     base_path = Path(cfg["base"])
@@ -1272,8 +1284,27 @@ def run_handroute(
         n_seg = sum(1 for _ in sexp.walk(tree, "segment"))
         if n_via + n_seg == 0:
             raise ValueError(f"{src}: staged board has no vias/segments to apply")
-        if not dry_run:
+        verification = None
+        rules = cfg.get("rules_resolved") or {}
+        if verify_drc or float(rules.get("min_connection") or 0) > 0:
+            import tempfile
+
+            from . import native_guard
+
+            floor = max(0.127, float(rules.get("min_track_width") or 0),
+                        float(rules.get("min_connection") or 0))
+            with tempfile.TemporaryDirectory(prefix="ohmai-handroute-apply-") as directory:
+                candidate = Path(directory) / "candidate.kicad_pcb"
+                shutil.copy2(src, candidate)
+                _ensure_staged_project_files(pcb, candidate)
+                verification = native_guard.validate(pcb, candidate, set(nets or []), floor)
+        rejected = verification is not None and not verification["ok"]
+        if not dry_run and not rejected:
+            from datetime import datetime
+
             pcb.parent.mkdir(parents=True, exist_ok=True)
+            if pcb.exists():
+                shutil.copy2(pcb, str(pcb) + ".bak." + datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
             shutil.copy2(src, pcb)
         return {
             "action": "apply",
@@ -1281,9 +1312,11 @@ def run_handroute(
             "staged": str(src),
             "dry_run": dry_run,
             "routed_nets": [],
-            "segments_added": n_seg,
+            "segments_added": 0 if rejected else n_seg,
             "vias_on_staged": n_via,
-            "promoted": not dry_run,
+            "promoted": not dry_run and not rejected,
+            "proposal_rejected": rejected,
+            "verification": verification,
             "routes": {},
         }
 
@@ -1346,6 +1379,8 @@ def run_handroute(
             bounds = [shape.bounds for _, shapes in items for shape in shapes.values()]
             nc = _class_for_net(rules, net_name)
             hr = cfg.get("handroute") or {}
+            nc["min_width"] = max(nc["min_width"], float(rules.get("min_track_width") or 0.127),
+                                  float(rules.get("min_connection") or 0.0))
             try_widths = _handroute_try_widths(hr, nc, net_name)
             margin = float(hr.get("search_margin", 8.0))
             bbox = (
@@ -1377,6 +1412,17 @@ def run_handroute(
                     break
                 free = {li: np.ones((g.ny, g.nx), dtype=bool) for li in layer_idxs}
                 viaok = np.ones((g.ny, g.nx), dtype=bool)
+                xs = g.x0 + (np.arange(g.nx) + 0.5) * g.res
+                ys = g.y0 + (np.arange(g.ny) + 0.5) * g.res
+
+                def edge_legal(radius, xs=xs, ys=ys):
+                    margin = float(rules.get("edge") or 0) + radius
+                    return ((ys[:, None] >= eb[1] + margin) & (ys[:, None] <= eb[3] - margin)
+                            & (xs[None, :] >= eb[0] + margin) & (xs[None, :] <= eb[2] - margin))
+
+                for li in layer_idxs:
+                    free[li] &= edge_legal(track_w / 2)
+                viaok &= edge_legal(via_d_net / 2)
 
                 def _block_rect(li: int, x0: float, y0: float, x1: float, y1: float,
                                 _free=free, g=g) -> None:
@@ -1411,6 +1457,22 @@ def run_handroute(
                         t = i / n
                         _block_disk(li, x0 + t * (x1 - x0), y0 + t * (y1 - y0), half)
 
+                def _block_shape(shape, array, g=g):
+                    from shapely import intersects_xy
+
+                    x0, y0, x1, y1 = shape.bounds
+                    ix0, iy0 = g.cell(x0, y0)
+                    ix1, iy1 = g.cell(x1, y1)
+                    xa, xb = max(0, ix0), min(g.nx - 1, ix1)
+                    ya, yb = max(0, iy0), min(g.ny - 1, iy1)
+                    if xa <= xb and ya <= yb:
+                        ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
+                        mask = intersects_xy(shape, g.x0 + (xs + 0.5) * g.res,
+                                             g.y0 + (ys + 0.5) * g.res)
+                        array[ya:yb + 1, xa:xb + 1] &= ~mask
+
+                from shapely.geometry import LineString, Polygon, box
+
                 # Inflate obstacles by clearance + half our track width so wide power tracks don't short.
                 for op in board.pads():
                     if _same_net(op.net, net_name):
@@ -1440,15 +1502,34 @@ def run_handroute(
                     li = layers.index(seg.layer)
                     grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + track_w / 2
                     _block_thick_seg(li, seg.x0, seg.y0, seg.x1, seg.y1, grow)
+                    via_grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + via_d_net / 2
+                    _block_shape(LineString([(seg.x0, seg.y0), (seg.x1, seg.y1)]).buffer(via_grow), viaok)
                 for v in board.vias:
                     if _same_net(v.net, net_name):
                         continue
                     grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
                     for li in layer_idxs:
                         _block_disk(li, v.x, v.y, grow)
-                # Keepouts (unfilled) block; foreign filled pours do not (AABB would wall a plane).
+                    via_grow = max(v.size / 2 + _pair_clearance(rules, net_name, v.net) + via_d_net / 2,
+                                   v.drill / 2 + float(nc["via_h"]) / 2 + float(rules.get("hole_hole", 0.25)))
+                    _block_viaok(v.x-via_grow, v.y-via_grow, v.x+via_grow, v.y+via_grow)
+                # Protect foreign power pours as actual polygons, not AABBs. Ground
+                # planes may be repoured around routes; native DRC still checks that
+                # doing so does not disconnect them or any other net.
                 for z in getattr(board, "zones", []) or []:
                     if getattr(z, "filled", True):
+                        if _same_net(z.net, net_name) or z.net in (cfg.get("planes") or {}):
+                            continue
+                        points = getattr(z, "polygon", None)
+                        shape = Polygon(points) if points else box(*z.box)
+                        if not shape.is_valid:
+                            shape = shape.buffer(0)
+                        if shape.is_empty:
+                            continue
+                        clearance = _pair_clearance(rules, net_name, z.net)
+                        if z.layer in layers:
+                            _block_shape(shape.buffer(clearance + track_w / 2), free[layers.index(z.layer)])
+                        _block_shape(shape.buffer(clearance + via_d_net / 2), viaok)
                         continue
                     if z.layer not in layers:
                         continue
@@ -1476,18 +1557,29 @@ def run_handroute(
                     li = layers.index(seg["layer"])
                     grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + track_w / 2
                     _block_thick_seg(li, seg["x0"], seg["y0"], seg["x1"], seg["y1"], grow)
+                    via_grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + via_d_net / 2
+                    _block_shape(LineString([(seg["x0"], seg["y0"]), (seg["x1"], seg["y1"])]).buffer(via_grow), viaok)
                 for v in fresh_vias:
                     if _same_net(v["net"], net_name):
                         continue
                     grow = float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + track_w / 2
                     for li in layer_idxs:
                         _block_disk(li, v["x"], v["y"], grow)
+                    via_grow = max(float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + via_d_net / 2,
+                                   float(v["drill"]) / 2 + float(nc["via_h"]) / 2 + float(rules.get("hole_hole", 0.25)))
+                    _block_viaok(v["x"]-via_grow, v["y"]-via_grow, v["x"]+via_grow, v["y"]+via_grow)
 
                 # Never reopen foreign clearance envelopes under own copper. Pads
                 # already inside a safety envelope may have no legal escape; do not
                 # manufacture an unsafe route by marking their interior free again.
 
-                terminals = [_handroute_terminal_cells(items, island, g, free) for island in islands]
+                # A grid centre can barely touch a pad/track. Extend route ends
+                # into its eroded copper core rather than trusting that sliver.
+                terminal_anchors = {}
+                terminals = [_handroute_terminal_cells(items, island, g, free,
+                                                       inset=nc["min_width"] / 2 + 0.002,
+                                                       anchors=terminal_anchors)
+                             for island in islands]
                 paths = []
                 while len(terminals) > 1:
                     if budget.reason:
@@ -1514,6 +1606,8 @@ def run_handroute(
                             continue
                         merged = path_cells.union(*(terminals[j] for j in joined))
                         paths.append(path)
+                        for cell in path:
+                            terminal_anchors.setdefault(cell, None)  # New path centreline is a full-width landing.
                         terminals = [t for j, t in enumerate(terminals) if j not in joined] + [merged]
                         for before, after in zip(path, path[1:], strict=False):
                             if before[0] != after[0]:
@@ -1523,7 +1617,7 @@ def run_handroute(
                     else:
                         break
                 rem = len(terminals)
-                cand = (rem, track_w, paths)
+                cand = (rem, track_w, paths, terminal_anchors)
                 if best is None or cand[0] < best[0] or (cand[0] == best[0] and cand[1] > best[1]):
                     # Prefer fewer remaining islands; tie-break prefer wider copper.
                     best = cand
@@ -1540,6 +1634,17 @@ def run_handroute(
                 for path in best[2]:
                     runs = grid_mod.simplify(path, g.xy)
                     seg_pairs, via_pts = grid_mod.runs_to_segments(runs)
+                    from shapely.geometry import Point
+                    from shapely.ops import nearest_points
+
+                    for cell in (path[0], path[-1]):
+                        core = best[3].get(cell)
+                        if core is not None:
+                            centre = g.xy(cell[2], cell[1])
+                            point = nearest_points(core, Point(centre))[0]
+                            anchor = (point.x, point.y)
+                            if math.dist(centre, anchor) > 1e-6:
+                                seg_pairs.append((cell[0], centre, anchor))
                     for l0, a, bpt in seg_pairs:
                         segs.append({
                             "net": net_name,
@@ -1566,8 +1671,47 @@ def run_handroute(
         fresh_track_list = [s for segs in routed.values() for s in segs]
         all_tracks = list(keep_tracks) + fresh_track_list
         all_vias = list(carry_fanout) + list(keep_vias) + list(fresh_vias)
+        verification = None
+        rejected = None
+        proposal_counts = None
+        if fresh_track_list or fresh_vias:
+            if verify_drc or float(rules.get("min_connection") or 0) > 0:
+                import tempfile
+
+                from . import native_guard
+
+                with tempfile.TemporaryDirectory(prefix="ohmai-handroute-proposal-") as directory:
+                    proposal = Path(directory) / "proposal.kicad_pcb"
+                    _append_copper_to_pcb(pcb, proposal, all_vias, all_tracks,
+                                          float(rules["via_d"]), float(rules["via_h"]), float(rules["track_w"]))
+                    _ensure_staged_project_files(pcb, proposal)
+                    floor = max(0.127, float(rules.get("min_track_width") or 0),
+                                float(rules.get("min_connection") or 0),
+                                *(_class_for_net(rules, n)["min_width"] for n in target_nets))
+                    # Compare against the complete pre-call staged board, not
+                    # just live copper: otherwise a sibling net improved in an
+                    # earlier staged call could silently regress to the live count.
+                    reference = Path(directory) / "reference.kicad_pcb"
+                    shutil.copy2(route_src, reference)
+                    _ensure_staged_project_files(pcb, reference)
+                    verification = native_guard.validate(reference, proposal, set(target_nets), floor)
+                if not verification["ok"]:
+                    rejected = verification
+                    proposal_counts = dict(segments=len(fresh_track_list), vias=len(fresh_vias),
+                                           predicted_islands=dict(remaining_islands))
+                    stop_reasons.update({n: "native_drc_rejected" for n in routed})
+                    routed = {}
+                    fresh_track_list = []
+                    fresh_vias = []
+                    remaining_islands = dict(initial_islands)
         dst = None if dry_run else (staged or pcb)
-        if dst is not None:
+        if rejected:
+            # Back off atomically, including for a staged-chain caller: retain the
+            # exact pre-call staged source instead of replacing it with a bad route.
+            if dst is not None and not Path(dst).exists():
+                shutil.copy2(route_src, dst)
+                _ensure_staged_project_files(pcb, Path(dst))
+        elif dst is not None:
             # Wipe-or-replace from live: fanout + kept sibling handroute + this call's copper.
             # Re-routed nets are not in keep_* so they cannot double on a second --staged run.
             if all_tracks or all_vias:
@@ -1589,7 +1733,10 @@ def run_handroute(
             "remaining_islands": remaining_islands,
             "predicted_islands": remaining_islands,
             "already_connected_nets": sorted(n for n, count in initial_islands.items() if count < 2),
-            "copper_written": dst is not None and bool(all_tracks or all_vias),
+            "copper_written": not rejected and dst is not None and bool(all_tracks or all_vias),
+            "verification": verification,
+            "proposal_rejected": rejected is not None,
+            "rejected_proposal": proposal_counts,
             "budget_exhausted": (budget.reason if unattempted or
                                  any(count > 1 for count in remaining_islands.values()) else None),
             "stop_reasons": stop_reasons,

@@ -199,7 +199,8 @@ def cmd_handroute(a) -> int:
             cfg["handroute"][key] = value
     nets = [n.strip() for n in a.nets.split(",") if n.strip()] if a.nets else None
     try:
-        res = steps.run_handroute(cfg, action=a.action, nets=nets, staged=staged_path, dry_run=a.dry_run)
+        res = steps.run_handroute(cfg, action=a.action, nets=nets, staged=staged_path,
+                                  dry_run=a.dry_run, verify_drc=(a.action in {"route", "apply"}))
     except Exception as e:
         print(f"ohmai layout handroute: {e}", file=sys.stderr)
         return 1
@@ -214,7 +215,10 @@ def cmd_handroute(a) -> int:
             print(f"handroute {a.action}: routed {len(res['routed_nets'])} net(s), {res['segments_added']} segment(s)")
             if res.get("budget_exhausted"):
                 print(f"handroute stopped: {res['budget_exhausted']} (partial, not complete)", file=sys.stderr)
-    return 1 if res.get("budget_exhausted") else 0
+            if res.get("proposal_rejected"):
+                print("handroute rejected: native DRC found narrow connections, illegal copper or worse nets; no copper written",
+                      file=sys.stderr)
+    return 1 if res.get("budget_exhausted") or res.get("proposal_rejected") else 0
 
 
 def add_parser(sub) -> None:

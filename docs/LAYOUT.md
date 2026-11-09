@@ -109,3 +109,44 @@ the authority for the written board's connectivity.
 Handroute also respects resolved custom footprint safety clearances for both
 track and via occupancy. Copper inside a foreign safety envelope is never
 reopened as an A* seed merely because an own-net pad or track overlaps it.
+
+### Handroute manufacturing floor and native acceptance gate
+
+Routing widths (including `neck_w` and `alt_widths`) cannot fall below the greater
+of 0.127 mm, the board minimum track/connection width, and an explicit class
+`min_width`/`min_track_width`. A class `width`/KiCad `track_width` is a preferred width,
+not itself a minimum. A corridor below the floor is blocked; the search may take
+another corridor or change layers. Diagonal moves cannot squeeze between blocked
+orthogonal cells. Terminal stubs enter the copper core rather than merely
+clipping an edge: a nominally wide track can otherwise have a much narrower
+physical connection. Custom `edge_clearance` constraints also raise both handroute and fanout setbacks.
+Via placement uses the **via** radius against tracks and
+other vias, including drill-to-drill spacing, rather than the smaller track radius.
+
+Foreign filled power pours are protected using their actual polygons; they must
+not be cut into disconnected islands by new tracks. Configured plane nets can
+still refill around routes, but are subject to the same final connectivity guard.
+
+The CLI validates a proposal before writing copper: on private board/project/rule
+copies it refills zones with `pcbnew`, then runs
+`kicad-cli pcb drc --format json --severity-all`. It refuses new sub-floor contacts,
+new copper clearance/short/crossing violations, or an increased KiCad unconnected
+item count on **any** net (including non-target nets). Existing warnings are not
+silently treated as new routing failures. This is an atomic back-off, not a promise
+to find a second complete routing solution after a DRC rejection. The result's
+`verification` and `rejected_proposal` explain attempted progress; accepted copper
+counts remain zero on rejection and `proposal_rejected` is true. An existing
+staged input is left untouched; a newly requested staged file contains only the
+original copper. CLI rejection exits with status 1. Dry-run performs the same
+native checks but never writes copper or base/routes JSON files.
+
+`handroute apply` runs the same native gate before promotion and backs up an
+existing destination with a timestamped `.bak` copy.
+
+Native validation requires `kicad-cli` and a Python interpreter with KiCad's
+`pcbnew` module (the system Python by default; override with
+`OHMAI_KICAD_PYTHON`). Missing tools or validation failures reject the proposal;
+there is no CLI bypass. Library callers can explicitly request `verify_drc=True`;
+it is automatic when resolved board rules declare a positive `min_connection`.
+Each native refill/DRC subprocess has a 60-second timeout, separate from the
+bounded path-search budget.

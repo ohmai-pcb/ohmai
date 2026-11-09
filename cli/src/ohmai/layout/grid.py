@@ -147,6 +147,8 @@ def astar(free: dict, viaok, starts, goals, layers, cost_mult: dict, res: float,
         for dy, dx, c in DIRS:
             yy, xx = y + dy, x + dx
             if 0 <= yy < ny and 0 <= xx < nx and free[l_][yy, xx]:
+                if dy and dx and (not free[l_][y, xx] or not free[l_][yy, x]):
+                    continue  # A diagonal may not squeeze between two blocked corners.
                 ng = g + c * res * cost_mult[l_] + (pen[l_][yy, xx] if pen is not None else 0.0)
                 t = (l_, yy, xx)
                 if ng < best.get(t, 1e18):

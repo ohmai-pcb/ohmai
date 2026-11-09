@@ -60,3 +60,27 @@ def test_pour_defaults_and_config_path(tmp_path):
     c = lcfg.load(p)
     assert c["pour"]["min_neck"] == 0.5 and c["pour"]["local"] == {"refs": ["U1"], "margin": 2.0,
                                                                    "decoupler_prefix": "C", "decoupler_dist": 2.0}
+
+
+def test_manufacturing_width_floor_and_explicit_class_minimum(tmp_path):
+    import copy
+
+    pro = copy.deepcopy(PRO)
+    pro['board']['design_settings']['rules']['min_track_width'] = 0.1
+    pro['net_settings']['classes'][1]['min_width'] = 0.18
+    c = lcfg.load(proj(tmp_path, None, pro))
+    assert c['rules_resolved']['min_track_width'] == 0.127
+    assert c['rules_resolved']['classes']['Power']['min_width'] == 0.18
+    (tmp_path / 'hardware' / 't.kicad_dru').write_text(
+        '(version 1)\n(rule "fictional width floor" (constraint track_width (min 0.2mm)))\n')
+    c = lcfg.load(proj(tmp_path, None, pro))
+    assert c['rules_resolved']['min_track_width'] == 0.2
+
+
+def test_safety_custom_edge_setback_applies_to_handroute_and_fanout(tmp_path):
+    p = proj(tmp_path, None, PRO)
+    (tmp_path / 'hardware' / 't.kicad_dru').write_text(
+        '(version 1)\n(rule "fictional SAFETY edge" (constraint edge_clearance (min 0.5mm)))\n')
+    rules = lcfg.load(p)['rules_resolved']
+    assert rules['edge'] == 0.5
+    assert rules['fanout']['edge'] >= 0.5

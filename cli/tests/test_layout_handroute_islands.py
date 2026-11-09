@@ -326,10 +326,11 @@ def test_filled_zone_merges_pad_islands(tmp_path):
     assert "SIG" not in rep.get("routed_nets", [])
 
 
-def test_foreign_filled_zone_does_not_aabb_block_route(tmp_path):
-    """Filled pour AABBs must not wall off free space (stereo GND/power planes)."""
+def test_foreign_plane_can_be_repoured_without_aabb_blocking(tmp_path):
+    """Configured planes can refill; native validation protects their connectivity."""
     cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)], layers=["F.Cu"], margin=2.0)
     _inject_zone(pcb, "OTHER", [(109, 100), (111, 100), (111, 120), (109, 120)], filled=True)
+    cfg["planes"] = {"OTHER": {}}
     rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
     assert rep["routed_nets"] == ["SIG"]
     assert rep["remaining_islands"]["SIG"] == 1
@@ -460,3 +461,157 @@ def test_completing_at_search_cap_is_not_reported_as_exhausted(tmp_path):
     assert result['searches'] == 1
     assert result['remaining_islands'] == {'SIG': 1}
     assert result['budget_exhausted'] is None
+
+
+def test_neck_and_alt_widths_never_cross_class_or_jlc_floor():
+    hr = {'neck_w': 0.01, 'alt_widths': {'SIG': [0.02, 0.1, 0.18]}}
+    widths = steps._handroute_try_widths(hr, {'width': 0.2, 'min_width': 0.18}, 'SIG')
+    assert widths == [0.2, 0.18]
+    assert steps._handroute_try_widths(hr, {'width': 0.05}, 'OTHER') == [0.127]
+
+
+def test_terminal_anchor_extends_past_sliver_into_copper_core():
+    from shapely.geometry import Point, box
+    from shapely.ops import nearest_points
+    g = grid.Grid.around((0, 0, 2, 2), 0.1)
+    free = {0: np.ones((g.ny, g.nx), dtype=bool)}
+    shape = box(0.01, 0.01, 0.6, 0.6)
+    anchors = {}
+    cells = steps._handroute_terminal_cells([('SIG', {0: shape})], [0], g, free,
+                                            inset=0.127 / 2 + 0.002, anchors=anchors)
+    corner = (0, 0, 0)
+    assert corner in cells  # Grid centre at 0.05,0.05 has a shallow corner contact.
+    centre = Point(g.xy(0, 0))
+    anchor = nearest_points(anchors[corner], centre)[0]
+    assert anchor.distance(centre) > 0
+    assert shape.covers(anchor.buffer(0.127 / 2))
+
+
+def test_native_rejection_backs_off_before_any_copper_write(tmp_path, monkeypatch):
+    from ohmai.layout import native_guard
+    cfg, pcb = _case(tmp_path, [_pad('A', 103, 105), _pad('B', 117, 105)])
+    content = pcb.read_bytes()
+    monkeypatch.setattr(native_guard, 'validate', lambda *a: {'ok': False, 'worse_nets': {'VIN_BB': [0, 1]}})
+    staged = tmp_path / 'guarded.kicad_pcb'
+    result = steps.run_handroute(cfg, 'route', ['SIG'], staged=staged, verify_drc=True)
+    assert result['proposal_rejected'] and result['rejected_proposal']['segments'] > 0
+    assert not result['copper_written'] and not result['routed_nets']
+    assert result['segments_added'] == 0
+    assert result['remaining_islands'] == result['initial_islands'] == {'SIG': 2}
+    assert staged.read_bytes() == pcb.read_bytes() == content
+
+
+@pytest.mark.parametrize("layers", [["F.Cu"], ["F.Cu", "B.Cu"]])
+def test_foreign_power_pour_is_preserved_with_layer_alternative(tmp_path, layers):
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)], layers=layers, margin=2.0)
+    _inject_zone(pcb, "OTHER", [(109, 100), (111, 100), (111, 120), (109, 120)], filled=True)
+    rep = steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)
+    if len(layers) == 1:
+        assert rep["routed_nets"] == []
+    else:
+        assert rep["routed_nets"] == ["SIG"]
+        assert any(seg["layer"] == "B.Cu" for seg in rep["routes"]["SIG"])
+        assert rep["vias_added"] >= 2
+
+
+def test_foreign_via_radius_is_included_in_via_placement_clearance(tmp_path, monkeypatch):
+    cfg, _ = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)],
+                   vias=[(110, 105, "OTHER")], margin=2)
+    real = grid.astar
+    seen = []
+
+    def spy(free, viaok, starts, goals, *args, **kwargs):
+        items = steps._handroute_copper_items(L.load(Path(cfg["board"])), "SIG", cfg["signal_layers"])
+        bounds = [s.bounds for _, shapes in items for s in shapes.values()]
+        g = grid.Grid.around((min(b[0] for b in bounds) - 2, min(b[1] for b in bounds) - 2,
+                              max(b[2] for b in bounds) + 2, max(b[3] for b in bounds) + 2), 0.1)
+        x, y = g.cell(110.5, 105)
+        # Track clearance alone permits this centre, but two via radii plus
+        # clearance do not. Via obstacles must not reuse track radius masks.
+        assert not viaok[y, x]
+        seen.append(True)
+        return real(free, viaok, starts, goals, *args, **kwargs)
+
+    monkeypatch.setattr(grid, "astar", spy)
+    assert steps.run_handroute(cfg, "route", ["SIG"], dry_run=True)["routed_nets"] == ["SIG"]
+    assert seen
+
+
+def test_native_guard_compares_complete_precall_staged_copper(tmp_path, monkeypatch):
+    from ohmai.layout import native_guard
+
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)])
+    staged = tmp_path / 'staged.kicad_pcb'
+    steps._append_copper_to_pcb(pcb, staged, [], [dict(net='OTHER', layer='B.Cu',
+        x0=104, y0=110, x1=106, y1=110, width=.2)], .45, .2, .2)
+    expected = staged.read_bytes()
+
+    def check(before, after, *args):
+        assert before.read_bytes() == expected
+        assert before.read_bytes() != pcb.read_bytes()
+        return {'ok': False}
+
+    monkeypatch.setattr(native_guard, 'validate', check)
+    result = steps.run_handroute(cfg, 'route', ['SIG'], staged=staged, verify_drc=True)
+    assert result['proposal_rejected']
+    assert staged.read_bytes() == expected
+
+
+def test_apply_cannot_bypass_native_rejection(tmp_path, monkeypatch):
+    from ohmai.layout import native_guard
+
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)])
+    original = pcb.read_bytes()
+    staged = tmp_path / 'staged.kicad_pcb'
+    steps._append_copper_to_pcb(pcb, staged, [], [dict(net='SIG', layer='F.Cu',
+        x0=103, y0=105, x1=117, y1=105, width=.1)], .45, .2, .2)
+    monkeypatch.setattr(native_guard, 'validate', lambda *a: {'ok': False})
+    result = steps.run_handroute(cfg, 'apply', staged=staged, verify_drc=True)
+    assert result['proposal_rejected'] and not result['promoted']
+    assert result['segments_added'] == 0
+    assert pcb.read_bytes() == original
+
+
+@pytest.mark.parametrize('layers', [['F.Cu'], ['F.Cu', 'B.Cu']])
+def test_subfloor_corridor_is_blocked_and_layer_detour_is_available(tmp_path, layers):
+    # Fictional 0.30 mm copper gap minus two 0.10 mm clearances permits
+    # only a 0.10 mm trace: below the 0.127 mm manufacturing floor.
+    walls = [('OTHER', (110, 100), (110, 104.775), 'F.Cu'),
+             ('OTHER', (110, 105.225), (110, 120), 'F.Cu')]
+    cfg, _ = _case(tmp_path, [_pad('A', 103, 105), _pad('B', 117, 105)],
+                   tracks=walls, layers=layers, margin=2)
+    cfg['grid']['res'] = .05
+    cfg['handroute'].update(neck_w=.0175, alt_widths={'SIG': [.0175, .1]})
+    rep = steps.run_handroute(cfg, 'route', ['SIG'], dry_run=True)
+    if len(layers) == 1:
+        assert rep['routed_nets'] == []
+    else:
+        assert rep['routed_nets'] == ['SIG']
+        assert any(s['layer'] == 'B.Cu' for s in rep['routes']['SIG'])
+        assert min(s['width'] for s in rep['routes']['SIG']) >= .127
+        assert rep['vias_added'] >= 2
+
+
+def test_edge_setback_includes_track_or_via_radius(tmp_path, monkeypatch):
+    cfg, _ = _case(tmp_path, [_pad('A', 100.4, 105), _pad('B', 117, 105)], margin=2)
+    cfg['rules_resolved']['edge'] = .5
+    real = grid.astar
+    seen = []
+
+    def spy(free, viaok, starts, goals, *args, **kwargs):
+        items = steps._handroute_copper_items(L.load(Path(cfg['board'])), 'SIG', cfg['signal_layers'])
+        bounds = [s.bounds for _, shapes in items for s in shapes.values()]
+        g = grid.Grid.around((100, min(b[1] for b in bounds) - 2,
+                              max(b[2] for b in bounds) + 2, max(b[3] for b in bounds) + 2), .1)
+        x, y = g.cell(100.55, 105)
+        assert not free[0][y, x]  # A centreline setback alone is insufficient.
+        x, y = g.cell(100.65, 105)
+        assert free[0][y, x] and not viaok[y, x]
+        x, y = g.cell(100.85, 105)
+        assert viaok[y, x]
+        seen.append(True)
+        return real(free, viaok, starts, goals, *args, **kwargs)
+
+    monkeypatch.setattr(grid, 'astar', spy)
+    assert steps.run_handroute(cfg, 'route', ['SIG'], dry_run=True)['routed_nets'] == ['SIG']
+    assert seen

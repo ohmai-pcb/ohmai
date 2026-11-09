@@ -107,6 +107,10 @@ def resolve_rules(cfg: dict) -> dict:
     ns = data.get("net_settings", {})
     classes = {c["name"]: {"clearance": c.get("clearance", 0.1), "width": c.get("track_width", 0.15),
                            "via_d": c.get("via_diameter"), "via_h": c.get("via_drill")} for c in ns.get("classes", [])}
+    for c in ns.get("classes", []):
+        minimum = c.get("min_width", c.get("min_track_width"))
+        if minimum is not None:
+            classes[c["name"]]["min_width"] = minimum
     classes.setdefault("Default", {"clearance": 0.1, "width": 0.15, "via_d": 0.45, "via_h": 0.2})
     for name, over in (cfg.get("classes") or {}).items():
         classes.setdefault(name, dict(classes["Default"])).update(over or {})
@@ -115,6 +119,9 @@ def resolve_rules(cfg: dict) -> dict:
     via_hole_cu = rules["via_hole_cu"] if rules["via_hole_cu"] is not None else r.get("min_hole_clearance", 0.25)
     # Board-setup via floors (KiCad DRC via_diameter / drill_out_of_range). Prefer netclass sizes
     # when present, but never emit below these mins. .kicad_dru may raise them further.
+    min_track_w = max(0.127, float(r.get("min_track_width") or 0.0))
+    min_connection = float(r.get("min_connection") or 0.0)
+    edge_clearance = float(rules["edge"] if rules["edge"] is not None else r.get("min_copper_edge_clearance", 0.2))
     min_via_d = float(r.get("min_via_diameter") or 0.0)
     min_via_h = float(r.get("min_through_hole_diameter") or 0.0)
     min_via_ann = float(r.get("min_via_annular_width") or 0.0)
@@ -128,6 +135,17 @@ def resolve_rules(cfg: dict) -> dict:
         # the whole footprint, not just the condition's narrower object pairing.
         clean = _re.sub(r"(?m)^\s*#.*$", "", dru)
         tree = sexp.parse("(rules " + clean + ")")
+        for constraint in sexp.walk(tree, "constraint"):
+            if constraint[1] in {"track_width", "edge_clearance"}:
+                minimum = sexp.first(constraint, "min")
+                if minimum and _re.fullmatch(r"[0-9.]+mm", str(minimum[1])):
+                    # Conservative: conditional track minima may raise the global
+                    # floor but can never lower a class or board manufacturing rule.
+                    value = float(str(minimum[1])[:-2])
+                    if constraint[1] == "track_width":
+                        min_track_w = max(min_track_w, value)
+                    else:
+                        edge_clearance = max(edge_clearance, value)
         for rule in sexp.find(tree, "rule"):
             cond = sexp.first(rule, "condition")
             if not cond:
@@ -161,6 +179,8 @@ def resolve_rules(cfg: dict) -> dict:
         ):
             min_via_ann = max(min_via_ann, float(m.group(1)))
     out = {
+        "min_track_width": min_track_w,
+        "min_connection": min_connection,
         "pad_clearances": pad_clearances,
         "classes": classes,
         "patterns": [(p["pattern"], p["netclass"]) for p in ns.get("netclass_patterns", []) or []],
@@ -173,7 +193,7 @@ def resolve_rules(cfg: dict) -> dict:
         "via_hole_cu": via_hole_cu,
         "pth_hole_trk": rules["pth_hole_trk"] if rules["pth_hole_trk"] is not None else via_hole_cu,
         "hole_hole": rules["hole_hole"] if rules["hole_hole"] is not None else r.get("min_hole_to_hole", 0.25),
-        "edge": rules["edge"] if rules["edge"] is not None else r.get("min_copper_edge_clearance", 0.2),
+        "edge": edge_clearance,
     }
     fo = cfg["fanout"]
     maxcl = max(c["clearance"] for c in classes.values())
