@@ -61,3 +61,14 @@ evaluates `critical_loops:`, `keepouts:`, `layout_checklist:`, and `pour:` direc
 - `ohmai layout autoroute [--opt-passes 2] [--timeout 00:10:00]` (hard 3-try router cap on any fixed placement)
 - `ohmai layout pour [--staged]`
 - `ohmai layout handroute [--spec routes.yaml] [--staged]`
+
+### Autoroute fixed-copper normalization
+
+The DSN patch joins degree-two chains with identical net, width, layer and fixed
+state into a single polyline. Vertices, branches and copper geometry are unchanged.
+This avoids Freerouting 2.2.4's search-tree NPE while normalizing split fixed wires.
+Wrapped paths, quoted net names and fractional coordinates are fixed too. SES
+progress counts multiline `network_out` copper (implicit route type), excluding
+explicit `protect` / `fix` items. Refill and DRC the candidate before promoting;
+a completed autorouter run is not a DRC pass.
+

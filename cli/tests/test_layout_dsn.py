@@ -121,3 +121,40 @@ def test_subset_and_missing_layer():
     assert "(net /A\n" in s and "(net /B\n" not in s and "(net VIN\n" not in s
     with pytest.raises(ValueError, match="signal layer In9.Cu"):
         dsn.patch(DSN, {}, {}, COPPER + ["In9.Cu"], COPPER)
+
+
+def test_fixed_wire_chain_is_coalesced_without_changing_geometry():
+    from ohmai import sexp
+    text = '''(pcb fictional
+      (parser (string_quote "))
+      (wiring
+        (wire (path F.Cu 600 0 0 50 0) (net VBUS) (type fix))
+        (wire (path F.Cu 600 50 0 750 -700) (net VBUS) (type fix))
+        (wire (path F.Cu 600 750 -700 1000 -700 1200 -900) (net VBUS) (type fix))
+      ))'''
+    out, n = dsn.normalize_wiring(text)
+    assert n == 2
+    tree = sexp.parse(out[out.index('(wiring'):out.rfind(')')])
+    wires = sexp.find(tree, 'wire')
+    assert len(wires) == 1
+    path = sexp.first(wires[0], 'path')
+    assert len(path[3:]) == 10  # All five original vertices survive, including the tiny stub.
+    assert dsn.normalize_wiring(out) == (out, 0)
+
+
+def test_wire_chains_preserve_branches_widths_and_layers():
+    text = '''(pcb fictional (wiring
+      (wire (path F.Cu 150 0 0 100 0)(net A)(type fix))
+      (wire (path F.Cu 150 100 0 200 0)(net A)(type fix))
+      (wire (path F.Cu 150 100 0 100 100)(net A)(type fix))
+      (wire (path B.Cu 150 200 0 300 0)(net A)(type fix))
+      (wire (path F.Cu 200 200 0 300 0)(net A)(type fix))
+    ))'''
+    assert dsn.normalize_wiring(text) == (text, 0)
+
+
+def test_wrapped_fractional_copper_is_fixed():
+    text = DSN.replace('104000 -103000)(net /A)(type route)',
+                       '104000.5 -103000)\n(net "Net-(U1-A)")\n(type route)')
+    out, _ = dsn.patch(text, {}, {}, COPPER, COPPER)
+    assert '(type route)' not in out

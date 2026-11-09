@@ -956,15 +956,35 @@ def run_autoroute(prepared: dict) -> dict:
     log = (proc.stdout or "") + "\n" + (proc.stderr or "")
     ses_path = Path(prepared["ses_out"])
     ses_text = ses_path.read_text(encoding="utf-8", errors="replace") if ses_path.is_file() else ""
-    # Freerouting marks pre-existing copper as protect; new autoroutes are type route.
-    route_wires = len(re.findall(r"\(wire \(path [^\n]*\)\(net [^)]*\)\(type route\)\)", ses_text))
-    route_vias = len(re.findall(r"\(via [^\n]*\(type route\)\)", ses_text))
+    # Real SES uses network_out/net scopes, multiline paths, and omits "type"
+    # for new copper. Explicit protect/fix items are pre-existing, not progress.
+    route_wires = route_vias = 0
+    ses_invalid = False
+    if ses_text.strip():
+        try:
+            session = sexp.parse(ses_text)
+            for kind in ("wire", "via"):
+                for item in sexp.walk(session, kind):
+                    typ = sexp.first(item, "type")
+                    if typ and typ[1] in {"protect", "fix"}:
+                        continue
+                    if kind == "wire":
+                        path = sexp.first(item, "path")
+                        if not path or len(path) < 7:
+                            continue
+                        route_wires += 1
+                    else:
+                        route_vias += 1
+        except (ValueError, IndexError):
+            ses_invalid = True
     error_pass = bool(re.search(r"Error during routing passes", log, re.I))
     npe = bool(re.search(r"NullPointerException|to_trace_entries is null", log))
-    ok = (proc.returncode == 0) and (not error_pass) and (not npe) and (route_wires + route_vias > 0)
+    ok = (proc.returncode == 0) and (not error_pass) and (not npe) and (not ses_invalid) and (route_wires + route_vias > 0)
     # Freerouting often exits 0 after a mid-pass crash — force failure for the CLI.
     rc = 0 if ok else (proc.returncode if proc.returncode else 1)
     reasons = []
+    if ses_invalid:
+        reasons.append("ses_invalid")
     if error_pass:
         reasons.append("routing_pass_error")
     if npe:

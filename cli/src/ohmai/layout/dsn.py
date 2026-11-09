@@ -40,6 +40,75 @@ def subset_nets(s: str, pattern: str | None, exclude: str | None) -> str:
     return s[:a] + "  (network" + "".join(keep) + "\n" + s[b:]
 
 
+def normalize_wiring(s: str) -> tuple[str, int]:
+    """Join degree-two same-net/width/layer wire chains before Freerouting import.
+
+    Fixed split traces can be normalized by Freerouting despite their fixed state;
+    2.2.4 may merge a trace whose search-tree entries have already been removed.
+    Keep every vertex and branch: this changes representation, never copper geometry.
+    Parse only wiring because Specctra's (string_quote ") is not a normal sexp.
+    """
+    from .. import sexp
+
+    start = s.find("(wiring")
+    if start < 0:
+        return s, 0
+    # KiCad puts wiring last, before the pcb closing parenthesis.
+    end = s.rfind(")")
+    tree = sexp.parse(s[start:end])
+    groups = {}
+    other = []
+    for item in tree[1:]:
+        path = sexp.first(item, "path") if item[0] == "wire" else None
+        net = sexp.first(item, "net") if path else None
+        if not path or not net or len(path) < 7:
+            other.append(item)
+            continue
+        # Do not merge wires carrying extra attributes we cannot preserve.
+        if any(isinstance(v, list) and v[0] not in {"path", "net", "type"} for v in item[1:]):
+            other.append(item)
+            continue
+        pts = list(zip(path[3::2], path[4::2], strict=True))
+        typ = sexp.first(item, "type")
+        key = (str(net[1]), str(path[1]), float(path[2]), tuple(typ or []))
+        groups.setdefault(key, []).append((item, pts))
+    merged_count = 0
+    wires = []
+    for entries in groups.values():
+        endpoints = {}
+        for i, (_, pts) in enumerate(entries):
+            for pt in (pts[0], pts[-1]):
+                endpoints.setdefault(tuple(map(float, pt)), []).append(i)
+        remaining = set(range(len(entries)))
+        while remaining:
+            i = min(remaining)
+            remaining.remove(i)
+            item, pts = entries[i]
+            pts = list(pts)
+            for reverse in (False, True):
+                if reverse:
+                    pts.reverse()
+                while True:
+                    neighbors = endpoints[tuple(map(float, pts[-1]))]
+                    if len(neighbors) != 2:
+                        break
+                    nxt = next((j for j in neighbors if j in remaining), None)
+                    if nxt is None:
+                        break
+                    tail = list(entries[nxt][1])
+                    if tuple(map(float, tail[0])) != tuple(map(float, pts[-1])):
+                        tail.reverse()
+                    pts.extend(tail[1:])
+                    remaining.remove(nxt)
+                    merged_count += 1
+            path = sexp.first(item, "path")
+            path[:] = path[:3] + [v for pt in pts for v in pt]
+            wires.append(item)
+    if not merged_count:
+        return s, 0
+    return s[:start] + sexp.dumps(["wiring"] + wires + other) + "\n" + s[end:], merged_count
+
+
 def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers: list[str],
           inner_layer: str | None = None, inner_nets: str | None = None, nets: str | None = None,
           exclude: str | None = None) -> tuple[str, list[str]]:
@@ -96,8 +165,11 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             if k != 1:
                 raise ValueError(f"DSN: signal layer {lay} not found once (found {k})")
     # 5. fixed pre-placed copper
-    s = re.sub(r"(\(wire \(path [^\n]*?\)\(net [^)]*\)\(type) route\)", r"\1 fix)", s)
-    s = re.sub(rf'(\(via {VIA_NAME}\s+-?\d+ -?\d+ \(net [^)]*\)\(type) route\)', r"\1 fix)", s)
+    wi = s.find("(wiring")
+    if wi >= 0:
+        # KiCad wraps long names/paths and exports fractional um coordinates.
+        # Matching individual one-line integer wires silently left copper movable.
+        s = s[:wi] + re.sub(r"\(type\s+route\)", "(type fix)", s[wi:])
     if ko:
         k = s.find('\n    (via "')
         if k < 0:
@@ -155,4 +227,7 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
         log.append(f"{inner_layer} allowed for {len(allowed)} nets: {' '.join(allowed)}")
     if nets or exclude:
         s = subset_nets(s, nets, exclude)
+    s, joined = normalize_wiring(s)
+    if joined:
+        log.append(f"coalesced {joined} fixed wire chain joins (geometry unchanged)")
     return s, log

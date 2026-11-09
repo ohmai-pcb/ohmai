@@ -175,3 +175,25 @@ def test_run_autoroute_fails_on_npe_empty_ses(tmp_path: Path, monkeypatch):
     assert "freerouting_npe" in res["fail_reasons"] or "routing_pass_error" in res["fail_reasons"]
     assert "ses_no_route_copper" in res["fail_reasons"]
     assert res["ses_route_wires"] == 0
+
+
+def test_run_autoroute_counts_real_multiline_network_out(tmp_path, monkeypatch):
+    import subprocess
+    jar = tmp_path / 'freerouting.jar'
+    jar.write_bytes(b'pk')
+    dsn_file = tmp_path / 'board.dsn'
+    dsn_file.write_text('(pcb x)')
+    ses = tmp_path / 'board.ses'
+    ses.write_text('''(session fictional (routes (network_out
+      (net "Net-(U1-A)"
+        (wire (path F.Cu 150 0 0 100 100))
+        (via "Via[0-1]_450:200_um" 100 100)
+        (wire (path F.Cu 150 0 0 50 50) (type protect))
+      ))))''')
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess([], 0, '', ''))
+    monkeypatch.setattr(steps, '_freerouting_java_bin', lambda: 'java')
+    monkeypatch.setattr('shutil.which', lambda _: '/usr/bin/java')
+    result = steps.run_autoroute(dict(cmd=['java', '-jar', str(jar)], raw_dsn=str(dsn_file),
+                                     ses_out=str(ses), timeout_sec=1))
+    assert result['ok']
+    assert result['ses_route_wires'] == result['ses_route_vias'] == 1
