@@ -714,11 +714,13 @@ def build_parser() -> argparse.ArgumentParser:
     from ohmai.layout.cli import add_parser as _layout_parser
     from ohmai.passives import add_parser as _passives_parser
     from ohmai.passives import add_swap_parser as _parts_swap_parser
+    from ohmai.tool_report import add_parser as _report_parser
 
     _parts_swap_parser(psub)
     _passives_parser(sub)
     _datasheets_parser(sub)
     _layout_parser(sub)
+    _report_parser(sub)
 
     s = sub.add_parser("golden", help="rebuild golden reference projects and diff netlist/ERC/BOM/symbols/checks "
                                       "against approved snapshots",

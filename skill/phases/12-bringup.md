@@ -38,3 +38,6 @@ review can add findings but never replaces the human sign-off; you never write t
 
 If this gate's `min_independence` cannot be met, try every better level first and document why each was not
 available; only then ask the owner for a waiver (`accepted_independence`, skill section 3a, docs/REVIEWS.md).
+
+## Mandatory final tool report gate
+At project completion, refresh `docs/tool-issues.md` for the final revision, including every tool used during bring-up as well as design, import, sourcing and fabrication. Record versions, every bug/limit, minimal repro/artifact paths, project impact, actual workaround, fixed status/commit, severity and upstream-ready title/body. Explicitly say none observed for unaffected tools. `ohmai check bringup --gate` checks the completed report. The owner reviews the report; drafting never authorizes upstream filing.

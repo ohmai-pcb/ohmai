@@ -22,5 +22,8 @@ Run on `main` after phases 7-10 are merged. Check `ohmai check fab --gate`.
 5. Generated outputs are never committed. They live only in the release.
 6. Record the release in `docs/decisions.md`, together with the fab, order number and date (from the owner).
 
+## Tool issue close-out checkpoint
+Complete `docs/tool-issues.md` before release: inventory every used tool and record every bug/limit using the source `docs/templates/tool-issues.md`. `ohmai report tools --output out/tool-issues-draft.md` seeds a local draft from run logs; finish versions, repros/artifacts, impacts, actual workarounds, fix commits, severity and upstream-ready title/body. Explicitly record tools with no observed issues. This report cannot be not-applicable; both the fab phase and release preflight check it. Owner approval is required before filing/sharing anything upstream.
+
 ## Gate
 `ohmai check review:fab` (`require_kind: human`) passes; the owner ticks the MANIFEST checklist, pushes the tag, and places the order.

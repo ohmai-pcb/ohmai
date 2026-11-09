@@ -29,8 +29,8 @@ PHASES: tuple[Phase, ...] = (
     Phase(8, "layout", "Layout", ("kicad-app", "toolchain", "lib-refs-strict", "footprints", "escape-room", "drc", "creepage", "review:layout"), "3D view, 1:1 print, pin-1/rotation check"),
     Phase(9, "enclosure", "Enclosure / IP", ("docs:docs/enclosure.md",), "Owner approves fit and IP"),
     Phase(10, "bom", "BOM lock", ("bom-lock", "bom-diff", "lib-refs-strict", "review:bom"), "Owner approves the fab's actual-purchase list"),
-    Phase(11, "fab", "Fab outputs", ("kicad-app", "toolchain", "erc", "drc", "bom-lock", "fab-outputs", "review:fab"), "Owner human pre-order sign-off & release tag"),
-    Phase(12, "bringup", "Bring-up & test", ("docs:test/bringup-plan.md", "bringup-code", "manual", "review:bringup"), "Owner signs off results"),
+    Phase(11, "fab", "Fab outputs", ("kicad-app", "toolchain", "erc", "drc", "bom-lock", "fab-outputs", "docs:docs/tool-issues.md", "review:fab"), "Owner human pre-order sign-off & release tag"),
+    Phase(12, "bringup", "Bring-up & test", ("docs:test/bringup-plan.md", "bringup-code", "manual", "docs:docs/tool-issues.md", "review:bringup"), "Owner signs off results"),
 )
 
 # Every phase also checks commit trailers (`commits`, see ohmai/trailers.py) and that every cited decision id is in

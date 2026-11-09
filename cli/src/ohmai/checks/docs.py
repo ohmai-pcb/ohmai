@@ -15,6 +15,8 @@ def check_doc(project: Project, rel: str) -> Result:
     if not p.is_file():
         return Result(name, FAIL, f"{rel} missing")
     text = p.read_text(encoding="utf-8")
+    if NA_MARKER in text and rel == "docs/tool-issues.md":
+        return Result(name, FAIL, "tool issue report is mandatory and cannot be marked not applicable")
     if NA_MARKER in text:
         return Result(name, SKIP, f"{rel} marked not applicable")
     if MARKER in text:
