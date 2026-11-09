@@ -1590,7 +1590,8 @@ def run_handroute(
             "predicted_islands": remaining_islands,
             "already_connected_nets": sorted(n for n, count in initial_islands.items() if count < 2),
             "copper_written": dst is not None and bool(all_tracks or all_vias),
-            "budget_exhausted": budget.reason,
+            "budget_exhausted": (budget.reason if unattempted or
+                                 any(count > 1 for count in remaining_islands.values()) else None),
             "stop_reasons": stop_reasons,
             "unattempted_nets": unattempted,
             "searches": budget.searches,

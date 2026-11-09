@@ -451,3 +451,12 @@ def test_handroute_does_not_unblock_own_pad_inside_safety_envelope(tmp_path):
     result = steps.run_handroute(cfg, 'route', ['SIG'], dry_run=True)
     assert result['remaining_islands'] == {'SIG': 2}
     assert not result['routes']
+
+
+def test_completing_at_search_cap_is_not_reported_as_exhausted(tmp_path):
+    cfg, _ = _case(tmp_path, [_pad('A', 103, 105), _pad('B', 117, 105)])
+    cfg['handroute']['max_searches'] = 1
+    result = steps.run_handroute(cfg, 'route', ['SIG'], dry_run=True)
+    assert result['searches'] == 1
+    assert result['remaining_islands'] == {'SIG': 1}
+    assert result['budget_exhausted'] is None
