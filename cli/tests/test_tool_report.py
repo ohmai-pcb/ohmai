@@ -42,3 +42,12 @@ def test_report_draft_cannot_escape_project(tmp_path, monkeypatch):
     monkeypatch.setattr(tool_report,'find_project',lambda root: Project(tmp_path,{}))
     with pytest.raises(ValueError, match='inside the project'):
         tool_report.command(Namespace(output='../outside.md'))
+
+
+def test_successful_run_does_not_invent_an_issue(tmp_path):
+    path = tmp_path/'out/routing'
+    path.mkdir(parents=True)
+    (path/'freerouting.jsonl').write_text(json.dumps(dict(id='clean',ok=True,freerouting_version='2.2.4'))+'\n')
+    text = tool_report.render(tmp_path)
+    assert 'no issue flagged' in text
+    assert 'Upstream-ready title:' not in text

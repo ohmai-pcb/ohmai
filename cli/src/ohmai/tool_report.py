@@ -30,6 +30,11 @@ def render(root: Path) -> str:
             tool = r.get('tool', 'Freerouting')
             version = r.get('tool_version', r.get('freerouting_version')) or 'version unavailable'
             ident = r.get('id', f'line-{number}')
+            failures = [f for f in r.get('fail_reasons', []) if f != 'prepare_only_not_routed']
+            if not (r.get('upstream_candidate') or r.get('crash') or r.get('rule_gap') or r.get('error') or failures):
+                lines += [f'## Tool run evidence — {tool} {version}',
+                          f'- Run `{ident}` at `{path.relative_to(root)}:{number}`: no issue flagged by this run; review inventory completeness.', '']
+                continue
             lines += [f'## {tool} — {ident}', '', f'- Tool/version: {tool} {version}; JDK {r.get("jdk_version") or "unrecorded"}',
                       f'- Severity: {"high" if r.get("crash") else "medium"} — review required.',
                       f'- Symptom: {r.get("error") or r.get("fail_reasons") or r.get("ignored_rule") or "No failure recorded; review limits."}',
