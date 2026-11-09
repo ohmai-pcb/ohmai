@@ -1064,10 +1064,10 @@ def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
 
     Match the placement model: pads are their (possibly rotated) bounding boxes,
     tracks are round-ended strokes, vias span all modeled copper layers, and
-    filled pours use their filled_polygon AABB (outline if unfilled).
+    filled pours use their actual polygons, never empty space inside an AABB.
     Include non-routing copper in connectivity, but not as A* landing cells.
     """
-    from shapely.geometry import LineString, Point, box
+    from shapely.geometry import LineString, Point, Polygon, box
 
     # Routing layers retain their A* indices. Extra copper layers participate in
     # island connectivity only (e.g. two fanout vias joined by an inner track).
@@ -1101,7 +1101,14 @@ def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
                 copper_layers.append(z.layer)
             else:
                 continue
-        items.append((net_name, {copper_layers.index(z.layer): box(*z.box)}))
+        points = getattr(z, "polygon", None)
+        shape = Polygon(points) if points else box(*z.box)
+        if not shape.is_valid:
+            # KiCad fractures holes with doubled bridge edges. Repair into real
+            # polygon interiors; the bridges must not become filled AABB copper.
+            shape = shape.buffer(0)
+        if not shape.is_empty:
+            items.append((net_name, {copper_layers.index(z.layer): shape}))
     return items
 
 
@@ -1252,6 +1259,7 @@ def run_handroute(
         layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])
         routed: dict[str, list[dict]] = {}
         remaining_islands: dict[str, int] = {}
+        initial_islands: dict[str, int] = {}
         # Copper laid earlier in this call — later nets must clear it.
         fresh_tracks: list[dict] = []
         fresh_vias: list[dict] = []
@@ -1269,6 +1277,7 @@ def run_handroute(
                 continue
             items = _handroute_copper_items(board, net_name, layers)
             islands = _handroute_islands(items)
+            initial_islands[net_name] = len(islands)
             remaining_islands[net_name] = len(islands)
             if len(islands) < 2:
                 continue  # All exposed copper (including every pad) is already connected.
@@ -1513,7 +1522,7 @@ def run_handroute(
         fresh_track_list = [s for segs in routed.values() for s in segs]
         all_tracks = list(keep_tracks) + fresh_track_list
         all_vias = list(carry_fanout) + list(keep_vias) + list(fresh_vias)
-        dst = staged or (pcb if not dry_run else None)
+        dst = None if dry_run else (staged or pcb)
         if dst is not None:
             # Wipe-or-replace from live: fanout + kept sibling handroute + this call's copper.
             # Re-routed nets are not in keep_* so they cannot double on a second --staged run.
@@ -1532,7 +1541,11 @@ def run_handroute(
             "staged": str(staged) if staged else None,
             "dry_run": dry_run,
             "routed_nets": sorted(routed.keys()),
+            "initial_islands": initial_islands,
             "remaining_islands": remaining_islands,
+            "predicted_islands": remaining_islands,
+            "already_connected_nets": sorted(n for n, count in initial_islands.items() if count < 2),
+            "copper_written": dst is not None and bool(all_tracks or all_vias),
             "budget_exhausted": budget.reason,
             "stop_reasons": stop_reasons,
             "unattempted_nets": unattempted,

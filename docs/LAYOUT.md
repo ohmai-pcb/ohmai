@@ -81,3 +81,15 @@ join at least two terminal islands to count as progress. JSON reports exhaustion
 stop reasons, unattempted nets, searches and expansions. Budget exhaustion returns
 nonzero and any generated copper is partial, not a completed route.
 
+
+### Initial versus predicted connectivity
+
+`initial_islands` describes copper on the input board; `predicted_islands` (also
+`remaining_islands` for compatibility) describes the proposed routing result.
+Never treat a dry-run prediction of one island as proof that the input board is
+already closed: check `initial_islands` or `already_connected_nets`. Dry runs write
+no copper, even with `--staged`; `copper_written` states whether this call wrote
+proposed copper. The zone model keeps actual filled polygons, including concavities,
+instead of treating their enclosing rectangles as copper. Refill and DRC remain
+the authority for the written board's connectivity.
+

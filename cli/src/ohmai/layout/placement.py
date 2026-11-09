@@ -101,6 +101,7 @@ class Zone:
     layer: str
     box: Box
     filled: bool = True
+    polygon: tuple[tuple[float, float], ...] | None = None
 
 
 @dataclass
@@ -199,8 +200,10 @@ def _pad_box(p, cx, cy, w, h, deg) -> Box:
                 rx, ry = rotate(lx + ox, ly + oy, deg)
                 pts.append((cx + rx, cy + ry))
     if pts:
-        x0 = min(x0, *(q[0] for q in pts)); y0 = min(y0, *(q[1] for q in pts))
-        x1 = max(x1, *(q[0] for q in pts)); y1 = max(y1, *(q[1] for q in pts))
+        x0 = min(x0, *(q[0] for q in pts))
+        y0 = min(y0, *(q[1] for q in pts))
+        x1 = max(x1, *(q[0] for q in pts))
+        y1 = max(y1, *(q[1] for q in pts))
     return x0, y0, x1, y1
 
 
@@ -382,7 +385,7 @@ def load(path: Path) -> Board:
             zb = (min(xs), min(ys), max(xs), max(ys))
             for zl in use_layers:
                 if isinstance(zl, str) and zl.endswith(".Cu"):
-                    zones.append(Zone(net, zl, zb, filled=filled))
+                    zones.append(Zone(net, zl, zb, filled=filled, polygon=tuple(xys)))
     return Board(fps, vias, tracks, edge, segments, zones)
 
 

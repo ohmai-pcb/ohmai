@@ -400,3 +400,27 @@ def test_zero_progress_path_never_repeats_loop(tmp_path, monkeypatch):
     assert rep["remaining_islands"] == {"SIG": 2}
     assert rep["stop_reasons"] == {"SIG": "no_progress"}
     assert not rep["routes"]
+
+
+def test_dry_run_reports_initial_not_already_closed_and_writes_nothing(tmp_path):
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)])
+    before = pcb.read_bytes()
+    staged = tmp_path / 'dry.kicad_pcb'
+    result = steps.run_handroute(cfg, 'route', ['SIG'], staged=staged, dry_run=True)
+    assert result['initial_islands'] == {'SIG': 2}
+    assert result['predicted_islands'] == result['remaining_islands'] == {'SIG': 1}
+    assert result['segments_added'] > 0
+    assert not result['already_connected_nets']
+    assert not result['copper_written']
+    assert not staged.exists() and pcb.read_bytes() == before
+
+
+def test_concave_filled_zone_does_not_merge_empty_bbox_space():
+    # FICTIONAL U-shaped zone: a pad in the cutout is not connected to it.
+    zone = L.Zone('SIG', 'F.Cu', (0, 0, 10, 10), True,
+                  ((0, 0), (10, 0), (10, 10), (8, 10), (8, 2), (2, 2), (2, 10), (0, 10)))
+    from shapely.geometry import box
+    board = L.Board({}, [], [], None, [], [zone])
+    items = steps._handroute_copper_items(board, 'SIG', ['F.Cu'])
+    items.append(('SIG', {0: box(4, 5, 6, 7)}))
+    assert len(steps._handroute_islands(items)) == 2
