@@ -391,3 +391,27 @@ def test_doctor_warns_without_hook(tmp_path, monkeypatch, capsys):
     (tr.hooks_dir(d) / "commit-msg").unlink()
     main(["doctor", "--strict"])
     assert "INFO  hooks" in capsys.readouterr().out   # CI clones have no hooks: not a warning there
+
+
+@needs_git
+def test_pre_push_preserves_lfs_gate_and_ref_stdin(repo, tmp_path, monkeypatch):
+    import os
+
+    from ohmai import trailers
+    root = repo.root if hasattr(repo, 'root') else repo
+    # A fake LFS executable records stdin; this test never contacts a remote.
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    capture = tmp_path / 'lfs-refs.txt'
+    executable = bin_dir / 'git-lfs'
+    executable.write_text('#!/bin/sh\n[ "$1" = pre-push ] || exit 9\ncat > "$LFS_TEST_CAPTURE"\n')
+    executable.chmod(0o755)
+    monkeypatch.setenv('PATH', str(bin_dir) + os.pathsep + os.environ['PATH'])
+    monkeypatch.setenv('LFS_TEST_CAPTURE', str(capture))
+    subprocess.run(['git', '-C', str(root), 'config', '--local', 'filter.lfs.process', 'git-lfs filter-process'], check=True)
+    trailers.install_hook(root)
+    hook = trailers.hooks_dir(root) / 'pre-push'
+    result = subprocess.run(['sh', str(hook), 'origin', 'fictional-remote'], cwd=root,
+                            input='fictional ref update\n', text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text() == 'fictional ref update\n'

@@ -78,7 +78,7 @@ def create(dest: Path, idea: str, name: str | None = None, git: bool = True, ano
             return log
         _git(dest, "init", "-q", "-b", "main")
         if shutil.which("git-lfs"):
-            _git(dest, "lfs", "install", "--local", check=False)
+            _git(dest, "lfs", "install", "--local", "--skip-repo", check=False)
             log.append("git lfs enabled (datasheets/)")
         else:
             log.append("git-lfs not installed: datasheets/ will be stored as normal blobs until it is")

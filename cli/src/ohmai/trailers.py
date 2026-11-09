@@ -207,6 +207,15 @@ if [ -f ohmai.yaml ] && grep -Eq '^[[:space:]]*anonymous:[[:space:]]*true\b' ohm
     exit 1
   fi
 fi
+# Preserve LFS's upload gate without replacing the OhmAI policy checks. Stdin
+# contains git's ref update list and has not been consumed by the checks above.
+if git config --get filter.lfs.process >/dev/null 2>&1; then
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    echo "pre-push: Git LFS is configured but git-lfs is unavailable" >&2
+    exit 1
+  fi
+  git lfs pre-push "$@" || exit $?
+fi
 exit 0
 """
 
