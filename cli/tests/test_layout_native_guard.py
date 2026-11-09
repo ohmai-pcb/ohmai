@@ -41,3 +41,42 @@ def test_new_safety_edge_violation_cannot_escape_the_guard():
     result = guard.compare({}, after, {'SIG'}, .127, {'old-pad'})
     assert not result['ok']
     assert len(result['new_copper_violations']) == 1
+
+
+def test_native_refill_attaches_real_project_after_board_load(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    calls = []
+    board = SimpleNamespace(SetProject=lambda project: calls.append(('attach', project)),
+                            Zones=lambda: [])
+    manager = SimpleNamespace(LoadProject=lambda path: calls.append(('project', path)) or True,
+                              Prj=lambda: 'real-rules')
+    fake = SimpleNamespace(LoadBoard=lambda path: calls.append(('board', path)) or board,
+                           GetSettingsManager=lambda: manager,
+                           ZONE_FILLER=lambda b: SimpleNamespace(Fill=lambda z: calls.append(('fill',)) or True),
+                           SaveBoard=lambda path,b: calls.append(('save', path)))
+    monkeypatch.setitem(sys.modules, 'pcbnew', fake)
+    monkeypatch.setattr(sys, 'argv', ['refill', 'input.pcb', 'filled.pcb', 'filled.pro'])
+    exec(guard._REFILL, {})
+    assert calls == [('board', 'input.pcb'), ('project', 'filled.pro'),
+                     ('attach', 'real-rules'), ('fill',), ('save', 'filled.pcb')]
+
+
+def test_native_report_refuses_rules_silently_reset_by_kicad(tmp_path, monkeypatch):
+    import json
+
+    import pytest
+
+    board = tmp_path / 'board.kicad_pcb'
+    board.write_text('(kicad_pcb)')
+    project = board.with_suffix('.kicad_pro')
+    project.write_text(json.dumps({'board': {'design_settings': {'rules': {'min_connection': .127}}}}))
+
+    def reset_rules(command, **kwargs):
+        if '-c' in command:
+            (tmp_path / 'check' / 'filled.kicad_pro').write_text('{}')
+
+    monkeypatch.setattr(guard.subprocess, 'run', reset_rules)
+    with pytest.raises(RuntimeError, match='lost minimum connection settings'):
+        guard._report(board, tmp_path / 'check', .127)

@@ -13,8 +13,13 @@ from pathlib import Path
 
 _REFILL = """
 import pcbnew as p, sys
-p.GetSettingsManager().LoadProject(sys.argv[3])
+# Loading a board can replace the active project with a dummy. Attach the
+# real project AFTER loading, or Fill/SaveBoard silently use default rules.
 b = p.LoadBoard(sys.argv[1])
+manager = p.GetSettingsManager()
+if not manager.LoadProject(sys.argv[3]):
+    raise RuntimeError('project settings could not be loaded')
+b.SetProject(manager.Prj())
 if not p.ZONE_FILLER(b).Fill(b.Zones()):
     raise RuntimeError('zone refill failed')
 p.SaveBoard(sys.argv[2], b)
@@ -100,9 +105,14 @@ def _report(board: Path, work: Path, floor: float) -> dict:
         shutil.copy2(project, str(project) + '.bak.' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
         rules['min_connection'] = floor
         project.write_text(json.dumps(data))
+    # SaveBoard may serialize attached project settings as well as copper.
+    shutil.copy2(project, str(project) + '.bak.' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
     python = os.environ.get('OHMAI_KICAD_PYTHON', '/usr/bin/python3')
     subprocess.run([python, '-c', _REFILL, str(raw), str(filled), str(project)],
                    check=True, capture_output=True, text=True, timeout=60)
+    saved = json.loads(project.read_text()).get('board', {}).get('design_settings', {}).get('rules', {})
+    if float(saved.get('min_connection') or 0) < floor:
+        raise RuntimeError('native refill lost minimum connection settings; no copper written')
     output = work / 'drc.json'
     subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
                     '-o', str(output), str(filled)], check=True, capture_output=True, text=True, timeout=60)
