@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Pure regression coverage for native candidate gates; no KiCad required."""
+from pathlib import Path
+
+import pytest
+
 from ohmai.layout import native_guard as guard
 
 
@@ -44,24 +48,22 @@ def test_new_safety_edge_violation_cannot_escape_the_guard():
     assert len(result['new_copper_violations']) == 1
 
 
-def test_native_refill_attaches_real_project_after_board_load(monkeypatch):
+def test_native_refill_loads_colocated_project_without_switch(monkeypatch):
     import sys
     from types import SimpleNamespace
 
     calls = []
-    board = SimpleNamespace(SetProject=lambda project: calls.append(('attach', project)),
-                            Zones=lambda: [])
-    manager = SimpleNamespace(LoadProject=lambda path: calls.append(('project', path)) or True,
-                              Prj=lambda: 'real-rules')
+    board = SimpleNamespace(SetProject=lambda project: pytest.fail('unsafe project swap'),
+                            GetDesignSettings=lambda: SimpleNamespace(m_MinConn=.127),
+                            Zones=lambda: [], BuildConnectivity=lambda: calls.append(('connectivity',)))
     fake = SimpleNamespace(LoadBoard=lambda path: calls.append(('board', path)) or board,
-                           GetSettingsManager=lambda: manager,
+                           ToMM=lambda value: value, GetBuildVersion=lambda: 'fictional-test',
                            ZONE_FILLER=lambda b: SimpleNamespace(Fill=lambda z: calls.append(('fill',)) or True),
-                           SaveBoard=lambda path,b: calls.append(('save', path)))
+                           SaveBoard=lambda path, b, skip: calls.append(('save', path, skip)) or True)
     monkeypatch.setitem(sys.modules, 'pcbnew', fake)
-    monkeypatch.setattr(sys, 'argv', ['refill', 'input.pcb', 'filled.pcb', 'filled.pro'])
+    monkeypatch.setattr(sys, 'argv', ['refill', 'input.pcb', 'filled.pcb', '.127', 'clean'])
     exec(guard._REFILL, {})
-    assert calls == [('board', 'input.pcb'), ('project', 'filled.pro'),
-                     ('attach', 'real-rules'), ('fill',), ('save', 'filled.pcb')]
+    assert calls == [('board', 'input.pcb'), ('fill',), ('connectivity',), ('save', 'filled.pcb', True)]
 
 
 def test_native_report_refuses_rules_silently_reset_by_kicad(tmp_path, monkeypatch):
@@ -76,12 +78,12 @@ def test_native_report_refuses_rules_silently_reset_by_kicad(tmp_path, monkeypat
 
     def reset_rules(command, **kwargs):
         if '-c' in command:
-            (tmp_path / 'check' / 'filled.kicad_pro').write_text('{}')
+            Path(command[3]).with_suffix('.kicad_pro').write_text('{}')
         from subprocess import CompletedProcess
         return CompletedProcess(command, 0, '', '')
 
     monkeypatch.setattr(guard.subprocess, 'run', reset_rules)
-    with pytest.raises(RuntimeError, match='lost minimum connection settings'):
+    with pytest.raises(RuntimeError, match='immutable project settings'):
         guard._report(board, tmp_path / 'check', .127)
 
 

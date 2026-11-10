@@ -252,11 +252,10 @@ def run(data, source, output):
                     conflicts.append(dict(id=op['id'], other_id=other['id'], reason='duplicate proposed via'))
     if conflicts:
         return dict(ok=False, conflicts=conflicts)
-    manager = p.GetSettingsManager()
-    if not manager.LoadProject(str(output).replace('.kicad_pcb', '.kicad_pro')):
-        raise RuntimeError('cannot load project rules')
-    board.SetProject(manager.Prj())
-    p.SaveBoard(output, board)
+    # Source PCB/pro/dru were colocated before LoadBoard. Do not switch to
+    # the output project: BOARD.SetProject can invalidate initialized state.
+    if not p.SaveBoard(output, board, True):
+        raise RuntimeError('cannot save candidate board')
     created = {}
     for op, item, _ in proposed:
         created.setdefault(op['id'], []).append(identity(item))

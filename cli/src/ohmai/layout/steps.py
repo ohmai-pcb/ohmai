@@ -1137,8 +1137,28 @@ def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged
     player = pour_cfg.get("layer")
     if not pnet or not player:
         raise ValueError("pour net and layer must be specified via layout.yaml pour: or --net / --layer")
-    geom, pts, _ = pourgeom.extract_filled_pour(pcb, pnet, player)
-    board = L.load(pcb)
+    # Never trust cached pours or change the live board while measuring them.
+    # All refill callers use the same isolated native transaction as the guard.
+    import tempfile
+
+    from . import refill
+
+    root = Path(cfg["work_dir"]) / "pour-refill"
+    root.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="pour-", dir=root))
+    source = work / "source.kicad_pcb"
+    shutil.copy2(pcb, source)
+    for ext in (".kicad_pro", ".kicad_dru"):
+        rules = pcb.with_suffix(ext)
+        if not rules.exists():
+            rules = src_pcb.with_suffix(ext)
+        if rules.exists():
+            shutil.copy2(rules, source.with_suffix(ext))
+    measured = work / "filled.kicad_pcb"
+    floor = max(.127, float(cfg.get("rules_resolved", {}).get("min_connection", 0)))
+    refill_result = refill.run(source, measured, work, floor=floor)
+    geom, pts, _ = pourgeom.extract_filled_pour(measured, pnet, player)
+    board = L.load(measured)
     local_pts: list[tuple[float, float]] = []
     lcfg_local = pour_cfg.get("local") or {}
     lrefs = lcfg_local.get("refs") or []
@@ -1153,6 +1173,8 @@ def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged
     ok = pourgeom.verdict(rep, pour_cfg)
     return {
         "board": str(pcb),
+        "measured_board": str(measured),
+        "refill": refill_result,
         "net": pnet,
         "layer": player,
         "min_neck": pour_cfg["min_neck"],

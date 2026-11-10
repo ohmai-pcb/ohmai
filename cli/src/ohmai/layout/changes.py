@@ -99,6 +99,8 @@ def load(path: Path, board: Path, clearance: float) -> dict:
 
 
 def _native(data: dict, board: Path, candidate: Path, work: Path) -> dict:
+    if not board.with_suffix('.kicad_pro').is_file():
+        raise ChangeError('native apply requires same-stem project rules before LoadBoard')
     request = work / 'request.json'
     request.write_text(json.dumps(data))
     proc = subprocess.run([os.environ.get('OHMAI_KICAD_PYTHON', '/usr/bin/python3'),

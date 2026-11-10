@@ -183,6 +183,7 @@ def test_refill_segfault_retry_evidence(project, monkeypatch, failures):
             calls.append(command)
             if len(calls) <= failures:
                 raise subprocess.CalledProcessError(-11, command, output='', stderr='SIGSEGV')
+            Path(command[4]).write_text('(kicad_pcb)')
         else:
             Path(command[command.index('-o') + 1]).write_text('{}')
         return subprocess.CompletedProcess(command, 0, '', '')
@@ -269,7 +270,7 @@ def worker(monkeypatch):
                            LSET=SimpleNamespace(AllCuMask=lambda: SimpleNamespace(Seq=lambda: [0, 31])),
                            ToMM=lambda v: v, FromMM=lambda v: v, VECTOR2I=Point, VIATYPE_THROUGH=0, F_Cu=0, B_Cu=31,
                            GetSettingsManager=lambda: SimpleNamespace(LoadProject=lambda p: True, Prj=lambda: None),
-                           SaveBoard=lambda out, b: None)
+                           SaveBoard=lambda out, b, skip: True)
     monkeypatch.setitem(sys.modules, 'pcbnew', fake)
     namespace = {'__name__': 'isolated_worker_test'}
     exec(compile(SCRIPT, '<worker>', 'exec'), namespace)
@@ -363,3 +364,8 @@ def test_results_command_quotes_spaces(project, monkeypatch):
     text = Path(result['evidence_dir'], 'RESULTS.md').read_text()
     command = text.split('Apply command: `')[1].split('`')[0]
     assert shlex.split(command) == ['ohmai', 'layout', 'apply-changes', str(spaced)]
+
+
+def test_native_apply_does_not_switch_project_after_load():
+    assert '.SetProject(' not in SCRIPT
+    assert 'SaveBoard(output, board, True)' in SCRIPT

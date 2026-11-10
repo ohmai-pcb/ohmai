@@ -234,3 +234,36 @@ Every invocation creates a unique `out/layout/apply-changes/` RESULTS-style pack
 before/after JSON DRC and a result. After-DRC evidence is written **before rollback/rejection**;
 a tool/refill failure instead preserves the inputs, partial output and failure diagnostic.
 Do not hand-edit a board to apply a RESULTS package: use its named apply command.
+
+
+### Shared deterministic native refill
+
+All refill paths use `layout/refill.py`: guard (including handroute and apply-changes),
+and pour measurement. `layout pour` now measures a freshly refilled scratch copy rather than
+trusting cached polygons; its JSON names `measured_board` and durable `refill` evidence.
+Neither source PCB nor project/rules are changed by pour measurement.
+
+**Place matching `.kicad_pro` and `.kicad_dru` beside the scratch `.kicad_pcb`, under the same
+stem, before `pcbnew.LoadBoard`.** KiCad initializes its DRC engine/custom rules and netclass
+caches during load. Do not load a naked PCB and call `BOARD.SetProject` afterwards: switching
+an initialized board can crash in native code and leaves the old DRC rule context. Native
+apply staging follows the same no-project-switch rule. Save with `skipSettings=True`.
+
+Each refill attempt gets immutable same-stem input/rule copies in a fresh subprocess. The
+first uses KiCad's normal all-zone fill; a SIGSEGV retries in a new process pinned to one
+allowed CPU (where supported), then a third clean one-CPU process with explicit netclass/
+connectivity rebuilding. These are equivalent all-zone fill paths, not per-zone partial
+results. No failed output is reused and no cached fill is accepted as a fallback. Other
+errors fail immediately. KiCad 9.0.2 has no standalone CLI fill subcommand; DRC/export must
+not be mistaken for a refill. Do not rely on `MaximumThreads` advanced config in headless
+9.0.2: its configuration loader returns defaults without a wx application.
+
+`refill-attempts.json` records every mode/return code/stdout/stderr and the successful
+canonical filled-polygon SHA-256. Canonicalization ignores generated UUIDs, polygon order, winding and starting vertex,
+but preserves zone geometry/net/layers, duplicate-zone multiplicity, island flags and actual
+vertices in integer IU.
+Keep full PCB/pro/dru, native fault traces and partial files for any failed attempt. A
+successful fill never overwrites project settings. Timestamped backups precede overwritten
+outputs/evidence. The normal and recovery paths must produce the same canonical polygons;
+use synthetic mocked-native tests in the normal suite and real-KiCad repeated comparisons
+when investigating native crashes.

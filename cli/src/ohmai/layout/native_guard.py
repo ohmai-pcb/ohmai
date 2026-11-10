@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -12,19 +11,10 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-_REFILL = """
-import pcbnew as p, sys
-# Loading a board can replace the active project with a dummy. Attach the
-# real project AFTER loading, or Fill/SaveBoard silently use default rules.
-b = p.LoadBoard(sys.argv[1])
-manager = p.GetSettingsManager()
-if not manager.LoadProject(sys.argv[3]):
-    raise RuntimeError('project settings could not be loaded')
-b.SetProject(manager.Prj())
-if not p.ZONE_FILLER(b).Fill(b.Zones()):
-    raise RuntimeError('zone refill failed')
-p.SaveBoard(sys.argv[2], b)
-"""
+from ohmai.layout import refill
+
+_REFILL = refill.SCRIPT  # compatibility for native worker diagnostics
+
 
 
 def unconnected_by_net(report: dict) -> dict[str, int]:
@@ -114,41 +104,13 @@ def _report(board: Path, work: Path, floor: float) -> dict:
         _backup(project)
         rules['min_connection'] = floor
         project.write_text(json.dumps(data))
-    # SaveBoard may serialize attached project settings as well as copper.
-    _backup(project)
-    python = os.environ.get('OHMAI_KICAD_PYTHON', '/usr/bin/python3')
-    attempts = []
-    for attempt in range(1, 4):
-        # Each attempt starts from immutable input/rules. A failed native process
-        # may have partially serialized output; never reuse it as the next input.
-        if filled.exists():
-            _backup(filled)
-            shutil.copy2(filled, work / f'failed-filled-{attempt - 1}.kicad_pcb')
-            filled.unlink()
-        backup_project = _backup(project)
-        try:
-            proc = subprocess.run([python, '-c', _REFILL, str(raw), str(filled), str(project)],
-                                  check=True, capture_output=True, text=True, timeout=60)
-            attempts.append(dict(attempt=attempt, returncode=proc.returncode,
-                                 stdout=proc.stdout, stderr=proc.stderr))
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
-            code = getattr(error, 'returncode', None)
-            attempts.append(dict(attempt=attempt, returncode=code,
-                                 stdout=str(error.stdout or ''), stderr=str(error.stderr or '')))
-            if (work / 'refill-attempts.json').exists():
-                _backup(work / 'refill-attempts.json')
-            (work / 'refill-attempts.json').write_text(json.dumps(attempts, indent=2) + '\n')
-            if project.exists():
-                _backup(project)
-            shutil.copy2(backup_project, project)
-            # Retry only native SIGSEGV, not bad rules, tool absence or timeout.
-            if code not in (-11, 139) or attempt == 3:
-                raise
-        else:
-            if (work / 'refill-attempts.json').exists():
-                _backup(work / 'refill-attempts.json')
-            (work / 'refill-attempts.json').write_text(json.dumps(attempts, indent=2) + '\n')
-            break
+    # KiCad initializes DRC/netclass state inside LoadBoard. The input must
+    # already have same-stem project/custom rules; never attach another project.
+    for ext in ('.kicad_pro', '.kicad_dru'):
+        source = filled.with_suffix(ext)
+        if source.exists():
+            shutil.copy2(source, raw.with_suffix(ext))
+    refill.run(raw, filled, work, floor=floor)
     saved = json.loads(project.read_text()).get('board', {}).get('design_settings', {}).get('rules', {})
     if float(saved.get('min_connection') or 0) < floor:
         raise RuntimeError('native refill lost minimum connection settings; no copper written')
