@@ -157,3 +157,77 @@ there is no CLI bypass. Library callers can explicitly request `verify_drc=True`
 it is automatic when resolved board rules declare a positive `min_connection`.
 Native refill has a 60-second timeout; full DRC has a 180-second timeout.
 Both are separate from the bounded path-search budget.
+
+
+## Versioned layout change packages
+
+Run from the project root (the board and rules come from the normal layout config):
+
+```sh
+ohmai layout apply-changes changes/change-list.json --dry-run
+ohmai layout apply-changes changes/change-list.json
+```
+
+Both commands validate **and run full native refill/JSON DRC**. Dry-run never writes the live
+board. On success apply atomically replaces only the PCB with the measured, refilled candidate,
+after a `name.YYYY-MM-DD_HHMM.bak` backup. The project/rules are not changed. Concurrent edits
+abort the transaction. Locked footprints and locked edited/deleted copper are refused.
+
+### Schema v1
+
+The machine-readable schema is `ohmai/layout/change-list.schema.json` in the CLI package.
+All objects reject unknown keys. All coordinates/dimensions are board mm (KiCad y down),
+rotations are degrees; UUIDs are KiCad UUID strings. A package contains:
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | Exactly `1` |
+| `base.commit` | Original local source commit, 7–40 hexadecimal characters, for provenance |
+| `base.board_file` | Immutable base PCB snapshot, resolved relative to the change-list file |
+| `base.sha256` | Required SHA-256 of that exact snapshot; do not point at the live PCB |
+| `operations` | Nonempty ordered list; every operation has a unique descriptive `id` |
+
+The snapshot, not a moving Git HEAD, is the comparison authority; packages work on copies
+without Git. Export it from the recorded commit. Include both snapshot and list in handoffs.
+Do not change the snapshot/hash merely to bypass a stale-copper conflict: first inspect and
+rebase the affected operations against the new board.
+
+| `op` | Required fields besides `id`, `op` |
+|---|---|
+| `via.add` | `net`, `at:[x,y]`, `diameter`, `drill`, `layers:["F.Cu","B.Cu"]` |
+| `via.delete` | `uuid`, `expect` containing **all** the via.add geometry/net fields |
+| `track.add` | `net`, `layer`, `start:[x,y]`, `end:[x,y]`, `width` |
+| `track.delete` | `uuid`, `expect` containing **all** the track.add geometry/net fields |
+| `zone.add` | `net`, `layer`, `polygon:[[x,y],...]`, `priority`, `clearance`, `min_thickness`, `pad_connection`, `island_removal` |
+| `zone.edit` | `uuid`, `expect` containing the zone.add fields, `set` containing at least one editable zone setting |
+| `footprint.move` | `ref`, `expect:{"at":[x,y],"rotation":degrees}`, `to:[x,y]` (translation only) |
+
+Zone `pad_connection` is `solid`, `thermal` or `none`; `island_removal` is `always` or `never`.
+Optional `thermal_gap` and `thermal_spoke` apply to zone add/edit and can be included in `expect`.
+Zone edits may set polygon/priority/clearance/min_thickness/pad_connection/island_removal/thermal
+settings, never net or layer. V1 edits only single-outline zones without holes, straight track
+segments and through vias; arcs, blind/buried via edits and complex/multilayer-zone edits fail closed.
+Polygon vertices must form a nonzero-area, non-self-intersecting outline. Deletes require both
+UUID and matching expected geometry/net (2 nm numeric tolerance); segment endpoints are ordered.
+
+Validation checks actual native copper shapes/layers, enabled layer names, known net names,
+zero-length tracks, via annulus, duplicate copper and foreign-net physical overlap. Old same-net
+attachments are allowed. Pours may overlap old copper because refill carves their clearances.
+Copper UUIDs/geometries are compared with the snapshot (cached zone fills are excluded):
+foreign-net overlap/clearance conflicts with added or changed copper are refused and reported
+by operation ID, copper UUID and net. Edits/deletes of changed or newly added items are refused.
+The native DRC remains authoritative for custom clearances, thermal spokes, plane islands and
+all interactions between proposed operations.
+
+A transaction is rejected on **any net's increased unconnected count**, any new illegal copper
+or narrow connection, or increased aggregate shorts/crossings/hole-clearance/connection-width/
+SAFETY/non-zone-clearance counts. No gate can be waived by a package. Both sides are refilled
+with identical project/custom rules and at least the 0.127 mm connection-width floor.
+A native refill SIGSEGV is retried at most three times from immutable input; other errors fail
+immediately. `refill-attempts.json` retains return codes/stdout/stderr, including crashes.
+
+Every invocation creates a unique `out/layout/apply-changes/` RESULTS-style package with the
+**exact apply command**, validation conflicts, the original/proposed PCB and rules, full
+before/after JSON DRC and a result. After-DRC evidence is written **before rollback/rejection**;
+a tool/refill failure instead preserves the inputs, partial output and failure diagnostic.
+Do not hand-edit a board to apply a RESULTS package: use its named apply command.

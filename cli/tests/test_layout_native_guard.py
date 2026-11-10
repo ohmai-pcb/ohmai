@@ -77,6 +77,8 @@ def test_native_report_refuses_rules_silently_reset_by_kicad(tmp_path, monkeypat
     def reset_rules(command, **kwargs):
         if '-c' in command:
             (tmp_path / 'check' / 'filled.kicad_pro').write_text('{}')
+        from subprocess import CompletedProcess
+        return CompletedProcess(command, 0, '', '')
 
     monkeypatch.setattr(guard.subprocess, 'run', reset_rules)
     with pytest.raises(RuntimeError, match='lost minimum connection settings'):

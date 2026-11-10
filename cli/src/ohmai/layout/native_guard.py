@@ -88,6 +88,14 @@ def compare(before: dict, after: dict, target_nets: set[str], floor: float,
                 before=metrics(before), after=metrics(after), width_floor=floor)
 
 
+def _backup(path: Path) -> Path:
+    dest = path.with_name(path.name + datetime.now().strftime('.%Y-%m-%d_%H%M.bak'))
+    if dest.exists():
+        dest = Path(tempfile.mkdtemp(prefix='backups-', dir=path.parent)) / dest.name
+    shutil.copy2(path, dest)
+    return dest
+
+
 def _report(board: Path, work: Path, floor: float) -> dict:
     work.mkdir()
     raw = work / 'input.kicad_pcb'
@@ -103,14 +111,37 @@ def _report(board: Path, work: Path, floor: float) -> dict:
     data = json.loads(project.read_text())
     rules = data.setdefault('board', {}).setdefault('design_settings', {}).setdefault('rules', {})
     if float(rules.get('min_connection') or 0) < floor:
-        shutil.copy2(project, str(project) + '.bak.' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+        _backup(project)
         rules['min_connection'] = floor
         project.write_text(json.dumps(data))
     # SaveBoard may serialize attached project settings as well as copper.
-    shutil.copy2(project, str(project) + '.bak.' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+    _backup(project)
     python = os.environ.get('OHMAI_KICAD_PYTHON', '/usr/bin/python3')
-    subprocess.run([python, '-c', _REFILL, str(raw), str(filled), str(project)],
-                   check=True, capture_output=True, text=True, timeout=60)
+    attempts = []
+    for attempt in range(1, 4):
+        # Each attempt starts from immutable input/rules. A failed native process
+        # may have partially serialized output; never reuse it as the next input.
+        if filled.exists():
+            shutil.copy2(filled, work / f'failed-filled-{attempt - 1}.kicad_pcb')
+            filled.unlink()
+        backup_project = _backup(project)
+        try:
+            proc = subprocess.run([python, '-c', _REFILL, str(raw), str(filled), str(project)],
+                                  check=True, capture_output=True, text=True, timeout=60)
+            attempts.append(dict(attempt=attempt, returncode=proc.returncode,
+                                 stdout=proc.stdout, stderr=proc.stderr))
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            code = getattr(error, 'returncode', None)
+            attempts.append(dict(attempt=attempt, returncode=code,
+                                 stdout=str(error.stdout or ''), stderr=str(error.stderr or '')))
+            (work / 'refill-attempts.json').write_text(json.dumps(attempts, indent=2) + '\n')
+            shutil.copy2(backup_project, project)
+            # Retry only native SIGSEGV, not bad rules, tool absence or timeout.
+            if code not in (-11, 139) or attempt == 3:
+                raise
+        else:
+            (work / 'refill-attempts.json').write_text(json.dumps(attempts, indent=2) + '\n')
+            break
     saved = json.loads(project.read_text()).get('board', {}).get('design_settings', {}).get('rules', {})
     if float(saved.get('min_connection') or 0) < floor:
         raise RuntimeError('native refill lost minimum connection settings; no copper written')

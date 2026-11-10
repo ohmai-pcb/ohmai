@@ -226,6 +226,15 @@ def cmd_handroute(a) -> int:
     return 1 if res.get("budget_exhausted") or res.get("proposal_rejected") else 0
 
 
+def cmd_apply_changes(a) -> int:
+    from ohmai.layout import changes
+
+    project = _project()
+    result = changes.apply(_cfg(project, a), Path(a.change_list), dry_run=a.dry_run)
+    print(json.dumps(result, indent=2))
+    return 0 if result['ok'] else 1
+
+
 def add_parser(sub) -> None:
     s = sub.add_parser("layout", help="layout steps (phase 8): placement fit / free-area scan; fanout, autoroute, "
                                       "pour, handroute (KiCad Python)",
@@ -284,6 +293,11 @@ def add_parser(sub) -> None:
     po.add_argument("--staged", nargs="?", const="auto", help="evaluate pour on a staged .kicad_pcb copy")
     po.add_argument("--json", action="store_true")
     po.set_defaults(fn=cmd_pour)
+
+    ac = ls.add_parser("apply-changes", help="validate/apply a versioned layout transaction with native refill/DRC rollback")
+    ac.add_argument("change_list")
+    ac.add_argument("--dry-run", action="store_true", help="run full validation and DRC without changing the board")
+    ac.set_defaults(fn=cmd_apply_changes)
 
     hr = ls.add_parser("handroute", help="grid A* for tail nets (thin-first by netclass width; prefer pours then retry missed nets), freeze, staged apply")
     hr.add_argument("action", nargs="?", default="status", choices=["status", "route", "freeze", "apply"])
