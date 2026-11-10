@@ -81,3 +81,51 @@ def test_native_report_refuses_rules_silently_reset_by_kicad(tmp_path, monkeypat
     monkeypatch.setattr(guard.subprocess, 'run', reset_rules)
     with pytest.raises(RuntimeError, match='lost minimum connection settings'):
         guard._report(board, tmp_path / 'check', .127)
+
+
+def test_rejected_guard_preserves_full_reports_and_copper(tmp_path, monkeypatch):
+    import json
+    board = tmp_path / 'board.kicad_pcb'
+    candidate = tmp_path / 'candidate.kicad_pcb'
+    board.write_text('(kicad_pcb (uuid old))')
+    candidate.write_text('(kicad_pcb (uuid new))')
+    reports = [{'unconnected_items': [_open('SIG')]},
+               {'unconnected_items': [_open('SIG'), _open('SIG')]}]
+
+    def report(source, work, floor):
+        work.mkdir()
+        data = reports[0 if source == board else 1]
+        (work / 'drc.json').write_text(json.dumps(data))
+        (work / 'input.kicad_pcb').write_bytes(source.read_bytes())
+        return data
+
+    monkeypatch.setattr(guard, '_report', report)
+    monkeypatch.setattr(guard.shutil, 'which', lambda _: 'kicad-cli')
+    result = guard.validate(board, candidate, {'SIG'}, .127, tmp_path / 'evidence')
+    assert not result['ok']
+    assert json.loads(__import__('pathlib').Path(result['after_drc']).read_text()) == reports[1]
+    # Simulate rollback/removal of scratch input: durable evidence is still complete.
+    candidate.unlink()
+    work = __import__('pathlib').Path(result['evidence_dir'])
+    assert (work / 'after' / 'input.kicad_pcb').read_text() == '(kicad_pcb (uuid new))'
+    assert json.loads((work / 'verification.json').read_text())['target_worse'] == {'SIG': [1, 2]}
+
+
+def test_baseline_refill_crash_still_preserves_proposal(tmp_path, monkeypatch):
+    import pytest
+    board = tmp_path / 'reference.kicad_pcb'
+    candidate = tmp_path / 'candidate.kicad_pcb'
+    board.write_text('(kicad_pcb)')
+    candidate.write_text('(kicad_pcb (segment proposed))')
+    monkeypatch.setattr(guard.shutil, 'which', lambda _: 'kicad-cli')
+
+    def crash(*args):
+        raise RuntimeError('fictional native refill failure')
+
+    monkeypatch.setattr(guard, '_report', crash)
+    evidence = tmp_path / 'evidence'
+    with pytest.raises(RuntimeError, match='refill failure'):
+        guard.validate(board, candidate, {'SIG'}, .127, evidence)
+    run = next(evidence.iterdir())
+    assert (run / 'proposal.kicad_pcb').read_bytes() == candidate.read_bytes()
+    assert 'refill failure' in (run / 'failure.json').read_text()

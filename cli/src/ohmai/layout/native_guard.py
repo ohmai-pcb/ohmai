@@ -116,17 +116,40 @@ def _report(board: Path, work: Path, floor: float) -> dict:
         raise RuntimeError('native refill lost minimum connection settings; no copper written')
     output = work / 'drc.json'
     subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-                    '-o', str(output), str(filled)], check=True, capture_output=True, text=True, timeout=60)
+                    '-o', str(output), str(filled)], check=True, capture_output=True, text=True, timeout=180)
     return json.loads(output.read_text())
 
 
-def validate(board: Path, candidate: Path, target_nets: set[str], floor: float) -> dict:
-    """Compare two independently refilled scratch boards; never touch the source."""
+def validate(board: Path, candidate: Path, target_nets: set[str], floor: float,
+             evidence_dir: Path | None = None) -> dict:
+    """Compare scratch refills; retain full before/after JSON even on rejection.
+
+    Callers staging candidates in a TemporaryDirectory must supply a durable
+    evidence_dir. Each invocation gets a unique directory, including failed DRC
+    runs, so a rollback or a subsequent route cannot destroy the evidence.
+    """
     if not shutil.which('kicad-cli'):
         raise RuntimeError('native handroute verification needs kicad-cli; no copper written')
     original_uuids = set(re.findall(r'\(uuid\s+"?([^"\s)]+)', board.read_text()))
-    with tempfile.TemporaryDirectory(prefix='ohmai-handroute-guard-') as directory:
-        work = Path(directory)
+    root = Path(evidence_dir) if evidence_dir is not None else candidate.parent / 'handroute-verification'
+    root.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=datetime.now().strftime('%Y%m%d-%H%M%S-'), dir=root))
+    # Keep the proposed copper even if baseline refill crashes before after-DRC.
+    for source, name in ((board, 'reference'), (candidate, 'proposal')):
+        for ext in ('.kicad_pcb', '.kicad_pro', '.kicad_dru'):
+            src = source.with_suffix(ext)
+            if src.is_file():
+                shutil.copy2(src, work / (name + ext))
+    try:
         before = _report(board, work / 'before', floor)
         after = _report(candidate, work / 'after', floor)
-    return compare(before, after, target_nets, floor, original_uuids)
+    except Exception as error:
+        (work / 'failure.json').write_text(json.dumps(dict(
+            error=str(error), stdout=str(getattr(error, 'stdout', '') or ''),
+            stderr=str(getattr(error, 'stderr', '') or '')), indent=2) + '\n')
+        raise
+    result = compare(before, after, target_nets, floor, original_uuids)
+    result.update(evidence_dir=str(work), before_drc=str(work / 'before' / 'drc.json'),
+                  after_drc=str(work / 'after' / 'drc.json'))
+    (work / 'verification.json').write_text(json.dumps(result, indent=2) + '\n')
+    return result

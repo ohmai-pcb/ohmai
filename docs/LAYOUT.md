@@ -120,7 +120,10 @@ not itself a minimum. A corridor below the floor is blocked; the search may take
 another corridor or change layers. Diagonal moves cannot squeeze between blocked
 orthogonal cells. Terminal stubs enter the copper core rather than merely
 clipping an edge: a nominally wide track can otherwise have a much narrower
-physical connection. Custom `edge_clearance` constraints also raise both handroute and fanout setbacks.
+physical connection. Circle, oval, roundrect and rotated rectangle terminals use
+inscribed real pad copper, never the empty corners of placement bounding boxes.
+Custom pads use their anchor only; unsupported pad shapes remain non-routable
+terminals rather than inventing copper. Custom `edge_clearance` constraints also raise both handroute and fanout setbacks.
 Via placement uses the **via** radius against tracks and
 other vias, including drill-to-drill spacing, rather than the smaller track radius.
 
@@ -136,7 +139,10 @@ item count on **any** net (including non-target nets). Existing warnings are not
 silently treated as new routing failures. This is an atomic back-off, not a promise
 to find a second complete routing solution after a DRC rejection. The result's
 `verification` and `rejected_proposal` explain attempted progress; accepted copper
-counts remain zero on rejection and `proposal_rejected` is true. An existing
+counts remain zero on rejection and `proposal_rejected` is true. Full before/after
+DRC JSON and candidate copper are retained in a unique run directory under
+`work_dir/handroute-verification/`, even when the proposal is rejected. The
+`verification.before_drc`, `after_drc` and `evidence_dir` fields locate the evidence. An existing
 staged input is left untouched; a newly requested staged file contains only the
 original copper. CLI rejection exits with status 1. Dry-run performs the same
 native checks but never writes copper or base/routes JSON files.
@@ -149,5 +155,5 @@ Native validation requires `kicad-cli` and a Python interpreter with KiCad's
 `OHMAI_KICAD_PYTHON`). Missing tools or validation failures reject the proposal;
 there is no CLI bypass. Library callers can explicitly request `verify_drc=True`;
 it is automatic when resolved board rules declare a positive `min_connection`.
-Each native refill/DRC subprocess has a 60-second timeout, separate from the
-bounded path-search budget.
+Native refill has a 60-second timeout; full DRC has a 180-second timeout.
+Both are separate from the bounded path-search budget.

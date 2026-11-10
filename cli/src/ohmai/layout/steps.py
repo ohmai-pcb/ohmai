@@ -1175,10 +1175,45 @@ def lcfg_pour(cfg: dict, net: str | None, layer: str | None) -> dict:
     return base
 
 
+def _handroute_pad_shape(pad):
+    """Inscribed copper, never the empty corners of a placement bounding box.
+
+    Unknown/custom pads use only their anchor, not the primitive bounding box.
+    This can miss an escape but cannot invent a copper landing in empty space.
+    Placement obstacle envelopes intentionally remain conservative AABBs.
+    """
+    from shapely import affinity
+    from shapely.geometry import LineString, Point, box
+
+    size = getattr(pad, "size", None)
+    if size is None:  # Legacy programmatic rectangle pads.
+        return box(*pad.box)
+    w, h = size
+    kind = getattr(pad, "shape", "rect")
+    if kind == "circle":
+        shape = Point(0, 0).buffer(min(w, h) / 2, quad_segs=32)
+    elif kind == "oval":
+        radius = min(w, h) / 2
+        a = (max(0, w / 2 - radius), max(0, h / 2 - radius))
+        shape = LineString([(-a[0], -a[1]), a]).buffer(radius, quad_segs=32)
+    elif kind == "roundrect":
+        radius = min(w, h) * getattr(pad, "roundrect_ratio", 0)
+        shape = box(-w / 2 + radius, -h / 2 + radius,
+                    w / 2 - radius, h / 2 - radius).buffer(radius, quad_segs=32) if radius else box(-w/2, -h/2, w/2, h/2)
+    elif kind == "rect":
+        shape = box(-w / 2, -h / 2, w / 2, h / 2)
+    else:
+        # A custom anchor can be circular; an inscribed disk is safe for both
+        # circle and rectangle anchors. Unsupported trapezoids fail closed.
+        shape = Point(0, 0).buffer(min(w, h) / 2, quad_segs=32) if kind == "custom" else Point(0, 0)
+    shape = affinity.rotate(shape, -getattr(pad, "rotation", 0), origin=(0, 0))
+    return affinity.translate(shape, pad.x, pad.y)
+
+
 def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
     """Same-net geometry for copper_island, including filled zones when present.
 
-    Match the placement model: pads are their (possibly rotated) bounding boxes,
+    Pads use inscribed actual copper rather than placement bounding boxes;
     tracks are round-ended strokes, vias span all modeled copper layers, and
     filled pours use their actual polygons, never empty space inside an AABB.
     Include non-routing copper in connectivity, but not as A* landing cells.
@@ -1194,8 +1229,11 @@ def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
     items = []
     for p in board.pads():
         if _same_net(p.net, net_name):
+            copper = _handroute_pad_shape(p)
+            if copper.is_empty:
+                continue
             shapes = {
-                li: box(*p.box) for li, lay in enumerate(copper_layers)
+                li: copper for li, lay in enumerate(copper_layers)
                 if lay in p.layers or "*.Cu" in p.layers
             }
             if shapes:
@@ -1349,7 +1387,8 @@ def run_handroute(
                 candidate = Path(directory) / "candidate.kicad_pcb"
                 shutil.copy2(src, candidate)
                 _ensure_staged_project_files(pcb, candidate)
-                verification = native_guard.validate(pcb, candidate, set(nets or []), floor)
+                verification = native_guard.validate(pcb, candidate, set(nets or []), floor,
+                                                     evidence_dir=Path(cfg.get("work_dir") or pcb.parent) / "handroute-verification")
         rejected = verification is not None and not verification["ok"]
         if not dry_run and not rejected:
             from datetime import datetime
@@ -1746,7 +1785,8 @@ def run_handroute(
                     reference = Path(directory) / "reference.kicad_pcb"
                     shutil.copy2(route_src, reference)
                     _ensure_staged_project_files(pcb, reference)
-                    verification = native_guard.validate(reference, proposal, set(target_nets), floor)
+                    verification = native_guard.validate(reference, proposal, set(target_nets), floor,
+                                                         evidence_dir=Path(cfg.get("work_dir") or pcb.parent) / "handroute-verification")
                 if not verification["ok"]:
                     rejected = verification
                     proposal_counts = dict(segments=len(fresh_track_list), vias=len(fresh_vias),

@@ -31,6 +31,12 @@ class Pad:
     hole: bool = False
     # Hole diameter mm from (drill …). Oval (drill oval w h): max(w, h).
     drill: float = 0.0
+    # Preserve the true pad for routing terminals. A placement AABB is a safe
+    # obstacle envelope but NOT copper (round/rotated pads have empty corners).
+    shape: str = "rect"
+    size: tuple[float, float] | None = None
+    rotation: float = 0.0
+    roundrect_ratio: float = 0.0
 
     @property
     def name(self) -> str:
@@ -326,7 +332,9 @@ def load(path: Path) -> Board:
             layers = tuple(lay[1:]) if lay else ()
             fp.pads.append(Pad(ref, p[1], x + dx, y + dy, _pad_box(p, x + dx, y + dy, size[0], size[1], pdeg), net,
                                layers, hole=len(p) > 2 and p[2] in ("thru_hole", "np_thru_hole"),
-                               drill=_drill(p)))
+                               drill=_drill(p), shape=p[3] if len(p) > 3 else "rect",
+                               size=tuple(size), rotation=pdeg,
+                               roundrect_ratio=(_f(p, "roundrect_rratio", 1) or [0.0])[0]))
         fps[ref] = fp
     vias = []
     for v in sexp.find(tree, "via"):

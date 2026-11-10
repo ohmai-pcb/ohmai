@@ -498,7 +498,7 @@ def test_native_rejection_backs_off_before_any_copper_write(tmp_path, monkeypatc
     from ohmai.layout import native_guard
     cfg, pcb = _case(tmp_path, [_pad('A', 103, 105), _pad('B', 117, 105)])
     content = pcb.read_bytes()
-    monkeypatch.setattr(native_guard, 'validate', lambda *a: {'ok': False, 'worse_nets': {'VIN_BB': [0, 1]}})
+    monkeypatch.setattr(native_guard, 'validate', lambda *a, **kw: {'ok': False, 'worse_nets': {'VIN_BB': [0, 1]}})
     staged = tmp_path / 'guarded.kicad_pcb'
     result = steps.run_handroute(cfg, 'route', ['SIG'], staged=staged, verify_drc=True)
     assert result['proposal_rejected'] and result['rejected_proposal']['segments'] > 0
@@ -553,7 +553,7 @@ def test_native_guard_compares_complete_precall_staged_copper(tmp_path, monkeypa
         x0=104, y0=110, x1=106, y1=110, width=.2)], .45, .2, .2)
     expected = staged.read_bytes()
 
-    def check(before, after, *args):
+    def check(before, after, *args, **kwargs):
         assert before.read_bytes() == expected
         assert before.read_bytes() != pcb.read_bytes()
         return {'ok': False}
@@ -572,7 +572,7 @@ def test_apply_cannot_bypass_native_rejection(tmp_path, monkeypatch):
     staged = tmp_path / 'staged.kicad_pcb'
     steps._append_copper_to_pcb(pcb, staged, [], [dict(net='SIG', layer='F.Cu',
         x0=103, y0=105, x1=117, y1=105, width=.1)], .45, .2, .2)
-    monkeypatch.setattr(native_guard, 'validate', lambda *a: {'ok': False})
+    monkeypatch.setattr(native_guard, 'validate', lambda *a, **kw: {'ok': False})
     result = steps.run_handroute(cfg, 'apply', staged=staged, verify_drc=True)
     assert result['proposal_rejected'] and not result['promoted']
     assert result['segments_added'] == 0
@@ -622,3 +622,56 @@ def test_edge_setback_includes_track_or_via_radius(tmp_path, monkeypatch):
     monkeypatch.setattr(grid, 'astar', spy)
     assert steps.run_handroute(cfg, 'route', ['SIG'], dry_run=True)['routed_nets'] == ['SIG']
     assert seen
+
+
+def test_circle_pad_corners_are_not_copper_terminals(tmp_path):
+    from shapely.geometry import Point
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105), _pad("B", 117, 105)])
+    text = pcb.read_text().replace("smd rect", "smd circle")
+    pcb.write_text(text)
+    pad = next(L.load(pcb).pads())
+    shape = steps._handroute_pad_shape(pad)
+    assert shape.covers(Point(pad.x, pad.y))
+    assert not shape.covers(Point(pad.box[0] + .01, pad.box[1] + .01))
+    # This old terminal landing lies inside the placement box but outside the disk.
+    pad = L.Pad("J1", "1", 0, 0, (-1.25, -1.25, 1.25, 1.25), "SIG", ("F.Cu",),
+                shape="circle", size=(2.5, 2.5))
+    copper = steps._handroute_pad_shape(pad)
+    assert copper.distance(Point(1.215, .725)) > .16
+
+
+def test_rotated_pad_does_not_join_copper_at_aabb_corner():
+    from shapely.geometry import Point
+    pad = L.Pad("R1", "1", 0, 0, (-2, -2, 2, 2), "SIG", ("F.Cu",),
+                shape="rect", size=(1, 3), rotation=45)
+    shape = steps._handroute_pad_shape(pad)
+    assert shape.covers(Point(0, 0))
+    assert not shape.covers(Point(1.3, -1.3))
+
+
+def test_pad_shapes_remain_inscribed():
+    from shapely.geometry import Point
+    for kind in ("oval", "roundrect", "custom"):
+        pad = L.Pad("P1", "1", 0, 0, (-1, -.5, 1, .5), "SIG", ("F.Cu",),
+                    shape=kind, size=(2, 1), roundrect_ratio=.25)
+        shape = steps._handroute_pad_shape(pad)
+        assert shape.covers(Point(0, 0))
+        assert not shape.covers(Point(.99, .49))
+
+
+def test_circle_corner_track_does_not_merge_islands(tmp_path):
+    cfg, pcb = _case(tmp_path, [_pad("A", 105, 105, size=(2.5, 2.5))],
+                     tracks=[("SIG", (106.215, 105.725), (108, 105.725), "F.Cu")])
+    pcb.write_text(pcb.read_text().replace("smd rect", "smd circle"))
+    items = steps._handroute_copper_items(L.load(pcb), "SIG", ["F.Cu"])
+    assert len(steps._handroute_islands(items)) == 2
+
+
+def test_unsupported_pad_is_not_silently_treated_as_connected():
+    from types import SimpleNamespace
+    pad = L.Pad("P1", "1", 0, 0, (-1, -1, 1, 1), "SIG", ("F.Cu",),
+                shape="unsupported", size=(2, 2))
+    board = SimpleNamespace(pads=lambda: [pad], segments=[], vias=[], zones=[])
+    items = steps._handroute_copper_items(board, "SIG", ["F.Cu"])
+    assert len(items) == 1
+    assert not items[0][1][0].is_empty
