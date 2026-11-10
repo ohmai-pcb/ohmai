@@ -852,10 +852,13 @@ def _freerouting_jar() -> str:
         env = os.environ.get(key)
         if env and Path(env).is_file():
             return str(Path(env).resolve())
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ohmai/freerouting"
     for cand in (
-        Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ohmai/freerouting/freerouting-2.2.4.jar",
-        Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ohmai/freerouting/freerouting-2.1.0.jar",
+        cache / "freerouting-2.5.0.jar",
+        cache / "freerouting-2.2.4.jar",
+        cache / "freerouting-2.1.0.jar",
         Path.home() / ".cache/ohmai/freerouting/freerouting.jar",
+        Path.home() / ".local/share/freerouting/2.5.0/freerouting-2.5.0.jar",
     ):
         if cand.is_file():
             return str(cand.resolve())
@@ -937,6 +940,8 @@ def prepare_autoroute(
 
     jar = _freerouting_jar()
     java_bin = _freerouting_java_bin()
+    # Freerouting 2.5.0 prefers nested router.autorouter.* keys; keep legacy
+    # Router.* aliases for 2.2.x jars that still accept the flat form.
     cmd = [
         java_bin,
         "-Djava.awt.headless=true",
@@ -948,11 +953,16 @@ def prepare_autoroute(
         str(ses_out),
         "-mp",
         str(eff_passes),
+        "--router.autorouter.max_passes=" + str(eff_passes),
+        "--router.optimizer.max_passes=" + str(eff_opt),
+        "--router.job_timeout=" + eff_timeout,
+        "--router.scoring.via_costs=" + str(eff_via_costs),
         "--Router.max_passes=" + str(eff_passes),
         "--Router.optimizer_max_passes=" + str(eff_opt),
         "--Router.job_timeout=" + eff_timeout,
         "--Router.via_costs=" + str(eff_via_costs),
         "--gui.enabled=false",
+        "--usage_and_diagnostic_data.disable_analytics=true",
     ]
     if eff_threads:
         cmd.extend(["-mt", str(eff_threads)])

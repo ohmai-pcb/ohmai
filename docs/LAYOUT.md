@@ -67,7 +67,7 @@ evaluates `critical_loops:`, `keepouts:`, `layout_checklist:`, and `pour:` direc
 
 The DSN patch joins degree-two chains with identical net, width, layer and fixed
 state into a single polyline. Vertices, branches and copper geometry are unchanged.
-This avoids Freerouting 2.2.4's search-tree NPE while normalizing split fixed wires.
+This avoids Freerouting 2.2.4's search-tree NPE while normalizing split fixed wires (optional on 2.5.0+ where upstream #721 is fixed; `autoroute.dsn.coalesce_fixed_chains`).
 Wrapped paths, quoted net names and fractional coordinates are fixed too. SES
 progress counts multiline `network_out` copper (implicit route type), excluding
 explicit `protect` / `fix` items. Refill and DRC the candidate before promoting;

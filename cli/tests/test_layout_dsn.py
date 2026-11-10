@@ -159,3 +159,15 @@ def test_wrapped_fractional_copper_is_fixed():
                        '104000.5 -103000)\n(net "Net-(U1-A)")\n(type route)')
     out, _ = dsn.patch(text, {}, {}, COPPER, COPPER)
     assert '(type route)' not in out
+
+
+def test_coalesce_fixed_chains_can_be_disabled():
+    """2.5.0 no longer needs coalescing; projects may opt out via dsn config."""
+    text = """(pcb fictional
+      (wiring
+        (wire (path F.Cu 150 0 0 1000 0)(net SIG)(type fix))
+        (wire (path F.Cu 150 1000 0 2000 0)(net SIG)(type fix))
+      ))"""
+    out, log = dsn.patch(text, {"coalesce_fixed_chains": False}, {}, ["F.Cu"], ["F.Cu"])
+    assert "coalesce_fixed_chains disabled" in log
+    assert out.count("(wire") == 2

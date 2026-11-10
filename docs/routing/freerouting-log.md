@@ -110,3 +110,51 @@ relative. Each DSN still needs a standalone minimal reduction before upstream fi
 | FR-20261109-10 | 2.2.4 | `coalesced.dsn`; fixed-chain coalescing control | 103/17 | No NPE seen, session completed; rule-gap candidate only | `coalesced/{stdout,stderr}.txt`; reduce degree-two chain conversion while retaining every vertex |
 | FR-20261109-11 | 2.2.4 | `canonical-all.dsn`; canonicalized fixed-wire control | 113/20 | No NPE seen, session completed; rule-gap candidate only | `canonical-all/{stdout,stderr}.txt`; compare geometry-preserving canonicalization against failing raw chains |
 | FR-20261109-12 | 2.1.0 | Input path/scope not retained | unavailable | No retained SES or completed-session evidence; no NPE seen; analytics SSL `CompletionException` appears while routing continues; not a proven fix | `fr21/run.log`; last retained output reaches pass 30; command/input/reduction must be recovered before upstream filing |
+
+
+## FR-20261110 — Freerouting 2.5.0 upgrade re-test (local)
+
+Evidence bundle: `/tmp/ohmai-fr25-20261110/` (not distributed). Board: usb-c-12v-stereo
+copper `6bb6f50`. Scope same as FR-20261109-01..04. Freerouting **2.5.0** jar +
+OpenJDK 25.0.4.1; private `--user_data_path` so the shared 2.2.4 config was untouched.
+Additive SES import kept F.Cu/B.Cu only (2.5.0 also emits plane-layer `GND`/`PWR`
+wires; those were skipped for KiCad legality). Native CLI (`freerouting-cli`) hung
+on a GraalVM `ComponentOutline` serialization error and was **not** used for
+measurements.
+
+### Upstream NPE status
+
+FR-20261109-01..03, 05, 06, 08 (`to_trace_entries` / `combine_at_start`) are
+**fixed upstream** by [freerouting#721](https://github.com/freerouting/freerouting/issues/721)
+and present in 2.5.0. Repro DSNs that crashed on 2.2.4 (`raw`, `baseline`,
+`all-fixed`, `protected`, `pruned`, `wire-only`, `excluded-keepout`) completed on
+2.5.0 with **no NPE**, with or without OhmAI fixed-chain coalescing.
+
+| Run ID | Freerouting | Input | SES wires/vias (tokens) | NPE | Notes |
+|---|---|---|---:|---|---|
+| FR-20261110-01 | 2.5.0 | `raw.dsn` (prior evidence) | 508/149 | no | Completes; fanout+autoroute |
+| FR-20261110-02 | 2.5.0 | `baseline.dsn` | 138/25 | no | Was crash on 2.2.4 |
+| FR-20261110-03 | 2.5.0 | `all-fixed.dsn` | 138/24 | no | Was crash on 2.2.4 |
+| FR-20261110-04 | 2.5.0 | `protected.dsn` | 150/30 | no | Was crash on 2.2.4 |
+| FR-20261110-05 | 2.5.0 | `pruned.dsn` | 137/24 | no | Was crash on 2.2.4 |
+| FR-20261110-06 | 2.5.0 | `wire-only.dsn` | 130/24 | no | Was crash on 2.2.4 |
+| FR-20261110-07 | 2.5.0 | `excluded-keepout.dsn` | 137/24 | no | Was crash on 2.2.4 |
+| FR-20261110-08 | 2.5.0 | `coalesced.dsn` | 137/24 | no | Control; still completes |
+| FR-20261110-09 | 2.5.0 | `canonical-all.dsn` | 137/24 | no | Control; still completes |
+
+### Board SAFETY comparison (6bb6f50, scoped nine nets)
+
+Same scope/exclusions as FR-20261109-04. Metrics via `native_guard.metrics` after
+zone refill. 2.2.4 numbers from FR-20261109-04 (a70513b copper, coalesced).
+
+| Version | Coalesce | SES route wires/vias | nonzone clearance | SAFETY | shorts/crossings | unconnected |
+|---|---|---:|---:|---:|---|---:|
+| 2.2.4 (FR-20261109-04) | yes (125 joins) | 113/20 | 55 → **66** | +10 new | 0/0 | 258 → 205 |
+| 2.5.0 FR-20261110-10 | yes (478 joins) | 157/17 | 55 → **55** | 9 → **9** | 0/0 | 192 → 185 |
+| 2.5.0 FR-20261110-11 | no | 159/17 | 55 → **55** | 9 → **9** | 0/0 | 192 → 185 |
+
+2.5.0 did **not** regress SAFETY/nonzone clearance on this board when only signal
+layers were imported. Coalescing is **optional** on 2.5.0+ (`autoroute.dsn.coalesce_fixed_chains`,
+default still true for 2.2.4 compatibility). Custom KiCad SAFETY rules remain a
+DSN modelling gap — do not treat SES success as promotion. Plane-layer SES wires
+from 2.5.0 need a separate import policy before any full-SES promotion trial.

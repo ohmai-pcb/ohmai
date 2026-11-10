@@ -45,7 +45,7 @@ def normalize_wiring(s: str) -> tuple[str, int]:
     """Join degree-two same-net/width/layer wire chains before Freerouting import.
 
     Fixed split traces can be normalized by Freerouting despite their fixed state;
-    2.2.4 may merge a trace whose search-tree entries have already been removed.
+    2.2.4 may merge a trace whose search-tree entries have already been removed (upstream issue #721, fixed in 2.5.0). Keep enabled unless targeting 2.5.0+.
     Keep every vertex and branch: this changes representation, never copper geometry.
     Parse only wiring because Specctra's (string_quote ") is not a normal sexp.
     """
@@ -228,7 +228,13 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
         log.append(f"{inner_layer} allowed for {len(allowed)} nets: {' '.join(allowed)}")
     if nets or exclude:
         s = subset_nets(s, nets, exclude)
-    s, joined = normalize_wiring(s)
-    if joined:
-        log.append(f"coalesced {joined} fixed wire chain joins (geometry unchanged)")
+    # Geometry-preserving degree-two chain join. Required to avoid Freerouting
+    # 2.2.4's to_trace_entries NPE (issue #721); optional on 2.5.0+ where that
+    # crash is fixed upstream. Default on: harmless when unneeded.
+    if dsn_cfg.get("coalesce_fixed_chains", True):
+        s, joined = normalize_wiring(s)
+        if joined:
+            log.append(f"coalesced {joined} fixed wire chain joins (geometry unchanged)")
+    else:
+        log.append("coalesce_fixed_chains disabled")
     return s, log
