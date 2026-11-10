@@ -122,6 +122,7 @@ def _report(board: Path, work: Path, floor: float) -> dict:
         # Each attempt starts from immutable input/rules. A failed native process
         # may have partially serialized output; never reuse it as the next input.
         if filled.exists():
+            _backup(filled)
             shutil.copy2(filled, work / f'failed-filled-{attempt - 1}.kicad_pcb')
             filled.unlink()
         backup_project = _backup(project)
@@ -134,12 +135,18 @@ def _report(board: Path, work: Path, floor: float) -> dict:
             code = getattr(error, 'returncode', None)
             attempts.append(dict(attempt=attempt, returncode=code,
                                  stdout=str(error.stdout or ''), stderr=str(error.stderr or '')))
+            if (work / 'refill-attempts.json').exists():
+                _backup(work / 'refill-attempts.json')
             (work / 'refill-attempts.json').write_text(json.dumps(attempts, indent=2) + '\n')
+            if project.exists():
+                _backup(project)
             shutil.copy2(backup_project, project)
             # Retry only native SIGSEGV, not bad rules, tool absence or timeout.
             if code not in (-11, 139) or attempt == 3:
                 raise
         else:
+            if (work / 'refill-attempts.json').exists():
+                _backup(work / 'refill-attempts.json')
             (work / 'refill-attempts.json').write_text(json.dumps(attempts, indent=2) + '\n')
             break
     saved = json.loads(project.read_text()).get('board', {}).get('design_settings', {}).get('rules', {})
