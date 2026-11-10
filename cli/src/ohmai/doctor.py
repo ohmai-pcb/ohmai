@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,7 +16,7 @@ class Item:
 
 
 def run(cwd: Path) -> list[Item]:
-    from ohmai import kicad
+    from ohmai import pins
     from ohmai import trailers as tr
     from ohmai.project import NotAProject, find_project
 
@@ -44,12 +43,6 @@ def run(cwd: Path) -> list[Item]:
             out.append(Item("hooks", "INFO", msg + "; CI clone, hooks are not versioned"))
         else:
             out.append(Item("hooks", "WARN", msg + ": commits without an OhmAI-Author trailer are not rejected"))
-    cli = kicad.kicad_cli()
-    version = kicad.version() if cli else None
-    valid = bool(version and re.match(r"^9\.\d+\.\d+", version))
-    out.append(Item("kicad-cli", "PASS" if valid else "FAIL",
-                    f"{cli}: {version}" if valid else
-                    f"KiCad 9.x required; found {version or 'no working kicad-cli'}. "
-                    "Install KiCad 9.x on the execution computer, put kicad-cli on PATH (or set KICAD_CLI), "
-                    "then rerun ohmai doctor. Plugin installation alone does not enable ERC/DRC."))
+    for pin in pins.check_all(cwd):
+        out.append(Item(pin.name, pin.status, pin.message))
     return out

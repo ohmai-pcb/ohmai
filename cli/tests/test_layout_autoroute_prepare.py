@@ -12,6 +12,13 @@ pytest.importorskip("shapely")
 from ohmai.layout import dsn, steps  # noqa: E402
 from ohmai.layout.steps import prepare_autoroute  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _isolate_freerouting_userdata(tmp_path, monkeypatch):
+    """Keep Freerouting --user_data_path inside the test tree, never ~/.config/freerouting."""
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
+
+
 # Minimal Specctra shaped like KiCad 9 (same fixture as test_layout_dsn).
 DSN = """(pcb fixture.dsn
   (structure
@@ -198,3 +205,83 @@ def test_run_autoroute_counts_real_multiline_network_out(tmp_path, monkeypatch):
                                      ses_out=str(ses), timeout_sec=1))
     assert result['ok']
     assert result['ses_route_wires'] == result['ses_route_vias'] == 1
+
+
+def _auth_cfg(tmp_path: Path) -> tuple[dict, Path]:
+    work = tmp_path / "work"
+    work.mkdir()
+    raw = work / "board-raw.dsn"
+    raw.write_text(DSN, encoding="utf-8")
+    board = tmp_path / "hardware" / "board.kicad_pcb"
+    board.parent.mkdir(parents=True, exist_ok=True)
+    board.write_text("(kicad_pcb)", encoding="utf-8")
+    cfg = {
+        "board": str(board),
+        "work_dir": str(work),
+        "planes": {},
+        "signal_layers": ["F.Cu", "B.Cu"],
+        "copper": ["F.Cu", "In1.Cu", "B.Cu"],
+        "inner_signal_layer": None,
+        "autoroute": {
+            "passes": 5, "opt_passes": 1, "timeout": "00:01:00", "via_costs": 50,
+            "threads": None, "inner_nets": None,
+            "dsn": {"grow_cutouts": 0.0, "plane_keepout_margin": 0.0, "plane_via_keepout": 0.5},
+        },
+    }
+    return cfg, raw
+
+
+def test_prepare_autoroute_passes_isolated_user_data_path(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    cfg, raw = _auth_cfg(tmp_path)
+    res = prepare_autoroute(cfg, dsn_in=raw)
+    flag = next(a for a in res["cmd"] if str(a).startswith("--user_data_path="))
+    path = Path(flag.split("=", 1)[1])
+    assert path == tmp_path / "data/ohmai/freerouting/2.5.0/userdata"
+    assert path.is_dir()
+    assert path.as_posix() == res["user_data_path"]
+    assert "/.config/freerouting" not in path.as_posix()
+    assert "FREEROUTING__USER_DATA_PATH" not in res["cmd"]
+
+
+def test_run_autoroute_appends_user_data_path_when_missing(tmp_path: Path, monkeypatch):
+    import subprocess
+    jar = tmp_path / "freerouting.jar"
+    jar.write_bytes(b"pk")
+    dsn_file = tmp_path / "board.dsn"
+    dsn_file.write_text("(pcb x)")
+    ses = tmp_path / "board.ses"
+    ses.write_text('(session x (routes (network_out (net A (wire (path F.Cu 150 0 0 1 1))))))')
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    seen = {}
+
+    def capture(cmd, **k):
+        seen["cmd"] = list(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", capture)
+    monkeypatch.setattr(steps, "_freerouting_java_bin", lambda: "java")
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/java")
+    steps.run_autoroute(dict(cmd=["java", "-jar", str(jar)], raw_dsn=str(dsn_file),
+                             ses_out=str(ses), timeout_sec=1))
+    flag = next(a for a in seen["cmd"] if str(a).startswith("--user_data_path="))
+    path = Path(flag.split("=", 1)[1])
+    assert path == tmp_path / "data/ohmai/freerouting/2.5.0/userdata"
+    assert path.is_dir()
+
+
+def test_freerouting_java_bin_discovers_jdk25_without_env(tmp_path: Path, monkeypatch):
+    from ohmai import pins
+    monkeypatch.delenv("FREEROUTING_JAVA", raising=False)
+    monkeypatch.delenv("OHMAI_FREEROUTING_JAVA", raising=False)
+    monkeypatch.delenv("JAVA_HOME", raising=False)
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    java = tmp_path / "jdk25/bin/java"
+    java.parent.mkdir(parents=True)
+    java.write_text('#!/bin/sh\necho \'openjdk version "25.0.4.1" 2026-08-18\' >&2\n')
+    java.chmod(0o755)
+    monkeypatch.setattr(pins, "jdk_search_roots", lambda: [tmp_path / "jdk25"])
+    assert steps._freerouting_java_bin() == str(java.resolve())
+

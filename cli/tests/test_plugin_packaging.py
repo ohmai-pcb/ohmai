@@ -89,14 +89,23 @@ def test_host_manifest_drift_is_rejected(tmp_path):
 
 @pytest.mark.parametrize("found,version,status", [(None, None, "FAIL"), ("fake", None, "FAIL"),
                          ("fake", "8.0.9", "FAIL"), ("fake", "10.0.0", "FAIL"),
-                         ("fake", "garbage", "FAIL"), ("fake", "9.0.2", "PASS")])
+                         ("fake", "garbage", "FAIL"), ("fake", "9.0.2", "PASS"),
+                         ("fake", "9.0.3", "PASS")])
 def test_doctor_requires_working_kicad9(tmp_path, monkeypatch, found, version, status):
+    from ohmai import pins
     monkeypatch.setattr(kicad, "kicad_cli", lambda: found)
     monkeypatch.setattr(kicad, "version", lambda: version)
+    # Isolate the kicad-cli item from other pins on this machine.
+    monkeypatch.setattr(pins, "detect_freerouting", lambda pin=None: ("2.5.0", None, None))
+    monkeypatch.setattr(pins, "detect_jdk", lambda: ("25.0.4.1", "java"))
+    monkeypatch.setattr(pins, "detect_easyeda", lambda: ("1.0.1", "easyeda2kicad"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OHMAI_ALLOW_UNPINNED", raising=False)
     item = next(item for item in doctor.run(tmp_path) if item.name == "kicad-cli")
     assert item.status == status
     if status == "FAIL":
-        assert "KiCad 9.x required" in item.message
+        assert "expected" in item.message and "found" in item.message
+        assert "ohmai setup" in item.message
         assert main(["doctor"]) == 1
 
 

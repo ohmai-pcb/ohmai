@@ -25,6 +25,11 @@
 
 ## Known limits, with evidence
 
+- **Release pin:** this ohmai release requires Freerouting **2.5.0** (the jar, with JDK 25)
+  as listed in the repo's `pinned-tools.yaml`. `ohmai setup` fetches that jar and verifies its
+  sha256; `ohmai doctor` FAILs on a different version unless `OHMAI_ALLOW_UNPINNED=1`. The
+  GraalVM native CLI is still not the supported path (see below).
+
 - **Preferred Freerouting: 2.5.0.** The 2.2.4 `to_trace_entries` /
   `combine_at_start` NPE ([upstream #721](https://github.com/freerouting/freerouting/issues/721))
   is fixed in 2.5.0. Retained crash DSNs complete without OhmAI coalescing.

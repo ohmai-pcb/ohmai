@@ -2,6 +2,10 @@
 # Freerouting evidence log
 
 One entry per invocation. Never infer DRC success from an SES file or Java exit 0.
+
+This ohmai release pins Freerouting **2.5.0** (jar + JDK 25) in `pinned-tools.yaml`.
+Historical entries below that used 2.2.4 remain as evidence; new runs should use the
+pinned jar (`ohmai setup`, `FREEROUTING_JAR` / the ohmai cache path).
 `ohmai layout autoroute` automatically appends project-local JSONL and a Markdown
 line under `out/routing/`, and snapshots DSN/SES and captured router tails into a
 unique run directory. Failures and prepare-only calls are included. Optional

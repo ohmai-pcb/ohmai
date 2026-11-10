@@ -16,6 +16,7 @@ class CustomBuildHook(BuildHookInterface):
             "tests": source / "tests",
             "LICENSE": source / "LICENSE",
             "NOTICE": source / "NOTICE",
+            "pinned-tools.yaml": source / "pinned-tools.yaml",
         }
         for name, checkout in mapping.items():
             src = bundled / name if bundled.is_dir() else checkout

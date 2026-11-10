@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB.svg)](https://www.python.org/)
 [![Status: v0.1 Experimental](https://img.shields.io/badge/Status-v0.1_Experimental-orange.svg)](#what-works-today-vs-current-limitations)
 
-[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**CLI Reference**](#cli-overview)
+[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**CLI Reference**](#cli-overview) · [**Pinned tools**](#pinned-tool-versions-per-release)
 
 ---
 
@@ -96,14 +96,15 @@ Details: [`skill/phases/`](skill/phases/), [`docs/ARCHITECTURE.md`](docs/ARCHITE
 ## Quickstart
 
 ### Requirements
-- **Python ≥ 3.10**, **git**, and **KiCad 9** (`kicad-cli` on `PATH`; KiCad checks report `SKIP` without it).
-- Shared or ephemeral agent boxes: restore with `scripts/restore-toolchain.sh` (KiCad 9 + durable `~/ohmai-venv`, HTTPS-mirror fallback, single-installer lock); see [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md).
-- Optional external helpers: `rsvg-convert` (`librsvg2-bin` for PNG schematic renders), Java + `freerouting.jar` (for `ohmai layout autoroute`), and a local `jlcparts` SQLite database (`OHMAI_JLCPARTS_DB` or `~/.cache/ohmai/jlcparts/cache.sqlite3`).
+- **Python ≥ 3.10**, **git**, and **KiCad 9.0.x** (`kicad-cli` on `PATH`; this release was tested with 9.0.2). KiCad checks report `SKIP` without it.
+- Shared or ephemeral agent boxes: restore with `scripts/restore-toolchain.sh` (pinned KiCad + durable `~/ohmai-venv` + `ohmai setup`, HTTPS-mirror fallback, single-installer lock); see [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md).
+- External tools this release pins (see [Pinned tool versions per release](#pinned-tool-versions-per-release)): Freerouting 2.5.0 (jar + JDK 25) and easyeda2kicad 1.0.1, plus optional `rsvg-convert` (`librsvg2-bin`) and a local `jlcparts` SQLite database (`OHMAI_JLCPARTS_DB` or `~/.cache/ohmai/jlcparts/cache.sqlite3`).
 
 ### Install & Create a Project
 ```bash
 pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.0#subdirectory=cli"
 # contributors: git clone https://github.com/ohmai-pcb/ohmai.git && cd ohmai && pip install -e "cli[dev,layout]"
+ohmai setup                            # install this release's pinned tools (no prompts)
 ohmai skill install                    # copies skill/ to ~/.cursor/skills/ohmai (use --dest for other agents)
 
 # Create a new project (add --anonymous for clean public repos using role labels & repo-relative paths)
@@ -129,6 +130,7 @@ Then tell your agent: *"My idea is a solar-powered USB-C charger for 2 phones, u
 | `ohmai kicad-libs {install,tables,models,status}` | Manage pinned KiCad libraries and fetch/generate project-scoped 3D `.step` models |
 | `ohmai kicad-libs {fetch,import,verify,list} <MPN>` | Agent-only fetch/import of parts the pinned libraries lack (LCSC/EasyEDA via easyeda2kicad, direct manufacturer URL) into `hardware/lib/` + lib tables + `manifest.yaml`, datasheet pin check and pin types; walled sources exit 75 |
 | `ohmai commit -m "..." [-a]` / `ohmai hooks {install,status}` | Commit with `OhmAI-Author:` trailers and manage `commit-msg` / `pre-push` hooks |
+| `ohmai setup` / `ohmai doctor` | Install and verify this release's pinned tools (`pinned-tools.yaml`); doctor also checks git hooks |
 | `ohmai lock` / `ohmai upgrade` / `ohmai release <tag>` | Manage `toolchain.lock.yaml` or build a fabrication release (`--dry-run` supported) |
 | `ohmai golden` / `ohmai known-bad` | Run golden reference projects and the planted-bug mutation fixtures (`tests/fixtures/known-bad/`) |
 
@@ -146,6 +148,27 @@ docs/             ARCHITECTURE.md, REVIEWS.md, ROADMAP.md, TESTING.md
 ```
 
 ---
+
+## Pinned tool versions per release
+
+Each ohmai release ships `pinned-tools.yaml` with the exact external tool versions it was
+tested with. `ohmai setup` installs those versions with no questions and verifies
+checksums; `ohmai doctor` FAILs on a mismatch and prints the expected version, the found
+version, and the fix. Set `OHMAI_ALLOW_UNPINNED=1` (or `toolchain.allow_unpinned: true` in
+a project) to downgrade a mismatch to a warning when you are testing a newer tool.
+
+This release pins:
+
+| Tool | Pin |
+|---|---|
+| Freerouting | 2.5.0 jar (GitHub release URL + sha256); use the jar with JDK 25, not the GraalVM native CLI. `ohmai layout autoroute` always passes `--user_data_path` under `~/.local/share/ohmai/freerouting/<ver>/userdata` so the shared `~/.config/freerouting` is never touched. |
+| JDK | 25 (major; any 25.x build). Auto-discovered from `~/.local/share/jdk25`, the ohmai cache, or `/workspace/.toolcache/jdk25`; `FREEROUTING_JAVA` remains an override. |
+| KiCad (`kicad-cli`) | 9.0.2 tested; accepted range `9.0.x` |
+| easyeda2kicad | 1.0.1 (PyPI, AGPL-3.0, subprocess only) |
+
+A project's `toolchain.lock.yaml` is separate: it records the tools that design was built
+with. Before tagging a release, bump the pins and re-run the suite plus the Freerouting
+smoke test (see [docs/TESTING.md](docs/TESTING.md)).
 
 ## License
 

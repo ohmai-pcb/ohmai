@@ -73,6 +73,8 @@ FAIL. Keep the separate SPDX notices and licensing boundaries intact.
 
 ## Publication gate
 
+- Bump `pinned-tools.yaml` and re-run the suite plus the Freerouting smoke test before tagging
+  (see [TESTING.md](TESTING.md#release-checklist-tool-pins)).
 - Resolve the NOTICE copyright holder TODO with the owner; no legal identity is assumed.
 - Review private data in reachable Git history; current-tree cleanup does not remove it.
   Do not make this history public or rewrite it without explicit owner approval.

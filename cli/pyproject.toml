@@ -23,6 +23,8 @@ dev = ["pytest>=7", "ruff>=0.5"]
 # `ohmai layout` grid router, pour and DSN steps (BSD-3 numpy / shapely); the steps run in KiCad's Python,
 # which needs them too. Placement checks (escape-room, layout fit) need neither.
 layout = ["numpy>=1.24", "shapely>=2.0"]
+# easyeda2kicad is AGPL-3.0 and is NOT declared here. `ohmai setup` installs the exact
+# version in pinned-tools.yaml as a subprocess-only tool (never imported by this package).
 
 [project.scripts]
 ohmai = "ohmai.cli:main"

@@ -847,11 +847,24 @@ def _append_copper_to_pcb(
 
 
 def _freerouting_jar() -> str:
-    """Absolute Freerouting jar when known; else the relative name for the caller's cwd."""
+    """Absolute Freerouting jar when known; else the relative name for the caller's cwd.
+
+    The pinned release jar (pinned-tools.yaml) is preferred. Older cached jars are
+    used only when OHMAI_ALLOW_UNPINNED is set.
+    """
     for key in ("OHMAI_FREEROUTING_JAR", "FREEROUTING_JAR"):
         env = os.environ.get(key)
         if env and Path(env).is_file():
             return str(Path(env).resolve())
+    try:
+        from ohmai import pins
+        pinned = pins.freerouting_cache_jar()
+        if pinned.is_file():
+            return str(pinned.resolve())
+        if not pins.allow_unpinned():
+            return str(pinned)
+    except (FileNotFoundError, KeyError, ValueError):
+        pinned = None
     cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ohmai/freerouting"
     for cand in (
         cache / "freerouting-2.5.0.jar",
@@ -866,15 +879,20 @@ def _freerouting_jar() -> str:
 
 
 def _freerouting_java_bin() -> str:
-    """Path to the Java binary that runs Freerouting (FREEROUTING_JAVA, else java on PATH)."""
+    """Java that runs Freerouting: FREEROUTING_JAVA overrides, else a discovered JDK 25."""
+    try:
+        from ohmai import pins
+        ver, exe = pins.discover_jdk()
+        if exe:
+            return exe
+    except (FileNotFoundError, KeyError, ValueError):
+        pass
     import shutil
-
     env = os.environ.get("FREEROUTING_JAVA") or os.environ.get("OHMAI_FREEROUTING_JAVA")
     if env:
         p = Path(env)
         if p.is_file():
             return str(p.resolve())
-        # Allow FREEROUTING_JAVA=/path/to/java-home or .../bin
         for cand in (p / "bin" / "java", p / "java"):
             if cand.is_file():
                 return str(cand.resolve())
@@ -882,6 +900,17 @@ def _freerouting_java_bin() -> str:
     if which:
         return which
     return "java"
+
+
+def _freerouting_user_data_path(jar: str | None = None) -> Path:
+    """Per-version OhmAI userdata directory; never ~/.config/freerouting."""
+    from ohmai import pins
+    ver = None
+    if jar:
+        ver = pins._jar_version(Path(jar))
+    path = pins.freerouting_user_data_path(ver)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def prepare_autoroute(
@@ -963,6 +992,7 @@ def prepare_autoroute(
         "--Router.via_costs=" + str(eff_via_costs),
         "--gui.enabled=false",
         "--usage_and_diagnostic_data.disable_analytics=true",
+        "--user_data_path=" + str(_freerouting_user_data_path(jar)),
     ]
     if eff_threads:
         cmd.extend(["-mt", str(eff_threads)])
@@ -982,6 +1012,7 @@ def prepare_autoroute(
         "threads": eff_threads,
         "jar": jar,
         "java": java_bin,
+        "user_data_path": str(_freerouting_user_data_path(jar)),
         "nets": nets,
         "exclude": exclude,
         "cmd": cmd,
@@ -998,6 +1029,10 @@ def run_autoroute(prepared: dict) -> dict:
     java_bin = _freerouting_java_bin()
     if cmd:
         cmd[0] = java_bin
+    ud = prepared.get("user_data_path") or str(_freerouting_user_data_path())
+    Path(ud).mkdir(parents=True, exist_ok=True)
+    if not any(str(a) == f"--user_data_path={ud}" or str(a).startswith("--user_data_path=") for a in cmd):
+        cmd.append(f"--user_data_path={ud}")
     jar = Path(cmd[cmd.index("-jar") + 1]) if "-jar" in cmd else Path("freerouting.jar")
     if not jar.is_file() and jar.name == str(jar):
         raise FileNotFoundError(
@@ -1010,8 +1045,9 @@ def run_autoroute(prepared: dict) -> dict:
         import shutil
         if not shutil.which("java"):
             raise FileNotFoundError(
-                "java not found on PATH; set FREEROUTING_JAVA to the java binary "
-                "(see toolchain.lock / env.sh)"
+                "java not found; install JDK 25 (auto-discovered under "
+                "~/.local/share/jdk25, ~/.cache/ohmai/jdk, or /workspace/.toolcache/jdk25) "
+                "or set FREEROUTING_JAVA to the java binary"
             )
     de = Path(prepared["patched_dsn"] if prepared.get("dsn_edited") else prepared["raw_dsn"])
     if not de.is_file():

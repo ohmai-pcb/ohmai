@@ -493,7 +493,7 @@ def _easyeda2kicad() -> list[str]:
 
     if importlib.util.find_spec("easyeda2kicad"):
         return [sys.executable, "-m", "easyeda2kicad"]
-    raise SystemExit("ohmai kicad-libs fetch: easyeda2kicad not installed (pip install easyeda2kicad; AGPL-3.0, subprocess only, "
+    raise SystemExit("ohmai kicad-libs fetch: easyeda2kicad not installed (ohmai setup, or pip install easyeda2kicad==<pin in pinned-tools.yaml>; AGPL-3.0, subprocess only, "
                      "run as a subprocess)")
 
 

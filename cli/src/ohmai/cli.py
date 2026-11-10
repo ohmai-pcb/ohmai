@@ -378,9 +378,26 @@ def cmd_doctor(a) -> int:
 
     items = doctor.run(Path.cwd())
     for it in items:
-        print(f"{it.status:<5} {it.name:<12} {it.message}")
+        print(f"{it.status:<5} {it.name:<14} {it.message}")
     worst = {s.status for s in items}
     if "FAIL" in worst or (a.strict and "WARN" in worst):
+        return 1
+    return 0
+
+
+def cmd_setup(a) -> int:
+    """Install this release's pinned tools with no prompts, then re-check them."""
+    from ohmai import pins
+
+    notices, errors = pins.install_all(download=not a.check)
+    for line in notices:
+        print(line)
+    for err in errors:
+        print(err, file=sys.stderr)
+    items = pins.check_all(Path.cwd())
+    for it in items:
+        print(f"{it.status:<5} {it.name:<14} {it.message}")
+    if errors or any(it.status == "FAIL" for it in items):
         return 1
     return 0
 
@@ -767,11 +784,21 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true", help="replace a commit-msg hook that is not OhmAI's")
     s.set_defaults(fn=cmd_hooks)
 
-    s = sub.add_parser("doctor", help="environment self-check: git repo, commit-msg hook installed, kicad-cli",
+    s = sub.add_parser("doctor", help="environment self-check: git repo, hooks, and this release's pinned tools",
                        description="Warns about set-up problems that silently weaken the workflow, e.g. a missing "
-                                   "commit-msg hook (git does not version hooks, so a fresh clone has none).")
+                                   "commit-msg hook (git does not version hooks, so a fresh clone has none). "
+                                   "Compares kicad-cli, Freerouting, JDK and easyeda2kicad with pinned-tools.yaml; "
+                                   "a mismatch is FAIL unless OHMAI_ALLOW_UNPINNED=1. Fix with `ohmai setup`.")
     s.add_argument("--strict", action="store_true", help="exit 1 on warnings too")
     s.set_defaults(fn=cmd_doctor)
+
+    s = sub.add_parser("setup", help="install this release's pinned tools (no prompts) and verify checksums",
+                       description="Fetches the pinned Freerouting jar (sha256) and easyeda2kicad (PyPI hashes), "
+                                   "and checks KiCad and JDK 25. Prints one line per tool. No questions. "
+                                   "Does not touch a shared Freerouting config. Override checks with "
+                                   "OHMAI_ALLOW_UNPINNED=1.")
+    s.add_argument("--check", action="store_true", help="verify only; do not download or pip install")
+    s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("commit", help="git commit with the OhmAI-Author trailer appended "
                                       "(identity from ohmai.yaml `author:` or OHMAI_AUTHOR_* env)",

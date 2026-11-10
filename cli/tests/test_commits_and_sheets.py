@@ -374,10 +374,14 @@ def test_hooks_install_outside_a_project(tmp_path, monkeypatch, capsys):
 
 @needs_git
 def test_doctor_warns_without_hook(tmp_path, monkeypatch, capsys):
-    from ohmai import kicad
+    from ohmai import kicad, pins
 
     monkeypatch.setattr(kicad, "kicad_cli", lambda: "fictional-kicad-cli")
     monkeypatch.setattr(kicad, "version", lambda: "9.0.2")
+    monkeypatch.setattr(pins, "detect_freerouting", lambda pin=None: ("2.5.0", None, None))
+    monkeypatch.setattr(pins, "detect_jdk", lambda: ("25.0.4.1", "java"))
+    monkeypatch.setattr(pins, "detect_easyeda", lambda: ("1.0.1", "easyeda2kicad"))
+    monkeypatch.delenv("OHMAI_ALLOW_UNPINNED", raising=False)
     d = tmp_path / "plain"
     d.mkdir()
     git(d, "init", "-q")

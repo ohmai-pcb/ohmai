@@ -44,3 +44,10 @@ def tests_dir() -> Path:
 
 def constraints_schema_path() -> Path:
     return template_dir() / "parts" / "constraints.schema.json"
+
+
+def pins_path() -> Path:
+    """Release pin manifest (repo-root pinned-tools.yaml, or ohmai/_data/ in a wheel)."""
+    from ohmai.pins import manifest_path
+    return manifest_path()
+

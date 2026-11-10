@@ -11,14 +11,21 @@ don't improvise.
     source ~/ohmai-venv/env.sh
     cd <project> && ohmai check toolchain
 The script is idempotent and does the following:
-- Installs KiCad pinned to `kicad=$KICAD_VERSION*` (default 9.0.2; the exact version is checked, not just the major) with apt; `easyeda2kicad` is pinned to 1.0.1. If the Debian HTTP proxy fails, it switches the
-  sources to `https://deb.debian.org` (the originals are kept as `*.bak-ohmai`) and retries.
+- Reads versions from the repo's `pinned-tools.yaml` (override KiCad with `KICAD_VERSION` if you must).
+- Installs KiCad with apt as `kicad=$KICAD_VERSION*` (release reference 9.0.2; the exact version is
+  checked). If the Debian HTTP proxy fails, it switches the sources to `https://deb.debian.org`
+  (the originals are kept as `*.bak-ohmai`) and retries.
 - Installs `poppler-utils` and `librsvg2-bin`.
-- Creates the **durable** venv `~/ohmai-venv`, runs `pip install -e cli[dev,layout] easyeda2kicad`, and
-  writes `~/ohmai-venv/env.sh`.
+- Creates the **durable** venv `~/ohmai-venv`, runs `pip install -e cli[dev,layout]`, writes
+  `~/ohmai-venv/env.sh`, then runs `ohmai setup` (Freerouting 2.5.0 jar with sha256, easyeda2kicad
+  1.0.1 with PyPI hashes, JDK 25 / KiCad checks). Setup does not touch `~/.config/freerouting` or a
+  2.2.4 install.
 
 Pins:
-- KiCad: the project's `toolchain.lock.yaml` (tier 1) is authoritative. Set `KICAD_VERSION` to match it.
+- OhmAI release pins (`pinned-tools.yaml`) are authoritative for *this ohmai version*. `ohmai doctor`
+  FAILs on a mismatch; `OHMAI_ALLOW_UNPINNED=1` downgrades that to a warning.
+- A project's `toolchain.lock.yaml` (tier 1) is authoritative for *that design*. Set `KICAD_VERSION`
+  to match it when restoring a project that locked a specific KiCad build.
 - jlcparts: a database, not a package. Keep it at `~/.cache/ohmai/jlcparts/cache.sqlite3` or set
   `OHMAI_JLCPARTS_DB`, never under `/tmp`.
 

@@ -21,9 +21,10 @@ python -m pip install 'git+https://github.com/ohmai-pcb/ohmai.git@v0.1.1#subdire
 # python -m pip install ./cli
 
 ohmai --version
-kicad-cli version                 # require 9.x; reference build 9.0.2
+ohmai setup                      # pin-for-pin install: Freerouting jar, easyeda2kicad, check KiCad/JDK
+kicad-cli version                 # this release: 9.0.2 (accepted 9.0.x)
 # In an existing project: also respect toolchain.lock exact pins.
-ohmai doctor                     # missing/wrong KiCad is FAIL (exit 1)
+ohmai doctor                     # missing/wrong pinned tool is FAIL (exit 1)
 ```
 
 Use an isolated venv; do not replace system Python. Git must be installed for the
@@ -135,6 +136,19 @@ another user's settings. The plugin adds no credentials, MCP servers or hooks.
 - CLI: `python -m pip uninstall ohmai` in its venv. Uninstalling the plugin does
   **not** uninstall KiCad/Freerouting or delete user projects. Remove external
   tools separately only with the owner's agreement.
+
+## Pinned tool versions per release
+
+`pinned-tools.yaml` (shipped with the CLI package) is the source of truth for the
+external tools this ohmai release was tested with. `ohmai setup` fetches those
+exact versions with no prompts and verifies checksums (Freerouting jar sha256,
+easyeda2kicad PyPI hashes); it checks KiCad and JDK 25 in place because those
+are system installs. `ohmai doctor` FAILs when a tool's version differs from the
+pin, and prints the expected version, the found version, and the fix (`ohmai setup`,
+or `OHMAI_ALLOW_UNPINNED=1` to test a different version).
+
+This is separate from a project's `toolchain.lock.yaml`, which records the tools
+that particular design was built with.
 
 ## Release validation
 
