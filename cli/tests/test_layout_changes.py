@@ -324,3 +324,42 @@ def test_worker_valid_delete(worker):
 def test_worker_unknown_net_and_bad_geometry(worker, update, reason):
     run, _, _ = worker
     assert reason in str(run(dict(VIA, **update))['conflicts'])
+
+
+def test_worker_detects_new_copper_without_serialized_uuid(worker):
+    _, item, namespace = worker
+    # Loader gave this existing track an ID, but raw file had none. There is no
+    # corresponding geometry in the immutable base: it MUST be a stale blocker.
+    result = namespace['run'](dict(operations=[VIA], clearance=.15, base_fingerprints={},
+                                  current_fingerprints={}, new_copper=[]), 'input.pcb', 'output.kicad_pcb')
+    assert not result['ok'] and 'since base commit' in str(result['conflicts'])
+
+
+@pytest.mark.parametrize('extra', [False, True])
+def test_worker_anonymous_base_geometry_uses_multiplicity(worker, extra):
+    _, item, ns = worker
+    p = ns['p']
+    base = p.LoadBoard('base')
+    current = SimpleNamespace(**vars(base))
+    second = type(item)(None)
+    second.net = 2
+    current.GetTracks = lambda: [item, second] if extra else [item]
+    p.LoadBoard = lambda source: base if source == 'base' else current
+    result = ns['run'](dict(operations=[VIA], base_path='base', clearance=.15, base_fingerprints={},
+                            current_fingerprints={}, new_copper=[]), 'current', 'output.kicad_pcb')
+    assert not result['ok']  # Foreign copper, regardless of its history.
+    assert ('since base commit' in str(result['conflicts'])) == extra
+
+
+def test_results_command_quotes_spaces(project, monkeypatch):
+    import shlex
+
+    _, path, cfg = project
+    spaced = path.with_name('space plan.json')
+    path.rename(spaced)
+    mock_native(monkeypatch)
+    mock_guard(monkeypatch)
+    result = changes.apply(cfg, spaced, dry_run=True)
+    text = Path(result['evidence_dir'], 'RESULTS.md').read_text()
+    command = text.split('Apply command: `')[1].split('`')[0]
+    assert shlex.split(command) == ['ohmai', 'layout', 'apply-changes', str(spaced)]

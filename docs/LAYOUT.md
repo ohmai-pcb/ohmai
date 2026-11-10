@@ -213,7 +213,10 @@ UUID and matching expected geometry/net (2 nm numeric tolerance); segment endpoi
 Validation checks actual native copper shapes/layers, enabled layer names, known net names,
 zero-length tracks, via annulus, duplicate copper and foreign-net physical overlap. Old same-net
 attachments are allowed. Pours may overlap old copper because refill carves their clearances.
-Copper UUIDs/geometries are compared with the snapshot (cached zone fills are excluded):
+Copper UUIDs/geometries are compared with the snapshot (cached zone fills are excluded).
+Appended tracks/vias without UUIDs are matched by native geometry with multiplicity, never
+treated as unchanged merely because their UUID is absent. Such anonymous items must first be
+serialized with persistent UUIDs before they can be addressed by delete/edit operations:
 foreign-net overlap/clearance conflicts with added or changed copper are refused and reported
 by operation ID, copper UUID and net. Edits/deletes of changed or newly added items are refused.
 The native DRC remains authoritative for custom clearances, thermal spokes, plane islands and

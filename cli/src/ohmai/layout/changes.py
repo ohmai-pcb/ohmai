@@ -6,6 +6,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -88,6 +89,7 @@ def load(path: Path, board: Path, clearance: float) -> dict:
         raise ChangeError('base board snapshot missing or SHA-256 mismatch')
     if base == board.resolve():
         raise ChangeError('base snapshot must be separate from the mutable board')
+    data['base_path'] = str(base)
     data['base_fingerprints'] = _fingerprints(base)
     data['current_fingerprints'] = _fingerprints(board)
     data['new_copper'] = [key for key, value in data['current_fingerprints'].items()
@@ -123,7 +125,7 @@ def apply(cfg: dict, path: Path, dry_run: bool = False) -> dict:
     root.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=datetime.now().strftime('%Y%m%d-%H%M%S-'), dir=root))
     result = dict(ok=False, applied=False, dry_run=dry_run, evidence_dir=str(work), conflicts=[])
-    command = f'ohmai layout apply-changes {path}'
+    command = f'ohmai layout apply-changes {shlex.quote(str(path))}'
     (work / 'RESULTS.md').write_text(f'# Layout change transaction\n\nApply command: `{command}`\n\n'
                                    'Full validation (no board write): append ` --dry-run`.\n')
     try:
@@ -165,6 +167,7 @@ def apply(cfg: dict, path: Path, dry_run: bool = False) -> dict:
             (b if name == 'before' else a)['hole_clearance'] = sum(
                 v.get('type') in ('hole_clearance', 'hole_near_hole') for v in report.get('violations', []))
         regressions = {key: [b[key], a[key]] for key in b if key != 'unconnected' and a[key] > b[key]}
+        data['new_copper'] = result.get('newer_copper', data['new_copper'])
         created = result.get('created_items', {})
         id_by_uuid = {key: op for op, keys in created.items() for key in keys}
         for violation in after.get('violations', []):

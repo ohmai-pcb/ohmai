@@ -6,6 +6,7 @@ SCRIPT = r'''
 """Isolated KiCad worker. Execute as a file; NEVER import into the OhmAI process."""
 import json
 import sys
+from collections import Counter
 
 import pcbnew as p
 
@@ -98,13 +99,45 @@ def configure_zone(z, data):
                                else p.ISLAND_REMOVAL_MODE_NEVER)
 
 
+def geometry_key(item):
+    # Appended S-expression copper can lack UUIDs. LoadBoard invents random
+    # UUIDs for it, so classify anonymous copper by native geometry, not IDs.
+    if isinstance(item, p.PCB_VIA):
+        return ('via', item.GetNetname(), tuple(xy(item.GetPosition())), item.GetWidth(p.F_Cu),
+                item.GetDrillValue(), item.TopLayer(), item.BottomLayer())
+    if isinstance(item, p.PCB_TRACK):
+        ends = tuple(sorted((tuple(xy(item.GetStart())), tuple(xy(item.GetEnd())))))
+        mid = tuple(xy(item.GetMid())) if isinstance(item, p.PCB_ARC) else ()
+        return ('track', item.GetNetname(), item.GetLayer(), ends, mid, item.GetWidth())
+    return None
+
+
 def run(data, source, output):
     global board, copper_layers
+    base_geometry = Counter()
+    if data.get('base_path'):
+        base_board = p.LoadBoard(data['base_path'])
+        base_geometry.update(geometry_key(item) for item in base_board.GetTracks())
     board = p.LoadBoard(source)
     copper_layers = set(board.GetEnabledLayers().Seq()) & set(p.LSET.AllCuMask().Seq())
     layer_ids = {board.GetStandardLayerName(i): i for i in copper_layers}
     nets = {net.GetNetname(): net.GetNetCode() for net in board.GetNetsByNetcode().values()}
     tracks = list(board.GetTracks())
+    for item in tracks:
+        key = identity(item)
+        if key in data['base_fingerprints'] and key in data['current_fingerprints']:
+            geometry = geometry_key(item)
+            if base_geometry[geometry]:
+                base_geometry[geometry] -= 1
+    for item in tracks:
+        key = identity(item)
+        if key in data['current_fingerprints']:
+            continue
+        geometry = geometry_key(item)
+        if base_geometry[geometry]:
+            base_geometry[geometry] -= 1
+        else:
+            data['new_copper'].append(key)
     pads = [pad for fp in board.GetFootprints() for pad in fp.Pads()]
     zones = list(board.Zones())
     items = {identity(t): t for t in tracks + pads + zones}
@@ -227,7 +260,7 @@ def run(data, source, output):
     created = {}
     for op, item, _ in proposed:
         created.setdefault(op['id'], []).append(identity(item))
-    return dict(ok=True, conflicts=[], operations=len(data['operations']), created_items=created)
+    return dict(ok=True, conflicts=[], operations=len(data['operations']), created_items=created, newer_copper=data['new_copper'])
 
 
 if __name__ == '__main__':
