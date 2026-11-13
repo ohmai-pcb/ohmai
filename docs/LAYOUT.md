@@ -60,7 +60,7 @@ evaluates `critical_loops:`, `keepouts:`, `layout_checklist:`, and `pour:` direc
 - `ohmai layout fit <REF> --at x,y[,rot] [--scan] [--rules] [--staged]`
 - `ohmai layout fanout [--nets REGEX] [--exclude-pad REF.PAD] [--exclude-near REF.PAD:radius_mm] [--staged]`
 - `ohmai layout autoroute [--opt-passes 2] [--timeout 00:10:00]` (hard 3-try router cap on any fixed placement)
-- `ohmai layout pour [--staged]`
+- `ohmai layout pour [--net NET --layer LAYER] [--staged | --board PCB] [--section x=MM|y=MM] [--width-at X,Y]`
 - `ohmai layout handroute route --nets NET1,NET2 [--budget-seconds 60] [--max-total-expand 2500000] [--max-searches 128] [--staged]`
 
 ### Autoroute fixed-copper normalization
@@ -209,8 +209,8 @@ rebase the affected operations against the new board.
 | `track.add` | `net`, `layer`, `start:[x,y]`, `end:[x,y]`, `width` |
 | `track.delete` | `uuid`, `expect` containing **all** the track.add geometry/net fields |
 | `zone.add` | `net`, `layer`, `polygon:[[x,y],...]`, `priority`, `clearance`, `min_thickness`, `pad_connection`, `island_removal` |
-| `zone.edit` | `uuid`, `expect` with at least `net`, `layer`, `polygon` (other zone.add fields optional), `set` containing at least one editable zone setting; `set.polygon` resizes/reshapes |
-| `zone.delete` | `uuid`, `expect` with at least `net`, `layer`, `polygon` |
+| `zone.edit` | `uuid`, `expect` with at least `net`, `layer`, `polygon` (other zone.add fields optional), `set` containing at least one editable zone setting; `set.polygon` resizes/reshapes. Optional `polygon_tolerance`, or `match: "uuid"` (see below) |
+| `zone.delete` | `uuid`, `expect` with at least `net`, `layer`, `polygon`. Optional `polygon_tolerance`, or `match: "uuid"` |
 | `footprint.move` | `ref`, `expect:{"at":[x,y],"rotation":degrees}`, `to:[x,y]` (translation only) |
 
 Zone `pad_connection` is `solid`, `thermal` or `none`; `island_removal` is `always` or `never`.
@@ -219,8 +219,16 @@ Optional `thermal_gap` and `thermal_spoke` apply to zone add/edit and can be inc
 Zone edits may set polygon/priority/clearance/min_thickness/pad_connection/island_removal/thermal/name
 settings, never net or layer. V1 edits only single-outline zones without holes, straight track
 segments and through vias; arcs, blind/buried via edits and complex/multilayer-zone edits fail closed.
-Polygon vertices must form a nonzero-area, non-self-intersecting outline. Deletes require both
-UUID and matching expected geometry/net (2 nm numeric tolerance); segment endpoints are ordered.
+Polygon vertices must form a nonzero-area, non-self-intersecting outline; `zone.add` and
+`zone.edit set.polygon` are checked when the change list loads, before any KiCad work, and the
+error names the operation and the problem (for example `Self-intersection[5 2]`). Deletes require
+both UUID and matching expected geometry/net (2 nm numeric tolerance); segment endpoints are ordered.
+
+Zone `expect.polygon` is compared per coordinate within `polygon_tolerance` mm (default 0.005,
+at most 0.1), starting at any vertex but with the same winding, so a polygon rounded to 3
+decimals still matches. `"match": "uuid"` makes `expect` optional (and allows a partial one,
+such as only `net`): the zone is identified by its UUID plus the base-commit fingerprint, so a
+zone that was changed or added since the base commit is still refused.
 
 Validation checks actual native copper shapes/layers, enabled layer names, known net names,
 zero-length tracks, via annulus, duplicate copper and foreign-net physical overlap. Old same-net
@@ -274,8 +282,35 @@ no holes); other zones show why they cannot be edited. Example package (fictiona
 
 Run `ohmai layout apply-changes changes.json --dry-run` first; the RESULTS package shows the
 per-net unconnected counts before and after. A stale `expect` (the zone was changed since you
-listed it) is refused before anything is written. Multi-layer zones and zones with holes cannot
+listed it) is refused before anything is written. UUID-only form:
+`{"id": "old-pour", "op": "zone.delete", "uuid": "<uuid>", "match": "uuid"}`. Multi-layer zones and zones with holes cannot
 be edited or deleted by v1 packages; change them in KiCad.
+
+### Pour neck and width measurement (`ohmai layout pour`)
+
+`ohmai layout pour` refills a scratch copy and measures one net on one layer: pieces, area and
+the narrowest neck between the attach points (same-net vias and pads on that layer), with its
+location. `--board PCB` measures any board read-only (rules from its same-stem `.kicad_pro`/
+`.kicad_dru`, else the project's); `--staged` measures the staged copy. Use one or the other.
+
+- Attach points are only the vias and pads whose copper touches the pour. Others (a via used
+  only by tracks on other layers) are listed under `unattached` instead of forcing the neck to 0.
+- Attach copper is merged into the pour, and holes around it (via/PTH drill holes, thermal-relief
+  gaps) are filled before measuring, so a stitch via no longer reads as a 0 mm neck. Other-net
+  holes are kept: they really narrow the copper. `neck_raw` is the old unpatched value and
+  `holes_patched` counts filled holes. The neck search is no longer capped at 2 mm.
+- `pieces_detail` gives area, attach points and neck per piece (largest first), useful when a
+  layer holds several separate pours.
+- `--section x=MM` / `y=MM` (repeatable) reports every crossing of that line: `chord` is the raw
+  length along the cut, `width` the diameter of the largest disk that fits on the crossing, which
+  equals the perpendicular width of a straight run however the cut is angled. A cut that runs
+  along an outline edge (for example x=100 on a vertical jog edge) is dropped instead of reading
+  as copper. `--width-at X,Y` reports the minimum chord through a point over all directions; take
+  points in straight runs, since near an inside corner the shortest chord cuts the corner.
+
+```sh
+ohmai layout pour --board hardware/board.kicad_pcb --net PWR --layer In2.Cu --section x=100 --json
+```
 
 ### Current sizing (`ohmai layout current`)
 
@@ -298,7 +333,9 @@ ohmai layout current --layers In2.Cu --pour-json In2.Cu=in2.json --target contin
 - Copper thickness comes from `--copper LAYER=THICK` / `--copper-all` (`1oz`, `35um`, `0.035mm`),
   else from the board stackup (`--board`, default the project board), else 1 oz outer / 0.5 oz inner.
 - `--width LAYER=MM` is the narrowest width of that layer along the path; `--pour-json` takes the
-  neck reported by `ohmai layout pour --json`. Widths on different layers count together only if
+  neck reported by `ohmai layout pour --json`. A layer whose pour is several separate pieces has
+  neck 0, so `--pour-json` refuses it and lists `pieces_detail` necks; pass the corridor piece's
+  neck with `--width`. Widths on different layers count together only if
   their necks overlap in position; the tool cannot know that, so measure honestly.
 - Via barrels are π·t·(d−t) with plating `--via-plating` (default 20 µm; ask your fab) and are sized
   as internal conductors. "Per layer change" means every place the current moves between layers.

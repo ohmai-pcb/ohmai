@@ -288,7 +288,7 @@
                 "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
               },
               "expect": {
-                "$ref": "#/$defs/zone"
+                "$ref": "#/$defs/zone_partial"
               },
               "set": {
                 "type": "object",
@@ -346,15 +346,49 @@
                 },
                 "required": [],
                 "minProperties": 1
+              },
+              "match": {
+                "enum": [
+                  "geometry",
+                  "uuid"
+                ],
+                "description": "geometry (default): expect must give net, layer and polygon. uuid: the UUID plus the base-commit fingerprint identify the zone; expect is optional and may be partial."
+              },
+              "polygon_tolerance": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 0.1,
+                "description": "Per-coordinate tolerance (mm) when comparing expect.polygon; default 0.005."
               }
             },
             "required": [
               "id",
               "op",
               "uuid",
-              "expect",
               "set"
-            ]
+            ],
+            "if": {
+              "not": {
+                "required": [
+                  "match"
+                ],
+                "properties": {
+                  "match": {
+                    "const": "uuid"
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "expect"
+              ],
+              "properties": {
+                "expect": {
+                  "$ref": "#/$defs/zone"
+                }
+              }
+            }
           },
           {
             "type": "object",
@@ -372,15 +406,49 @@
                 "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
               },
               "expect": {
-                "$ref": "#/$defs/zone"
+                "$ref": "#/$defs/zone_partial"
+              },
+              "match": {
+                "enum": [
+                  "geometry",
+                  "uuid"
+                ],
+                "description": "geometry (default): expect must give net, layer and polygon. uuid: the UUID plus the base-commit fingerprint identify the zone; expect is optional and may be partial."
+              },
+              "polygon_tolerance": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 0.1,
+                "description": "Per-coordinate tolerance (mm) when comparing expect.polygon; default 0.005."
               }
             },
             "required": [
               "id",
               "op",
-              "uuid",
-              "expect"
-            ]
+              "uuid"
+            ],
+            "if": {
+              "not": {
+                "required": [
+                  "match"
+                ],
+                "properties": {
+                  "match": {
+                    "const": "uuid"
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "expect"
+              ],
+              "properties": {
+                "expect": {
+                  "$ref": "#/$defs/zone"
+                }
+              }
+            }
           },
           {
             "type": "object",
@@ -586,6 +654,69 @@
         "layer",
         "polygon"
       ]
+    },
+    "zone_partial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "net": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "polygon": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clearance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "min_thickness": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pad_connection": {
+          "enum": [
+            "solid",
+            "thermal",
+            "none"
+          ]
+        },
+        "thermal_gap": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "thermal_spoke": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "island_removal": {
+          "enum": [
+            "always",
+            "never"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "description": "Zone expect checked in match \"uuid\" mode: any subset of zone fields; polygon (if given) is still compared."
     }
   }
 }

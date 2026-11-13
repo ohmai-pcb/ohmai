@@ -1147,9 +1147,15 @@ def run_autoroute(prepared: dict) -> dict:
 
 
 
-def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged: Path | None = None) -> dict:
+def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged: Path | None = None,
+             board_path: Path | None = None, sections: list[tuple[str, float]] | None = None,
+             widths_at: list[tuple[float, float]] | None = None) -> dict:
+    """Measure a pour on a refilled scratch copy. ``board_path`` measures any .kicad_pcb read-only
+    (rules come from its same-stem .kicad_pro/.kicad_dru, else the project's)."""
+    if staged and board_path:
+        raise ValueError("use either --staged or --board, not both")
     src_pcb = Path(cfg["board"])
-    pcb = staged or src_pcb
+    pcb = Path(board_path) if board_path else (staged or src_pcb)
     if staged and not pcb.is_file() and src_pcb.is_file():
         pcb.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_pcb, pcb)
@@ -1180,20 +1186,16 @@ def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged
     measured = work / "filled.kicad_pcb"
     floor = max(.127, float(cfg.get("rules_resolved", {}).get("min_connection", 0)))
     refill_result = refill.run(source, measured, work, floor=floor)
-    geom, pts, _ = pourgeom.extract_filled_pour(measured, pnet, player)
+    geom, _pts, _ = pourgeom.extract_filled_pour(measured, pnet, player)
     board = L.load(measured)
-    local_pts: list[tuple[float, float]] = []
-    lcfg_local = pour_cfg.get("local") or {}
-    lrefs = lcfg_local.get("refs") or []
-    margin = float(lcfg_local.get("margin", 2.0))
-    if lrefs:
-        boxes = [board.footprints[r].courtyard for r in lrefs if r in board.footprints and board.footprints[r].courtyard]
-        if boxes:
-            bx = (min(b[0] for b in boxes) - margin, min(b[1] for b in boxes) - margin,
-                  max(b[2] for b in boxes) + margin, max(b[3] for b in boxes) + margin)
-            local_pts = [(x, y) for x, y in pts if bx[0] <= x <= bx[2] and bx[1] <= y <= bx[3]]
-    rep = pourgeom.report(geom, pts, local_pts, pour_cfg)
+    local_box = _pour_local_box(board, pour_cfg)
+    rep = pourgeom.measure(geom, pourgeom.attach_features(measured, pnet, player), local_box, pour_cfg)
     ok = pourgeom.verdict(rep, pour_cfg)
+    if sections:
+        rep["sections"] = [row for axis, value in sections for row in pourgeom.section(geom, axis, value)]
+    if widths_at:
+        rep["widths_at"] = [dict(xy=[x, y], width=(None if (w := pourgeom.width_at(geom, x, y)) is None
+                                                    else round(w, 3))) for x, y in widths_at]
     return {
         "board": str(pcb),
         "measured_board": str(measured),
@@ -1205,6 +1207,17 @@ def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged
         **rep,
         "ok": ok,
     }
+
+
+def _pour_local_box(board, pour_cfg: dict):
+    lcfg_local = pour_cfg.get("local") or {}
+    lrefs = lcfg_local.get("refs") or []
+    margin = float(lcfg_local.get("margin", 2.0))
+    boxes = [board.footprints[r].courtyard for r in lrefs if r in board.footprints and board.footprints[r].courtyard]
+    if not boxes:
+        return None
+    return (min(b[0] for b in boxes) - margin, min(b[1] for b in boxes) - margin,
+            max(b[2] for b in boxes) + margin, max(b[3] for b in boxes) + margin)
 
 
 def lcfg_pour(cfg: dict, net: str | None, layer: str | None) -> dict:

@@ -180,8 +180,17 @@ def cmd_pour(a) -> int:
     p = _project()
     cfg = _cfg(p, a)
     staged_path = _resolve_staged(p, cfg, getattr(a, "staged", None))
+    board = getattr(a, "board", None)
+    board_path = (Path(board) if Path(board).is_absolute() else Path.cwd() / board) if board else None
     try:
-        res = steps.run_pour(cfg, net=a.net, layer=a.layer, staged=staged_path)
+        sections = [_parse_section(t) for t in (getattr(a, "section", None) or [])]
+        widths_at = [_parse_xy(t) for t in (getattr(a, "width_at", None) or [])]
+    except ValueError as e:
+        print(f"ohmai layout pour: {e}", file=sys.stderr)
+        return 2
+    try:
+        res = steps.run_pour(cfg, net=a.net, layer=a.layer, staged=staged_path, board_path=board_path,
+                             sections=sections, widths_at=widths_at)
     except Exception as e:
         print(f"ohmai layout pour: {e}", file=sys.stderr)
         return 1
@@ -192,7 +201,34 @@ def cmd_pour(a) -> int:
         st = "PASS" if res["ok"] else "FAIL"
         print(f"{st} pour {res['net']} ({res['layer']}): {res['pieces']} piece(s), "
               f"neck {res['neck']:.2f} mm (min {res['min_neck']:.2f} mm){xy_str}, area {res['area']:.1f} mm^2")
+        if res.get("pieces", 0) > 1:
+            print("  per-piece necks (largest first): " + ", ".join(
+                f"{d['area']:.0f} mm^2 -> {'-' if d['neck'] is None else format(d['neck'], '.2f')}"
+                for d in res.get("pieces_detail", [])))
+        if res.get("unattached"):
+            print(f"  {len(res['unattached'])} same-net via/pad(s) do not touch this pour (not part of the neck): "
+                  + ", ".join(u["name"] for u in res["unattached"][:8]))
+        for row in res.get("sections", []):
+            print(f"  section {row['axis']}={row['value']}: {row['start']} -> {row['end']}, width {row['width']:.2f} mm "
+                  f"(chord {row['chord']:.2f} mm)")
+        for row in res.get("widths_at", []):
+            w = "not in pour" if row["width"] is None else f"{row['width']:.2f} mm"
+            print(f"  width at ({row['xy'][0]}, {row['xy'][1]}): {w}")
     return 0 if res["ok"] else 1
+
+
+def _parse_section(text: str) -> tuple[str, float]:
+    axis, sep, value = text.partition("=")
+    if axis not in ("x", "y") or not sep:
+        raise ValueError(f"--section {text!r}: use x=MM or y=MM")
+    return axis, float(value)
+
+
+def _parse_xy(text: str) -> tuple[float, float]:
+    parts = text.split(",")
+    if len(parts) != 2:
+        raise ValueError(f"--width-at {text!r}: use X,Y in mm")
+    return float(parts[0]), float(parts[1])
 
 
 def cmd_handroute(a) -> int:
@@ -349,7 +385,13 @@ def add_parser(sub) -> None:
     po = ls.add_parser("pour", help="verify plane continuity (pieces == 1) and narrowest neck width + (x, y) location")
     po.add_argument("--net", help="plane net name (overrides layout.yaml pour.net)")
     po.add_argument("--layer", help="plane layer name (overrides layout.yaml pour.layer)")
-    po.add_argument("--staged", nargs="?", const="auto", help="evaluate pour on a staged .kicad_pcb copy")
+    po_src = po.add_mutually_exclusive_group()
+    po_src.add_argument("--staged", nargs="?", const="auto", help="evaluate pour on a staged .kicad_pcb copy")
+    po_src.add_argument("--board", help="evaluate pour on this .kicad_pcb (read-only; refilled on a scratch copy)")
+    po.add_argument("--section", action="append", metavar="x=MM|y=MM",
+                    help="report copper width across the line x=MM or y=MM (repeatable)")
+    po.add_argument("--width-at", action="append", metavar="X,Y",
+                    help="report the local perpendicular width through point X,Y (repeatable)")
     po.add_argument("--json", action="store_true")
     po.set_defaults(fn=cmd_pour)
 

@@ -64,6 +64,25 @@ def matches(actual, expected):
     return actual == expected
 
 
+def polygon_matches(actual, expected, tol):
+    """Same outline within tol mm per coordinate, starting at any vertex (same winding)."""
+    if not isinstance(actual, list) or len(actual) != len(expected):
+        return False
+    n = len(actual)
+    close = lambda a, b: abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol
+    return any(all(close(actual[(k + i) % n], expected[i]) for i in range(n)) for k in range(n))
+
+
+def expect_matches(item, kind, op):
+    actual = describe(item, kind)
+    expected = dict(op.get('expect') or {})
+    if kind == 'zone' and 'polygon' in expected:
+        tol = float(op.get('polygon_tolerance', 0.005))
+        if not polygon_matches(actual['polygon'], expected.pop('polygon'), tol):
+            return False
+    return matches(actual, expected)
+
+
 def layers(item):
     return set(item.GetLayerSet().Seq()) & copper_layers
 
@@ -165,7 +184,7 @@ def run(data, source, output):
                     raise ValueError('item changed or was added since base commit: ' + key)
                 if item.IsLocked():
                     raise ValueError('item is locked: ' + key)
-                if not matches(describe(item, kind), op['expect']):
+                if not expect_matches(item, kind, op):
                     raise ValueError('UUID geometry/net does not match expect: ' + key)
                 removed.add(key)
                 if action == 'delete':

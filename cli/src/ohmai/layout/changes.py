@@ -74,6 +74,25 @@ def _fingerprints(path: Path) -> dict:
     return found
 
 
+def _check_zone_polygons(op: dict) -> None:
+    """Refuse self-intersecting or zero-area zone outlines before any native work."""
+    from shapely.geometry import Polygon
+    from shapely.validation import explain_validity
+
+    polys = []
+    if op['op'] == 'zone.add':
+        polys.append(('polygon', op['polygon']))
+    elif op['op'] == 'zone.edit' and 'polygon' in op.get('set', {}):
+        polys.append(('set.polygon', op['set']['polygon']))
+    for where, pts in polys:
+        poly = Polygon([tuple(q) for q in pts])
+        if not poly.is_valid:
+            raise ChangeError(f"operation {op['id']}: {where} is not a simple polygon "
+                              f"({explain_validity(poly)}); list the vertices in outline order without crossings")
+        if poly.area <= 1e-6:
+            raise ChangeError(f"operation {op['id']}: {where} has zero area")
+
+
 def load(path: Path, board: Path, clearance: float) -> dict:
     def reject_constant(value):
         raise ChangeError('non-finite JSON number: ' + value)
@@ -83,6 +102,8 @@ def load(path: Path, board: Path, clearance: float) -> dict:
     errors = list(jsonschema.Draft202012Validator(schema).iter_errors(data))
     if errors:
         raise ChangeError('invalid change list: ' + '; '.join(e.message for e in errors))
+    for op in data['operations']:
+        _check_zone_polygons(op)
     ids = [op['id'] for op in data['operations']]
     if len(ids) != len(set(ids)):
         raise ChangeError('operation ids must be unique')

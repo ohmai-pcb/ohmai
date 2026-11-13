@@ -130,7 +130,8 @@ def test_pour_uses_shared_fresh_refill_without_live_write(source, monkeypatch):
         return {'ok': True}
     monkeypatch.setattr(refill, 'run', run)
     monkeypatch.setattr(steps.pourgeom, 'extract_filled_pour', lambda pcb, net, layer: (None, [], None))
-    monkeypatch.setattr(steps.pourgeom, 'report', lambda *args: {'pieces': 1})
+    monkeypatch.setattr(steps.pourgeom, 'attach_features', lambda *args: [])
+    monkeypatch.setattr(steps.pourgeom, 'measure', lambda *args: {'pieces': 1})
     monkeypatch.setattr(steps.pourgeom, 'verdict', lambda *args: True)
     monkeypatch.setattr(steps.L, 'load', lambda p: SimpleNamespace(footprints={}))
     before = source.read_bytes()

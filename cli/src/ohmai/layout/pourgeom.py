@@ -58,6 +58,11 @@ def neck_with_xy(
     ok0, _ = connected(pour, pts, lo, attach)
     if not ok0:
         return 0.0, (round(pts[0][0], 2), round(pts[0][1], 2))
+    # A wide current corridor can exceed the default bracket; never cap the neck at hi.
+    x0, y0, x1, y1 = pour.bounds
+    limit = max(x1 - x0, y1 - y0)
+    while hi < limit and connected(pour, pts, hi, attach)[0]:
+        lo, hi = hi, min(hi * 2, limit)
     while hi - lo > tol:
         m = (lo + hi) / 2
         if connected(pour, pts, m, attach)[0]:
@@ -146,3 +151,143 @@ def extract_filled_pour(pcb_path: Path, net: str, layer: str) -> tuple[object, l
         (p.x, p.y) for p in b.pads() if p.net == net and (p.hole or layer in p.layers or "*.Cu" in p.layers)
     ]
     return geom, pts, []
+
+
+def attach_features(pcb_path: Path, net: str, layer: str) -> list[dict]:
+    """Same-net copper that can join the pour on ``layer``: vias (all layers) and pads on it (incl. PTH)."""
+    from .steps import _handroute_pad_shape
+
+    b = load_board(pcb_path)
+    out = [dict(kind="via", name=f"via@{v.x:.3f},{v.y:.3f}", xy=(v.x, v.y), shape=Point(v.x, v.y).buffer(v.d / 2, 16))
+           for v in b.vias if v.net == net]
+    for p in b.pads():
+        if p.net == net and (p.hole or layer in p.layers or "*.Cu" in p.layers):
+            shape = _handroute_pad_shape(p)
+            if shape.is_empty or shape.area < 1e-6:
+                shape = Point(p.x, p.y).buffer(max(p.drill / 2, 0.05), 16)
+            out.append(dict(kind="pad", name=p.name, xy=(p.x, p.y), shape=shape))
+    return out
+
+
+def patch_attach(pour, features: list[dict], tol: float = 0.01, ring: float = 1.0):
+    """Measure pours as copper, not as fill artifacts around their own attach points.
+
+    Attach features that do not touch the pour (a via used only by tracks on other layers) are
+    returned separately instead of failing the neck. Touching features are merged as copper, and a
+    pour hole around one of them (it holds the via/pad centre or touches its copper, and lies within
+    ``ring`` mm of it: a drill hole or a thermal-relief gap sector) is filled. Other-net holes, which really narrow
+    the pour, are kept.
+    Returns (patched pour, attached features, unattached features, holes filled)."""
+    attached = [f for f in features if pour.distance(f["shape"]) <= tol]
+    unattached = [f for f in features if f not in attached]
+    filled = 0
+    patched = []
+    for q in pieces(pour):
+        keep = []
+        for interior in q.interiors:
+            hole = Polygon(interior)
+            if any((hole.covers(Point(f["xy"])) or hole.distance(f["shape"]) <= tol)
+                   and hole.within(f["shape"].buffer(ring, 8)) for f in attached):
+                filled += 1
+            else:
+                keep.append(interior)
+        patched.append(Polygon(q.exterior, keep))
+    geom = unary_union(patched + [f["shape"] for f in attached]) if (patched or attached) else pour
+    return geom, attached, unattached, filled
+
+
+def measure(pour, features: list[dict], local_box, cfg: dict) -> dict:
+    """``report`` on the attach-patched pour, plus the raw (unpatched) neck for transparency."""
+    raw_pts = [f["xy"] for f in features]
+    raw_neck, raw_xy = neck_with_xy(pour, raw_pts, cfg["attach"]) if raw_pts else (0.0, None)
+    geom, attached, unattached, filled = patch_attach(pour, features)
+    pts = [f["xy"] for f in attached]
+    local = [(x, y) for x, y in pts if local_box and local_box[0] <= x <= local_box[2] and local_box[1] <= y <= local_box[3]]
+    rep = report(geom, pts, local, cfg)
+    detail = []
+    for q in sorted(pieces(geom), key=lambda q: -q.area):
+        own = [xy for xy in pts if q.distance(Point(xy)) < cfg["attach"]]
+        if not own:
+            continue
+        nk, nk_xy = neck_with_xy(q, own, cfg["attach"]) if len(own) > 1 else (None, None)
+        detail.append(dict(area=round(q.area, 2), attach_points=len(own),
+                           neck=None if nk is None else round(nk, 2), neck_xy=nk_xy))
+    rep["pieces_detail"] = detail
+    rep.update(neck_raw=round(raw_neck, 2), neck_raw_xy=raw_xy, attach_points=len(pts), holes_patched=filled,
+               unattached=[dict(kind=f["kind"], name=f["name"], xy=[round(f["xy"][0], 3), round(f["xy"][1], 3)])
+                           for f in unattached])
+    return rep
+
+
+def width_at(pour, x: float, y: float, directions: int = 180) -> float | None:
+    """Minimum chord through (x, y) over all directions: the local perpendicular width.
+
+    Unlike a cut at x = constant this does not depend on the cut direction, and a cut that runs
+    along an outline edge cannot read as copper width. None when (x, y) is not inside the pour."""
+    import math
+
+    from shapely.geometry import LineString
+
+    p = Point(x, y)
+    piece = next((q for q in pieces(pour) if q.covers(p)), None)
+    if piece is None:
+        return None
+    x0, y0, x1, y1 = piece.bounds
+    reach = math.hypot(x1 - x0, y1 - y0) + 1.0
+    best = None
+    for k in range(directions):
+        t = math.pi * k / directions
+        dx, dy = math.cos(t) * reach, math.sin(t) * reach
+        cut = piece.intersection(LineString([(x - dx, y - dy), (x + dx, y + dy)]))
+        segs = [g for g in getattr(cut, "geoms", [cut]) if g.geom_type == "LineString"]
+        own = [g for g in segs if g.distance(p) < 1e-9]
+        if own:
+            length = min(g.length for g in own)
+            best = length if best is None else min(best, length)
+    return best
+
+
+def section(pour, axis: str, value: float, step: float = 0.05) -> list[dict]:
+    """Copper crossed by the line ``axis`` = ``value`` (x or y), one row per crossing.
+
+    ``chord`` is the raw length along the cut; ``width`` is the diameter of the largest disk that
+    fits in the copper on that crossing (2 x max distance to the outline), which equals the
+    perpendicular width of a straight run however the cut is angled. Crossings that only run along
+    an outline edge (zero width) are dropped."""
+    from shapely.geometry import LineString
+
+    if pour.is_empty:
+        return []
+    x0, y0, x1, y1 = pour.bounds
+    line = (LineString([(value, y0 - 1), (value, y1 + 1)]) if axis == "x"
+            else LineString([(x0 - 1, value), (x1 + 1, value)]))
+    cut = pour.intersection(line)
+    rows = []
+    boundary = pour.boundary
+    for g in getattr(cut, "geoms", [cut]):
+        if g.geom_type != "LineString" or g.length <= 1e-6:
+            continue
+        n = max(2, min(400, int(g.length / step) + 1))
+        best, at, at_i = 0.0, None, 0
+        for i in range(n + 1):
+            q = g.interpolate(i / n, normalized=True)
+            d = boundary.distance(q)
+            if d > best:
+                best, at, at_i = d, q, i
+        lo_t, hi_t = max(0.0, (at_i - 1) / n), min(1.0, (at_i + 1) / n)
+        for _ in range(40):  # refine the sampled maximum (distance is unimodal near it)
+            m1, m2 = lo_t + (hi_t - lo_t) / 3, hi_t - (hi_t - lo_t) / 3
+            if boundary.distance(g.interpolate(m1, normalized=True)) < boundary.distance(g.interpolate(m2, normalized=True)):
+                lo_t = m1
+            else:
+                hi_t = m2
+        q = g.interpolate((lo_t + hi_t) / 2, normalized=True)
+        if boundary.distance(q) > best:
+            best, at = boundary.distance(q), q
+        if best <= 1e-4:
+            continue  # the cut runs along an edge: no copper width here
+        a, b = g.coords[0], g.coords[-1]
+        rows.append(dict(axis=axis, value=value, start=[round(a[0], 3), round(a[1], 3)],
+                         end=[round(b[0], 3), round(b[1], 3)], chord=round(g.length, 3),
+                         width=round(2 * best, 3), widest_at=[round(at.x, 3), round(at.y, 3)]))
+    return rows

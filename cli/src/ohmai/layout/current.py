@@ -233,4 +233,8 @@ def pour_neck(path: Path) -> float:
     data = json.loads(Path(path).read_text(encoding='utf-8'))
     if 'neck' not in data:
         raise ValueError(f'{path}: not an ohmai layout pour --json result (no "neck")')
+    if not data['neck'] and int(data.get('pieces') or 0) > 1:
+        necks = [d['neck'] for d in data.get('pieces_detail') or [] if d.get('neck')]
+        raise ValueError(f'{path}: the pour has {data["pieces"]} separate pieces on this layer, so its neck is 0; '
+                         f'pass --width LAYER=MM with the corridor piece\'s neck from pieces_detail {necks}')
     return float(data['neck'])

@@ -4,6 +4,15 @@
 Historical internal project names are anonymized aliases, not public repositories.
 
 ## 0.1.1 (unreleased)
+- `layout pour`: `--board PCB` (as documented; exclusive with `--staged`), `--section x=MM|y=MM`
+  and `--width-at X,Y` width reports that ignore cuts along outline edges and do not depend on the
+  cut direction. The neck now ignores same-net vias/pads that do not touch the pour (listed under
+  `unattached`), fills drill holes and thermal gaps around attach copper (`neck_raw` keeps the old
+  value), is no longer capped at 2 mm, and is also reported per piece (`pieces_detail`).
+  `layout current --pour-json` refuses a split layer's 0 mm neck with a hint.
+- `apply-changes` zone `expect.polygon` matches within `polygon_tolerance` (default 0.005 mm) from any
+  start vertex; `"match": "uuid"` makes zone delete/edit `expect` optional (base fingerprint still
+  checked). Self-intersecting or zero-area zone polygons are refused at load, before native work.
 - Handroute island counts now match KiCad: custom pads include their primitives (filled polygons,
   rects, circles, strokes, arcs) and anchor shape, so an exposed pad joins its same-footprint
   leg pads, and vias and THT pads reach filled inner-layer pours. Fixes false `initial_islands`

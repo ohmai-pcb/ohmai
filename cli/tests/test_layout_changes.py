@@ -512,3 +512,96 @@ def test_native_zone_add_resize_delete_on_synthetic_board(tmp_path):
     applied = board.read_bytes()
     stale = run([dict(id='drop', op='zone.delete', uuid=gnd['uuid'], expect=gnd['expect'])], True)
     assert not stale['ok'] and board.read_bytes() == applied
+
+
+@pytest.mark.parametrize('op', [dict(id='d', op='zone.delete', uuid=ZONE_UUID, match='uuid'),
+                                dict(id='d', op='zone.delete', uuid=ZONE_UUID, match='uuid', expect=dict(net='GND')),
+                                dict(id='d', op='zone.delete', uuid=ZONE_UUID, expect=ZONE_EXPECT,
+                                     polygon_tolerance=.01),
+                                dict(id='e', op='zone.edit', uuid=ZONE_UUID, match='uuid', set=dict(priority=2))])
+def test_schema_accepts_uuid_only_and_tolerance(project, op):
+    board, path, _ = project
+    edit(path, lambda d: d.update(operations=[op]))
+    assert changes.load(path, board, .15)['operations'] == [op]
+
+
+@pytest.mark.parametrize('op', [dict(id='d', op='zone.delete', uuid=ZONE_UUID),
+                                dict(id='d', op='zone.delete', uuid=ZONE_UUID, match='geometry', expect=dict(net='GND')),
+                                dict(id='d', op='zone.delete', uuid=ZONE_UUID, match='fuzzy'),
+                                dict(id='d', op='zone.delete', uuid=ZONE_UUID, expect=ZONE_EXPECT, polygon_tolerance=1)])
+def test_schema_refuses_missing_expect_without_uuid_mode(project, op):
+    board, path, _ = project
+    edit(path, lambda d: d.update(operations=[op]))
+    with pytest.raises(changes.ChangeError, match='invalid change list'):
+        changes.load(path, board, .15)
+
+
+@pytest.mark.parametrize('op', [dict(ZONE_ADD, polygon=[[0, 0], [10, 4], [10, 0], [0, 4]]),
+                                dict(id='e', op='zone.edit', uuid=ZONE_UUID, expect=ZONE_EXPECT,
+                                     set=dict(polygon=[[0, 0], [12, 6], [12, 0], [0, 6]])),
+                                dict(ZONE_ADD, polygon=[[0, 0], [5, 0], [10, 0]])])
+def test_self_intersecting_zone_polygon_rejected_before_native(project, op, monkeypatch):
+    board, path, cfg = project
+    edit(path, lambda d: d.update(operations=[op]))
+    with pytest.raises(changes.ChangeError, match=r"operation (corridor-in2|e): .*(not a simple polygon|zero area)"):
+        changes.load(path, board, .15)
+    called = []
+    monkeypatch.setattr(changes, '_native', lambda *a: called.append(a))
+    result = changes.apply(cfg, path, dry_run=True)
+    assert not result['ok'] and not called and 'polygon' in result['error']
+
+
+def _worker_namespace():
+    import sys
+    import types
+    fake = types.ModuleType('pcbnew')
+    saved = sys.modules.get('pcbnew')
+    sys.modules['pcbnew'] = fake
+    try:
+        ns = {'__name__': 'ohmai_worker_test'}
+        exec(compile(SCRIPT, 'changes_worker', 'exec'), ns)
+    finally:
+        if saved is None:
+            sys.modules.pop('pcbnew')
+        else:
+            sys.modules['pcbnew'] = saved
+    return ns
+
+
+def test_worker_polygon_tolerance_and_rotation():
+    ns = _worker_namespace()
+    actual = [[1.000001, 1.0], [39.0, 1.0], [39.0, 7.000004], [1.0, 7.0]]
+    match = ns['polygon_matches']
+    assert match(actual, [[1.0, 1.0], [39.0, 1.0], [39.0, 7.0], [1.0, 7.0]], .005)
+    assert match(actual, [[39.0, 7.0], [1.0, 7.0], [1.0, 1.0], [39.0, 1.0]], .005)  # other start vertex
+    assert match(actual, [[1.004, 1.0], [39.0, 1.0], [39.0, 7.0], [1.0, 7.0]], .005)
+    assert not match(actual, [[1.01, 1.0], [39.0, 1.0], [39.0, 7.0], [1.0, 7.0]], .005)
+    assert not match(actual, [[1.0, 1.0], [1.0, 7.0], [39.0, 7.0], [39.0, 1.0]], .005)  # reversed winding
+    assert not match(actual, actual[:3], .005)
+
+
+@pytest.mark.skipif(_kicad_python() is None, reason='needs kicad-cli and KiCad Python (pcbnew)')
+def test_native_zone_delete_rounded_expect_and_uuid_only(tmp_path):
+    from ohmai.layout import zones
+    board = tmp_path / 'fictional.kicad_pcb'
+    subprocess.run([_kicad_python(), '-c', SYNTHETIC_BOARD, str(board)], check=True, capture_output=True)
+    base = tmp_path / 'base.kicad_pcb'
+    base.write_bytes(board.read_bytes())
+    gnd = zones.list_zones(board)[0]
+    cfg = dict(board=str(board), work_dir=str(tmp_path / 'out'), rules_resolved={})
+
+    def run(op):
+        path = tmp_path / 'changes.json'
+        path.write_text(json.dumps(dict(schema_version=1, base=dict(
+            commit='abcdef0', board_file=base.name, sha256=changes.digest(base)), operations=[op])))
+        return changes.apply(cfg, path, dry_run=True)
+
+    off = dict(gnd['expect'], polygon=[[x + .003, y - .003] for x, y in gnd['expect']['polygon']])
+    assert run(dict(id='d', op='zone.delete', uuid=gnd['uuid'], expect=off)).get('error') is None
+    far = dict(gnd['expect'], polygon=[[x + .02, y] for x, y in gnd['expect']['polygon']])
+    assert 'does not match expect' in str(run(dict(id='d', op='zone.delete', uuid=gnd['uuid'], expect=far)))
+    loose = dict(id='d', op='zone.delete', uuid=gnd['uuid'], expect=far, polygon_tolerance=.05)
+    assert 'does not match expect' not in str(run(loose))
+    assert 'does not match expect' not in str(run(dict(id='d', op='zone.delete', uuid=gnd['uuid'], match='uuid')))
+    wrong_net = dict(id='d', op='zone.delete', uuid=gnd['uuid'], match='uuid', expect=dict(net='PWR'))
+    assert 'does not match expect' in str(run(wrong_net))
