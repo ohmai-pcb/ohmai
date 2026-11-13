@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from datetime import date
 from pathlib import Path
@@ -99,4 +100,108 @@ def create(dest: Path, idea: str, name: str | None = None, git: bool = True, ano
         log.append(f"git: commit-msg hook {tr.install_hook(dest)} (commits need an {tr.KEY} trailer)")
         _git(dest, "checkout", "-q", "-b", "phase/requirements")
         log.append("git: initial commit on main; now on branch phase/requirements")
+    return log
+
+
+GITHUB_REPO_RE = re.compile(
+    r"^(?P<owner>[A-Za-z0-9](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9])?)/"
+    r"(?P<name>[A-Za-z0-9](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9])?)$"
+)
+
+
+class GithubError(Exception):
+    """User-facing error from `ohmai new --github`."""
+
+
+def parse_github_repo(spec: str) -> str:
+    """Return a validated OWNER/NAME. Raises GithubError on a bad spec."""
+    spec = (spec or "").strip()
+    m = GITHUB_REPO_RE.fullmatch(spec)
+    if not m:
+        raise GithubError(
+            f"invalid --github value {spec!r}; expected OWNER/NAME "
+            "(letters, digits, hyphen, underscore or dot; no leading or trailing punctuation)"
+        )
+    return f"{m.group('owner')}/{m.group('name')}"
+
+
+def github_create_argv(dest: Path, repo: str, private: bool) -> list[str]:
+    visibility = "--private" if private else "--public"
+    return ["gh", "repo", "create", repo, "--source", str(dest.resolve()), visibility, "--push"]
+
+
+def ensure_gh_ready(*, which=shutil.which, run=subprocess.run) -> None:
+    if not which("gh"):
+        raise GithubError(
+            "gh is not installed or not on PATH. Install the GitHub CLI "
+            "(https://cli.github.com/) and run `gh auth login`."
+        )
+    result = run(["gh", "auth", "status"], capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        extra = f" ({detail})" if detail else ""
+        raise GithubError(
+            "GitHub CLI is not authenticated. Run `gh auth login` and retry." + extra
+        )
+
+
+def _confirm_github(prompt: str, *, yes: bool, confirm=None, stdin=None) -> bool:
+    if yes:
+        return True
+    if confirm is not None:
+        return bool(confirm(prompt))
+    stream = stdin if stdin is not None else sys.stdin
+    if not hasattr(stream, "isatty") or not stream.isatty():
+        raise GithubError(
+            "--github needs an interactive y/N confirm or --yes "
+            "(refusing to run `gh repo create` unattended)"
+        )
+    try:
+        answer = input(prompt)
+    except EOFError as e:
+        raise GithubError(
+            "--github needs an interactive y/N confirm or --yes "
+            "(refusing to run `gh repo create` unattended)"
+        ) from e
+    return answer.strip().lower() in {"y", "yes"}
+
+
+def publish_github(
+    dest: Path,
+    repo: str,
+    *,
+    private: bool = True,
+    yes: bool = False,
+    which=shutil.which,
+    run=subprocess.run,
+    confirm=None,
+    stdin=None,
+) -> list[str]:
+    """Print the exact `gh repo create` command, confirm, then run it.
+
+    Never called with a live `run` from tests. Default visibility is private.
+    """
+    dest = dest.resolve()
+    repo = parse_github_repo(repo)
+    ensure_gh_ready(which=which, run=run)
+    argv = github_create_argv(dest, repo, private)
+    visibility = "private" if private else "public"
+    log = [
+        f"GitHub: will create {repo} as {visibility} from {dest} and push",
+        "command: " + " ".join(argv),
+    ]
+    prompt = (
+        f"Create GitHub repository {repo} ({visibility}) and push {dest}? [y/N] "
+    )
+    if not _confirm_github(prompt, yes=yes, confirm=confirm, stdin=stdin):
+        raise GithubError(
+            "cancelled; the local project was created, but no GitHub repository was made"
+        )
+    result = run(argv, capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip() or f"exit {result.returncode}"
+        raise GithubError(f"`gh repo create` failed: {detail}")
+    if result.stdout.strip():
+        log.append(result.stdout.strip())
+    log.append(f"GitHub: created {repo} and pushed")
     return log

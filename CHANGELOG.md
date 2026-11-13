@@ -7,6 +7,18 @@ Historical internal project names are anonymized aliases, not public repositorie
 - Roadmap: v0.2 is now layout tooling, plugin and public release. Dogfood of a real board
   through rev-A, a frozen rev-A golden project, multi-unit symbols, and dense QFN
   escape/fanout move to v0.3.
+- `ohmai new --github OWNER/NAME [--private|--public] [--yes]`: after creating the local
+  project, print the exact `gh repo create OWNER/NAME --source PATH --private|--public --push`
+  command and run it only after an interactive y/N confirm or `--yes`. Default is private.
+  Refuses if `gh` is missing or `gh auth status` fails, and refuses `--github` with `--no-git`.
+- Logo and app icons in `docs/assets/logo/` (concept D: navy `#0B1F3A`, copper `#B87333`).
+  README uses the dark/light transparent wordmark. A 64×64 PCM-ready icon is at
+  `docs/assets/logo/pcm/resources/icon.png`; there is no KiCad PCM package yet.
+- README refresh: status is v0.2 (unreleased) experimental; short sections for the new
+  layout tools and upcoming public example projects (pico-k, usb-c-12v-stereo, hohme-sense;
+  no links yet).
+- Router guide and Freerouting run-log template: `docs/routing/ROUTER-GUIDE.md` and
+  `docs/routing/FREEROUTING-RUNS.md`.
 - `layout pour`: `--board PCB` (as documented; exclusive with `--staged`), `--section x=MM|y=MM`
   and `--width-at X,Y` width reports that ignore cuts along outline edges and do not depend on the
   cut direction. The neck now ignores same-net vias/pads that do not touch the pour (listed under

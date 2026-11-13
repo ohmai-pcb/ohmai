@@ -17,8 +17,14 @@ STATUS_ICON = {"PASS": "PASS", "FAIL": "FAIL", "WARN": "WARN", "SKIP": "SKIP", "
 
 
 def cmd_new(a) -> int:
-    from ohmai.newproject import create
+    from ohmai.newproject import GithubError, create, publish_github
 
+    if getattr(a, "github", None) and a.no_git:
+        print("ohmai new: --github cannot be used with --no-git", file=sys.stderr)
+        return 2
+    if (getattr(a, "public", False) or getattr(a, "private", False) or getattr(a, "yes", False)) and not getattr(a, "github", None):
+        print("ohmai new: --private, --public and --yes require --github", file=sys.stderr)
+        return 2
     try:
         log = create(Path(a.path), a.idea, a.name, git=not a.no_git, anonymous=getattr(a, 'anonymous', False))
     except (FileExistsError, FileNotFoundError) as e:
@@ -29,6 +35,15 @@ def cmd_new(a) -> int:
     dest = Path(a.path).resolve()
     print(f"\nCreated {dest}\nNext: cd {shlex.quote(str(dest))} && ohmai status")
     print("Agent: read AGENTS.md, then .ohmai/phases/01-requirements.md")
+    if not getattr(a, "github", None):
+        return 0
+    private = not bool(getattr(a, "public", False))
+    try:
+        for line in publish_github(dest, a.github, private=private, yes=bool(getattr(a, "yes", False))):
+            print(f"  {line}")
+    except GithubError as e:
+        print(f"ohmai new: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -632,6 +647,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--anonymous", action="store_true",
                    help="enable anonymous mode in ohmai.yaml (role labels, repo-relative paths, YYYY-MM-DD dates)")
     s.add_argument("--no-git", action="store_true", help="do not git init / commit")
+    s.add_argument("--github", metavar="OWNER/NAME",
+                   help="after creating the local repo, run owner-approved "
+                        "`gh repo create OWNER/NAME --source PATH --private|--public --push`")
+    vis = s.add_mutually_exclusive_group()
+    vis.add_argument("--private", action="store_true",
+                     help="with --github: create a private repository (default)")
+    vis.add_argument("--public", action="store_true",
+                     help="with --github: create a public repository")
+    s.add_argument("--yes", action="store_true",
+                   help="with --github: skip the interactive y/N confirm and run the printed command")
     s.set_defaults(fn=cmd_new)
 
     s = sub.add_parser("adopt", help="put an existing KiCad repo under OhmAI checks (ohmai.yaml with N/A reasons, "

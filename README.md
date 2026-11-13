@@ -147,7 +147,7 @@ Then tell your agent: *"My idea is a solar-powered USB-C charger for 2 phones, u
 
 | Command | Purpose |
 |---|---|
-| `ohmai new <path> --idea "..." [--anonymous]` | Initialize a project repo from `template/`, pin `.ohmai/phases/`, and install git hooks |
+| `ohmai new <path> --idea "..." [--anonymous] [--github OWNER/NAME]` | Initialize a project repo from `template/`, pin `.ohmai/phases/`, and install git hooks. `--github` prints the exact `gh repo create` command (private by default) and runs it only after an interactive y/N confirm or `--yes` |
 | `ohmai status [--set-phase N --gate G --decision D-xxx]` | Show current phase, gate status, locked decisions, and open questions; set phase/gate in STATUS.md front matter |
 | `ohmai check [current\|<phase>\|<check>] [--gate]` | Run deterministic checks (`--list` to view all checks); writes `out/summary.md` |
 | `ohmai review start <phase>` | Generate `reviews/<phase>/BRIEF.md` (with SHA-256 `files_hash`) and `resolutions.md` |
