@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from helpers import kicad_python
 
 from ohmai.layout import changes, native_guard
 from ohmai.layout.changes_worker import SCRIPT
@@ -444,13 +445,7 @@ def test_zone_worker_names_zone():
 
 
 def _kicad_python():
-    import os
-    import shutil
-    exe = os.environ.get('OHMAI_KICAD_PYTHON', '/usr/bin/python3')
-    if not shutil.which('kicad-cli') or not Path(exe).exists():
-        return None
-    ok = subprocess.run([exe, '-c', 'import pcbnew'], capture_output=True).returncode == 0
-    return exe if ok else None
+    return kicad_python()
 
 
 SYNTHETIC_BOARD = r'''
