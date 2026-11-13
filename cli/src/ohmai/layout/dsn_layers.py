@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Specctra layer policy and dedicated-plane reservations (no native imports)."""
 from __future__ import annotations
 

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """KiCad PCB round-trip through sexp.parse/dumps must remain loadable."""
 
 from __future__ import annotations

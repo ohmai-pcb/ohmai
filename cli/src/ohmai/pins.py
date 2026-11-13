@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Release-level tool pins shipped with this ohmai version.
 
 Distinct from a project's toolchain.lock.yaml (what that design was built with):
@@ -39,6 +40,10 @@ KICAD = "kicad-cli"
 FREEROUTING = "freerouting"
 JDK = "jdk"
 EASYEDA = "easyeda2kicad"
+EASYEDA_SETUP_NOTICE = (
+    "easyeda2kicad is AGPL-3.0, installed automatically as a separate program "
+    "(not shipped); downloads follow EasyEDA's terms."
+)
 
 
 @dataclass(frozen=True)
@@ -578,6 +583,7 @@ def install_all(*, data: dict | None = None, download: bool = True) -> tuple[lis
     try:
         if download:
             notices.append(install_easyeda(pin))
+            notices.append(EASYEDA_SETUP_NOTICE)
         else:
             ver, _ = detect_easyeda()
             if ver and version_matches(ver, pin):

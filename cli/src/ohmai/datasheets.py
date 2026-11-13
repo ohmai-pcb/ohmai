@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Datasheet manifest (`datasheets/manifest.yaml`): generate, fetch, and verify SHA-256 digests."""
 
 from __future__ import annotations

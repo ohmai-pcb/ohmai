@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Pour pieces and necks (ohmai.layout.pourgeom). Needs shapely."""
 
 from __future__ import annotations

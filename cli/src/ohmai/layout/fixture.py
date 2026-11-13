@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """FICTIONAL test boards: write minimal .kicad_pcb text for the layout tests and known-bad cases.
 
 The parts here are made up (a 16-pin QFN, two-pad passives, an 8-pin two-column flash, an edge strip); they do

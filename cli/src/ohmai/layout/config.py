@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Project layout config: `hardware/layout.yaml` (or the file named by ohmai.yaml `layout.config`).
 
 Everything project-specific for the layout steps lives in that file: plane nets and layers, inner signal layer,

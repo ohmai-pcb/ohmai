@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Generic layout steps (phase 8): placement model, escape-room rules, free-area scan, grid router core, pour and
 DSN helpers, and the KiCad-side runner.
 

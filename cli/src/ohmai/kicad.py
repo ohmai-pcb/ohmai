@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Thin wrapper around kicad-cli (headless KiCad 9.x)."""
 
 from __future__ import annotations

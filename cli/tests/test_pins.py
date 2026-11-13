@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Release tool pins: manifest, doctor mismatch messages, setup install/checksums, unpinned override."""
 
 from __future__ import annotations
@@ -131,6 +132,7 @@ def test_setup_fetches_jar_verifies_checksum_and_prints_notice(tmp_path, monkeyp
     assert any(n.startswith("kicad 9.0.2") for n in notices)
     assert any(n.startswith("jdk 25.0.4.1") for n in notices)
     assert any("easyeda2kicad 1.0.1" in n for n in notices)
+    assert any(n == pins.EASYEDA_SETUP_NOTICE for n in notices)
 
     # Wrong bytes at the destination are backed up, then replaced.
     dest.write_bytes(b"corrupt")

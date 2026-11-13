@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Feedback 2026-11 checks: generator intent vs KiCad, wire ends, unlabeled-net coverage, label policy, sheets."""
 
 

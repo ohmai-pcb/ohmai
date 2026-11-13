@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """ohmai command line."""
 
 from __future__ import annotations
@@ -794,7 +795,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("setup", help="install this release's pinned tools (no prompts) and verify checksums",
                        description="Fetches the pinned Freerouting jar (sha256) and easyeda2kicad (PyPI hashes), "
-                                   "and checks KiCad and JDK 25. Prints one line per tool. No questions. "
+                                   "and checks KiCad and JDK 25. Prints one line per tool, plus a one-line "
+                                   "AGPL/EasyEDA terms notice when easyeda2kicad is installed. No questions. "
                                    "Does not touch a shared Freerouting config. Override checks with "
                                    "OHMAI_ALLOW_UNPINNED=1.")
     s.add_argument("--check", action="store_true", help="verify only; do not download or pip install")

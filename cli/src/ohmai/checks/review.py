@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`review` check: the independent review gate for a phase (see ohmai/review.py)."""
 
 from __future__ import annotations

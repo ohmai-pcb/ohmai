@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Vetted import of KiCad symbols/footprints the pinned libraries lack (`ohmai kicad-libs import|fetch|verify|list`).
 
 A missing library part is a tool problem the agent solves with this command, never owner homework.

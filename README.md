@@ -172,4 +172,4 @@ smoke test (see [docs/TESTING.md](docs/TESTING.md)).
 
 ## License
 
-Apache-2.0 (see [LICENSE](LICENSE)). GPL/AGPL tools (`kicad-cli`, Freerouting, KiBot, SKiDL) are invoked as separate external processes and are never vendored or imported. Projects you generate with `ohmai new` are yours.
+Apache-2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Copyright 2026 The OhmAI contributors. GPL/AGPL tools (`kicad-cli`/pcbnew, Freerouting, easyeda2kicad, KiBot, SKiDL) are invoked as separate external processes and are never vendored or imported. `ohmai setup` may install easyeda2kicad (AGPL-3.0) and the Freerouting jar (GPL-3.0) as separate programs; downloads from EasyEDA follow EasyEDA's terms. Projects you generate with `ohmai new` are yours.

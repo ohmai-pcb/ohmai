@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Golden projects: snapshot compare/accept logic (no KiCad) and the real rebuild (KiCad + libs)."""
 
 import shutil

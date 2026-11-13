@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`OhmAI-Author:` commit trailers: format, validation, the commit-msg hook, `ohmai commit`, `ohmai hooks`.
 
 Every commit on a phase branch carries one well-formed trailer

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Specctra DSN edits between KiCad's export and Freerouting (`ohmai layout autoroute`; shapely, no KiCad).
 
 KiCad writes the DSN (units um, y = -board y); these steps keep Freerouting inside the board rules where its own

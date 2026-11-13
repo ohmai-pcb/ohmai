@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """schgen Lib: project hardware/lib fallback and space-indented (imported) symbols."""
 from pathlib import Path
 

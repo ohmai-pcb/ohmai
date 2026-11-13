@@ -4,6 +4,10 @@
 Historical internal project names are anonymized aliases, not public repositories.
 
 ## 0.1.1 (unreleased)
+- Apache-2.0 NOTICE names "The OhmAI contributors" and credits
+  easyeda2kicad (AGPL-3.0), Freerouting (GPL-3.0) and KiCad/pcbnew (GPL) as separate
+  programs. First-party Python and shell sources carry SPDX plus copyright headers.
+  `ohmai setup` prints a one-line AGPL/EasyEDA terms notice when it installs easyeda2kicad.
 - Each release pins exact external tool versions in `pinned-tools.yaml` (Freerouting 2.5.0 jar + sha256,
   JDK 25 major, KiCad 9.0.2 / accepted range 9.0.x, easyeda2kicad 1.0.1). `ohmai setup` installs them
   with no prompts and verifies checksums; `ohmai doctor` FAILs on a mismatch (expected vs found, plus

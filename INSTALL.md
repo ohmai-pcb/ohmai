@@ -155,7 +155,7 @@ that particular design was built with.
 See [packaging and validation](https://github.com/ohmai-pcb/ohmai/blob/main/docs/PLUGIN-PACKAGING.md) in the source repository.
 Native host validation is required before advertising host compatibility. A local
 contract-schema pass cannot substitute for host installation/discovery tests.
-Resolve the NOTICE copyright TODO, review the history privacy audit, publish the
-matching semver release only after approval, and pin any future remote marketplace
-entry to its full release commit SHA. This package does not auto-submit issues or
-marketplace entries.
+NOTICE is resolved (see [NOTICE](NOTICE)). The full git history will be published
+as is; do not rewrite it. Publish the matching semver release only after approval,
+and pin any future remote marketplace entry to its full release commit SHA. This
+package does not auto-submit issues or marketplace entries.

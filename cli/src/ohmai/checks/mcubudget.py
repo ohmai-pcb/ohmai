@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """MCU GPIO / net pin budget (parts/mcu_pin_budget.yaml), checked from architecture onward.
 
 A pin-count shortfall must fail at Phase 2/4, not when the MCU sheet is drawn in Phase 7.

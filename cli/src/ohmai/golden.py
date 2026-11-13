@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Golden projects: rebuild a reference project from its sources, diff its outputs with approved snapshots.
 
 <tests>/golden/<name>/

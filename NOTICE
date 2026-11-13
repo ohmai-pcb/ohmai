@@ -1,16 +1,24 @@
 OhmAI
-Copyright 2026 TODO: COPYRIGHT HOLDER TO BE DECIDED BY THE OWNER.
+Copyright 2026 Johan Westlund and the OhmAI contributors
 
-This placeholder MUST be resolved before public release. It does not assert a
-copyright holder or replace contributor attribution.
+OhmAI core, skill, documentation and original templates are licensed under the
+Apache License, Version 2.0 (see LICENSE). Designs users create are theirs; this
+notice does not impose an OhmAI license on user hardware designs. Redistributed
+OhmAI guidance retains its Apache notices.
 
-OhmAI core, skill, documentation and original templates are licensed Apache-2.0.
-Designs users create are theirs; this notice does not impose an OhmAI license on
-user hardware designs. Redistributed OhmAI guidance retains its Apache notices.
+Third-party programs OhmAI installs or uses are separate works. They are not
+shipped in the OhmAI source or agent-plugin payload, and this notice does not
+relicense them:
 
-Optional external programs are not included in the agent-plugin payload:
-KiCad/pcbnew and Freerouting (GPL), KiBot and easyeda2kicad (AGPL), and
-SKiDL/InSpice. CAD data from KiCad libraries, EasyEDA or LCSC is not bundled.
-Their licenses/terms apply independently; this notice does not relicense them.
-Python dependencies are separately installed under their respective licenses;
-no third-party dependency code is vendored in the plugin.
+  * easyeda2kicad (AGPL-3.0) is installed automatically by `ohmai setup` and run
+    as a subprocess. It is not shipped with OhmAI. Downloads follow EasyEDA's
+    terms.
+  * Freerouting (GPL-3.0) is a jar downloaded by `ohmai setup`, not shipped in
+    the source tree.
+  * KiCad / pcbnew (GPL) is an external system install used via `kicad-cli` and
+    a separate pcbnew process.
+
+Optional related tools such as KiBot (AGPL) and SKiDL/InSpice (GPL) may also be
+invoked as separate processes. CAD data from KiCad libraries, EasyEDA or LCSC is
+not bundled. Python dependencies are separately installed under their respective
+licenses; no third-party dependency code is vendored in the plugin.

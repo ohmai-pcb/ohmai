@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Dogfooding fixes: decision-log sync, unbound connectors/ICs, passive-mpn, status --set-phase/--gate."""
 
 from types import SimpleNamespace

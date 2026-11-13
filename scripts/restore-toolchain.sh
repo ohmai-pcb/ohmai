@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 # Restore the OhmAI toolchain (KiCad CLI + a durable ohmai venv + pinned tools) on a shared box.
 # Idempotent. One agent restores at a time: the others block on the lock below (no parallel apt).
 #   scripts/restore-toolchain.sh            # check, then repair what is missing

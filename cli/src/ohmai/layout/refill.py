@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Shared isolated refill: immutable, colocated rules; no post-load project swap."""
 from __future__ import annotations
 

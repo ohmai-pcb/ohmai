@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """skidl-netlist: partition compare (no SKiDL needed), WARN without SKiDL, SKiDL stays out of process."""
 
 import sys

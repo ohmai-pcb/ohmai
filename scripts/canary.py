@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Toolchain canary: run the golden + known-bad suites against the newest KiCad / KiCad libraries.
 
 Reports breakage early; never moves a pin. It writes no lock, no snapshot, no ohmai.yaml: candidates are

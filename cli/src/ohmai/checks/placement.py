@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Sub-second placement, critical-loop, keepout, checklist, and pour-continuity checks on .kicad_pcb."""
 
 from __future__ import annotations

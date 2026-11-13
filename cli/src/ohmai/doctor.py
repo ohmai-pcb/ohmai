@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai doctor`: environment self-check (works in a project and in any git repo, e.g. the OhmAI repo itself)."""
 
 from __future__ import annotations

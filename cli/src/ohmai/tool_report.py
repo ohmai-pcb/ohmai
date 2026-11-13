@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Local close-out draft from routing logs; never files an upstream issue."""
 from __future__ import annotations
 

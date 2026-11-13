@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Build a guidance-only local marketplace; never package the repository wholesale."""
 from __future__ import annotations
 

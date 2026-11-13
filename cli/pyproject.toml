@@ -9,7 +9,7 @@ description = "OhmAI: idea-to-finished-PCB workflow for KiCad, run by an LLM age
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
-authors = [{ name = "OhmAI contributors" }]
+authors = [{ name = "The OhmAI contributors" }]
 keywords = ["kicad", "pcb", "eda", "llm", "agent", "hardware"]
 classifiers = [
   "Programming Language :: Python :: 3",

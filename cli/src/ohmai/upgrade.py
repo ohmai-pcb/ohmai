@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai upgrade-guides`: re-pin `.ohmai/phases/` to the installed OhmAI version.
 
 Phase guides are pinned per project so a project keeps the rules it started with. When the owner

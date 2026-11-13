@@ -19,5 +19,9 @@ docs/private/
 # Timestamped pre-edit safety copies stay local.
 *.bak.*
 
-# Never package or track editor safety copies.
+# Never package or track editor safety copies or stray backups.
 *.bak*
+*.orig
+*~
+*.swp
+*.swo

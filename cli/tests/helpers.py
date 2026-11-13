@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Build tiny kicadsexpr netlists for tests (no KiCad needed)."""
 
 from __future__ import annotations

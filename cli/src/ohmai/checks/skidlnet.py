@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`skidl-netlist` check: an independent netlist built by SKiDL from expected_nets.csv must match KiCad's export.
 
 Why: `netlist` compares KiCad's export with expected_nets.csv in ohmai's own code. This check builds a second

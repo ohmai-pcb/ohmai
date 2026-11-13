@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Netclass-aware handroute/fanout width, clearance inflation, fanout stubs, staged chaining."""
 
 from __future__ import annotations

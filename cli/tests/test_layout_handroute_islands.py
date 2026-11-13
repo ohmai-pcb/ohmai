@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Handroute terminals are distinct copper islands, never just the first two pads."""
 from pathlib import Path
 

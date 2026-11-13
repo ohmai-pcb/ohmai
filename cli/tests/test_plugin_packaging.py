@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Host-independent packaging contracts; native host smoke tests remain separate."""
 from __future__ import annotations
 

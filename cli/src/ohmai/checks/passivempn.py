@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`passive-mpn`: a resistor's or capacitor's MPN encodes the same value as its Value field.
 
 Lesson from dogfooding: a resistor's Value said one thing and its MPN encoded another, so the BOM would have

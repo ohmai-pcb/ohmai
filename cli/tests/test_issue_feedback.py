@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Regression evidence for issue #1: malformed BOMs and bounded check loops."""
 import csv
 import json

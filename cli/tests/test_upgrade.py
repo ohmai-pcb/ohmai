@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai upgrade`: a tier-1 pin moves only after the suites pass or their diffs are explained."""
 
 from __future__ import annotations

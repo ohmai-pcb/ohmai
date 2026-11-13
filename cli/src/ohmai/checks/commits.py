@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`commits` check: every commit on the phase branch carries a well-formed `OhmAI-Author:` trailer."""
 
 from __future__ import annotations

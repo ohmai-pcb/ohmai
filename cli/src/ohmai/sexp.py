@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Minimal S-expression reader for KiCad files (.kicad_sch, kicadsexpr netlists).
 
 parse(text) -> nested lists; atoms are str (quotes removed), with originally-quoted

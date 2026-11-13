@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Aliases Board.edge_box / Pad.w,h,drill / Via.size,drill for handroute and fanout."""
 
 from __future__ import annotations

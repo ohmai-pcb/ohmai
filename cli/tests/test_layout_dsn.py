@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """DSN edits (ohmai.layout.dsn) on a FICTIONAL Specctra file shaped like KiCad 9's export. Needs shapely."""
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Git/LFS integration tests must operate only on disposable homes."""
 import os
 import shutil

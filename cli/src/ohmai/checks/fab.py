@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Phase 11: fab outputs can be generated (preview in out/fab-preview, never committed)."""
 
 from __future__ import annotations

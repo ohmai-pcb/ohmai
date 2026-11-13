@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """escape-room: placement rules that keep a fine-pitch QFN routable (run before routing)."""
 
 from __future__ import annotations

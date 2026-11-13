@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Fictional router runs; no Java, KiCad, remote Git, or source project writes."""
 import argparse
 import json

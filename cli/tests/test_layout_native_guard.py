@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Pure regression coverage for native candidate gates; no KiCad required."""
 from pathlib import Path
 

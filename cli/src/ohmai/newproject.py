@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai new`: create a project repo from the template."""
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Synthetic transaction tests; no KiCad installation needed."""
 import json
 import subprocess

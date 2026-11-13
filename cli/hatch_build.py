@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """One canonical source in checkout; embed data once when building an sdist/wheel."""
 from pathlib import Path
 

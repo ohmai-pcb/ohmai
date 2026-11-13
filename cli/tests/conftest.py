@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Hermetic Git/LFS homes: tests must not alter the runner's accounts or repos."""
 
 import pytest

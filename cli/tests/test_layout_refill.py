@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """No KiCad required: immutable triplets, recovery paths and real-fill evidence."""
 import json
 import subprocess

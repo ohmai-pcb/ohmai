@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Consecutive check failure signatures; coordinates are evidence, not identity."""
 from __future__ import annotations
 

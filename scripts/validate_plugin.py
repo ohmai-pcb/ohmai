@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Validate the fields we use against documented host contracts, not a host emulator.
 
 Schemas are our strict subset of public documentation, not official host schemas.

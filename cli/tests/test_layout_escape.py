@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Escape-room rules and the free-area scan on FICTIONAL boards (ohmai.layout.fixture); no KiCad needed."""
 
 from __future__ import annotations

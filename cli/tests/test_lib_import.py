@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """kicad-libs import/fetch/verify/list: vetted project-local parts, tables, manifest, lib-refs integration."""
 
 from __future__ import annotations

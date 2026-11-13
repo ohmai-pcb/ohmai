@@ -101,8 +101,9 @@ Core (skill, template, CLI) is Apache-2.0, and its Python dependencies are permi
 
 | Tool | License | How OhmAI runs it |
 |---|---|---|
-| KiCad (`kicad-cli`) | GPL-3.0 | subprocess |
-| Freerouting | GPL-3.0 | separate Java process (DSN/SES files); the Java runtime is pinned with the jar (2.2+ needs Java 25) |
+| KiCad (`kicad-cli` / pcbnew) | GPL-3.0 | subprocess; external system install |
+| Freerouting | GPL-3.0 | separate Java process (DSN/SES files); `ohmai setup` downloads the pinned jar (2.2+ needs Java 25) |
+| easyeda2kicad | AGPL-3.0 | subprocess only; `ohmai setup` installs it automatically, not shipped; downloads follow EasyEDA's terms |
 | KiBot | AGPL-3.0 | CI step (its GitHub action / container) |
 | SKiDL | MIT, but imports InSpice (GPL-3.0-or-later) at import time | `ohmai/_skidl_runner.py` in a subprocess (`$OHMAI_SKIDL_PYTHON`) |
 

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai schematic build`: draw KiCad 9 hierarchical sheets from placement files, datasheet-figure style.
 
 Input: hardware/gen/layout/_root.yaml (sheet order, title) and one hardware/gen/layout/<sheet>.yaml per

@@ -75,9 +75,9 @@ FAIL. Keep the separate SPDX notices and licensing boundaries intact.
 
 - Bump `pinned-tools.yaml` and re-run the suite plus the Freerouting smoke test before tagging
   (see [TESTING.md](TESTING.md#release-checklist-tool-pins)).
-- Resolve the NOTICE copyright holder TODO with the owner; no legal identity is assumed.
-- Review private data in reachable Git history; current-tree cleanup does not remove it.
-  Do not make this history public or rewrite it without explicit owner approval.
+- NOTICE names the copyright holder as The OhmAI contributors.
+- The full git history will be published as is; do not rewrite it. Current-tree
+  cleanup does not remove historical blobs.
 - Run native host installs and discovery, including Grok Bot's supported import UX.
 - Choose/publish the matching semver tag and built guidance-only artifact after approval.
 - Fill the mandatory project [tool issue report](templates/tool-issues.md).

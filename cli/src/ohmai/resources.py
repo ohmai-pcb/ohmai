@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Locate the project template and the skill (repo checkout or installed wheel)."""
 
 from __future__ import annotations
