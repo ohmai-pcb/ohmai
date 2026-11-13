@@ -1,14 +1,18 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# ⚡ OhmAI
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/ohmai-logo-dark-transparent.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo/ohmai-logo-light-transparent.svg">
+  <img src="docs/assets/logo/ohmai-logo-dark-transparent.svg" alt="OhmAI" width="420">
+</picture>
 
 **Turn a one-line hardware idea into a datasheet-verified, DRC-clean KiCad 9 project — with an AI agent doing the legwork and you in the driver's seat.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![KiCad 9](https://img.shields.io/badge/KiCad-9.0+-314CB0.svg)](https://www.kicad.org/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB.svg)](https://www.python.org/)
-[![Status: v0.1 Experimental](https://img.shields.io/badge/Status-v0.1_Experimental-orange.svg)](#what-works-today-vs-current-limitations)
+[![Status: v0.2 (unreleased) experimental](https://img.shields.io/badge/Status-v0.2_unreleased_experimental-orange.svg)](#what-works-today-vs-current-limitations)
 
-[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**CLI Reference**](#cli-overview) · [**Pinned tools**](#pinned-tool-versions-per-release)
+[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**Layout tools**](#layout-tools) · [**CLI Reference**](#cli-overview) · [**Pinned tools**](#pinned-tool-versions-per-release)
 
 ---
 
@@ -58,9 +62,9 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 
 ## What works today vs. current limitations
 
-> **Status: v0.1 (experimental / early-stage).** Internal reference-board validation has reached fab dry-run and bring-up preparation; no public example board or physical fabrication is claimed. See [ROADMAP](docs/ROADMAP.md).
+> **Status: v0.2 (unreleased, experimental / early-stage).** Layout tooling, plugin packaging and release prep are in tree but not tagged. No public example board or physical fabrication is claimed. See [ROADMAP](docs/ROADMAP.md).
 
-### Works well in v0.1
+### Works well today
 - **Datasheet constraint extraction & citation checking (`ohmai check constraints`, `ohmai datasheets`):** Catching pinout/direction mistakes, missing pull-ups, and unverified datasheet claims before schematic capture begins. Tracking datasheet URLs, SHA-256 digests, and cited pages in `datasheets/manifest.yaml` without committing binary `.pdf` blobs.
 - **Schematic, netlist, and BOM parity (`ohmai check schematic`, `ohmai check bom`):** Enforcing 1:1 parity across `expected_nets.csv`, `hardware/*.kicad_sch`, `hardware/*.kicad_pcb`, `hardware/gen/pinmap.yaml`, and `bom/bom.csv`.
 - **3-rule BOM sourcing & `jlcparts` verification:** Requiring multi-manufacturer alternates for passives and active parts (or an explicit `single-source:` justification listing `checked:` rejected candidates + owner decision `D-xxx`), cross-checked against a local `jlcparts` SQLite database (`OHMAI_JLCPARTS_DB`).
@@ -69,6 +73,29 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 ### Still rough / requires heavy human steering
 - **PCB placement and routing (`ohmai layout`):** The 4-stage layout pipeline (`fit`, `fanout`, `autoroute` via Freerouting, `handroute`, `pour`) and `ohmai check placement` (`critical_loops` and `keepouts`) can close a dense board to `0` DRC violations and `0` unconnected nets, **but the resulting copper looks like an autorouter output plus scripted patch routes — not a clean, human-crafted PCB layout.** Closing tight boards in v0.1 required human guidance, iterative placement adjustments, passive package swaps (`0603` → `0402`), and explicit owner waivers (such as allowing signal hops on an internal power plane).
 - **Reference-level complexity so far:** v0.1 has been exercised on datasheet-application-note circuits (MCU + buck-boost SMPS + SPI sensor front end), not high-speed impedance-controlled, RF, or high-voltage designs.
+
+---
+
+## Layout tools
+
+The 4-stage layout pipeline (`fit`, `fanout`, `autoroute`, `handroute`, `pour`) is documented in [docs/LAYOUT.md](docs/LAYOUT.md). When to use OhmAI handroute versus Freerouting: [docs/routing/ROUTER-GUIDE.md](docs/routing/ROUTER-GUIDE.md).
+
+- **`ohmai layout apply-changes`** — versioned board edits, including copper-zone add, resize and delete, with dry-run, refill, DRC gate and rollback.
+- **`ohmai layout zones`** — list zones with a ready `expect` block for change lists.
+- **`ohmai layout current`** — IPC-2152 (or legacy IPC-2221) screening of current targets against copper weight and temperature rise; reports width, pour-neck pass/fail and stitching-via count.
+- **`ohmai layout pour --board` / `--section` / `--width-at`** — plane continuity and width reports on a chosen board or cut line.
+- **`ohmai layout handroute`** — bounded router for power, high-current and custom-rule nets; island counts are intended to match KiCad.
+- **`ohmai layout autoroute`** — Freerouting 2.5.0 (jar + JDK 25) as a staged subprocess, scoped with `--nets` / `--exclude-nets`. An SES is not a DRC pass.
+
+Closing a dense board still needs human steering. The copper often looks like an autorouter output plus scripted patch routes, not a clean hand-crafted layout.
+
+## Example projects
+
+These boards are being prepared as public examples. They are not published yet, so this list has no links.
+
+- pico-k
+- usb-c-12v-stereo
+- hohme-sense
 
 ---
 
@@ -124,7 +151,7 @@ Then tell your agent: *"My idea is a solar-powered USB-C charger for 2 phones, u
 | `ohmai status [--set-phase N --gate G --decision D-xxx]` | Show current phase, gate status, locked decisions, and open questions; set phase/gate in STATUS.md front matter |
 | `ohmai check [current\|<phase>\|<check>] [--gate]` | Run deterministic checks (`--list` to view all checks); writes `out/summary.md` |
 | `ohmai review start <phase>` | Generate `reviews/<phase>/BRIEF.md` (with SHA-256 `files_hash`) and `resolutions.md` |
-| `ohmai layout {fit,fanout,autoroute,pour,handroute}` | Run the 4-stage PCB layout helpers (`critical_loops`, `keepouts`, pour neck width) |
+| `ohmai layout {fit,fanout,autoroute,pour,handroute,zones,current,apply-changes}` | 4-stage layout helpers, zone list/edit, current sizing; autoroute is Freerouting 2.5.0 with `--nets` / `--exclude-nets`. See [docs/LAYOUT.md](docs/LAYOUT.md) |
 | `ohmai passives swap <REF> --package <0402\|0603\|0805>` | Swap a passive package across schematic/layout specs while keeping BOM parity |
 | `ohmai datasheets {manifest,fetch,check}` | Manage `datasheets/manifest.yaml` (SHA-256 digests + cited pages) and fetch PDFs on demand |
 | `ohmai kicad-libs {install,tables,models,status}` | Manage pinned KiCad libraries and fetch/generate project-scoped 3D `.step` models |
@@ -144,7 +171,7 @@ template/         Project skeleton copied by `ohmai new` (AGENTS.md, STATUS.md, 
 cli/              Python package (`ohmai`): CLI commands, checks, layout helpers, review & datasheet manifest tools
 tests/            known-bad mutation fixtures (one planted bug per check) and golden reference projects
 scripts/          canary.py (newest KiCad/libs vs the suites), pylock.py
-docs/             ARCHITECTURE.md, REVIEWS.md, ROADMAP.md, TESTING.md
+docs/             ARCHITECTURE.md, LAYOUT.md, REVIEWS.md, ROADMAP.md, TESTING.md, assets/logo/, routing/
 ```
 
 ---
