@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Sub-second placement, critical-loop, keepout, checklist, and pour-continuity checks on .kicad_pcb."""
 
 from __future__ import annotations
@@ -204,21 +206,13 @@ def check_pour_cfg(pcb: Path, pour_cfg: dict) -> tuple[str, str]:
     layer = pour_cfg.get("layer")
     if not net or not layer:
         return "FAIL", "pour: 'net' and 'layer' are required in layout.yaml pour section"
-    geom, pts, _ = pourgeom.extract_filled_pour(pcb, net, layer)
+    geom, _pts, _ = pourgeom.extract_filled_pour(pcb, net, layer)
     if geom.is_empty:
         return "FAIL", f"pour {net} on {layer}: no filled_polygon found in {pcb.name}"
-    board = L.load(pcb)
-    local_pts: list[tuple[float, float]] = []
-    lcfg_local = pour_cfg.get("local") or {}
-    lrefs = lcfg_local.get("refs") or []
-    margin = float(lcfg_local.get("margin", 2.0))
-    if lrefs:
-        boxes = [board.footprints[r].courtyard for r in lrefs if r in board.footprints and board.footprints[r].courtyard]
-        if boxes:
-            bx = (min(b[0] for b in boxes) - margin, min(b[1] for b in boxes) - margin,
-                  max(b[2] for b in boxes) + margin, max(b[3] for b in boxes) + margin)
-            local_pts = [(x, y) for x, y in pts if bx[0] <= x <= bx[2] and bx[1] <= y <= bx[3]]
-    rep = pourgeom.report(geom, pts, local_pts, pour_cfg)
+    from ohmai.layout.steps import _pour_local_box
+
+    rep = pourgeom.measure(geom, pourgeom.attach_features(pcb, net, layer), _pour_local_box(L.load(pcb), pour_cfg),
+                           pour_cfg)
     ok = pourgeom.verdict(rep, pour_cfg)
     xy_str = f" at ({rep['neck_xy'][0]:.2f}, {rep['neck_xy'][1]:.2f})" if rep.get("neck_xy") else ""
     msg = (f"pour {net} ({layer}): {rep['pieces']} piece(s), neck {rep['neck']:.2f} mm"

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai doctor`: environment self-check (works in a project and in any git repo, e.g. the OhmAI repo itself)."""
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ class Item:
 
 
 def run(cwd: Path) -> list[Item]:
-    from ohmai import kicad
+    from ohmai import pins
     from ohmai import trailers as tr
     from ohmai.project import NotAProject, find_project
 
@@ -42,7 +44,6 @@ def run(cwd: Path) -> list[Item]:
             out.append(Item("hooks", "INFO", msg + "; CI clone, hooks are not versioned"))
         else:
             out.append(Item("hooks", "WARN", msg + ": commits without an OhmAI-Author trailer are not rejected"))
-    cli = kicad.kicad_cli()
-    out.append(Item("kicad-cli", "PASS" if cli else "WARN", str(cli) if cli else
-                    "not found: DRC/ERC/netlist checks are skipped"))
+    for pin in pins.check_all(cwd):
+        out.append(Item(pin.name, pin.status, pin.message))
     return out

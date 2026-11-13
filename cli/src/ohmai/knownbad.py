@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Known-bad suite (mutation fixtures): every check must FAIL on a planted mistake and PASS on its clean twin.
 
 Layout: <tests>/fixtures/known-bad/<case>/case.yaml (+ optional files/), shared bases in _base/<name>/.

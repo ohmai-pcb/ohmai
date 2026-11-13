@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai check readability`: is each sheet drawn like a datasheet application figure?
 
 Per block sheet (the root only joins blocks and is exempt from the label rules):

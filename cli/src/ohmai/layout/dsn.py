@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Specctra DSN edits between KiCad's export and Freerouting (`ohmai layout autoroute`; shapely, no KiCad).
 
 KiCad writes the DSN (units um, y = -board y); these steps keep Freerouting inside the board rules where its own
 model falls short. Every step is driven by the layout config (`autoroute.dsn`, `planes`, `signal_layers`,
-`inner_signal_layer`); with an empty config only the plane and layer steps that the config asks for run.
+`inner_signal_layer`). Signal classes are always restricted to the derived signal layers; reserved
+plane/power layers retain dedicated-plane reservations, including when no optional DSN edits are configured.
 
  1 drop_pins        pins of a padstack (e.g. castellation half-pads centred on the outline) leave the DSN
  1 keepouts         extra keep-out rectangles (board mm), e.g. strips along castellated edges
@@ -40,11 +43,86 @@ def subset_nets(s: str, pattern: str | None, exclude: str | None) -> str:
     return s[:a] + "  (network" + "".join(keep) + "\n" + s[b:]
 
 
-def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers: list[str],
+def normalize_wiring(s: str) -> tuple[str, int]:
+    """Join degree-two same-net/width/layer wire chains before Freerouting import.
+
+    Fixed split traces can be normalized by Freerouting despite their fixed state;
+    2.2.4 may merge a trace whose search-tree entries have already been removed (upstream issue #721, fixed in 2.5.0). Keep enabled unless targeting 2.5.0+.
+    Keep every vertex and branch: this changes representation, never copper geometry.
+    Parse only wiring because Specctra's (string_quote ") is not a normal sexp.
+    """
+    from .. import sexp
+
+    start = s.find("(wiring")
+    if start < 0:
+        return s, 0
+    # KiCad puts wiring last, before the pcb closing parenthesis.
+    end = s.rfind(")")
+    tree = sexp.parse(s[start:end])
+    groups = {}
+    other = []
+    for item in tree[1:]:
+        path = sexp.first(item, "path") if item[0] == "wire" else None
+        net = sexp.first(item, "net") if path else None
+        if not path or not net or len(path) < 7:
+            other.append(item)
+            continue
+        # Do not merge wires carrying extra attributes we cannot preserve.
+        if any(isinstance(v, list) and v[0] not in {"path", "net", "type"} for v in item[1:]):
+            other.append(item)
+            continue
+        pts = list(zip(path[3::2], path[4::2], strict=True))
+        typ = sexp.first(item, "type")
+        key = (str(net[1]), str(path[1]), float(path[2]), tuple(typ or []))
+        groups.setdefault(key, []).append((item, pts))
+    merged_count = 0
+    wires = []
+    for entries in groups.values():
+        endpoints = {}
+        for i, (_, pts) in enumerate(entries):
+            for pt in (pts[0], pts[-1]):
+                endpoints.setdefault(tuple(map(float, pt)), []).append(i)
+        remaining = set(range(len(entries)))
+        while remaining:
+            i = min(remaining)
+            remaining.remove(i)
+            item, pts = entries[i]
+            pts = list(pts)
+            for reverse in (False, True):
+                if reverse:
+                    pts.reverse()
+                while True:
+                    neighbors = endpoints[tuple(map(float, pts[-1]))]
+                    if len(neighbors) != 2:
+                        break
+                    nxt = next((j for j in neighbors if j in remaining), None)
+                    if nxt is None:
+                        break
+                    tail = list(entries[nxt][1])
+                    if tuple(map(float, tail[0])) != tuple(map(float, pts[-1])):
+                        tail.reverse()
+                    pts.extend(tail[1:])
+                    remaining.remove(nxt)
+                    merged_count += 1
+            path = sexp.first(item, "path")
+            path[:] = path[:3] + [v for pt in pts for v in pt]
+            wires.append(item)
+    if not merged_count:
+        return s, 0
+    return s[:start] + sexp.dumps(["wiring"] + wires + other) + "\n" + s[end:], merged_count
+
+
+def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers: list[str] | None,
           inner_layer: str | None = None, inner_nets: str | None = None, nets: str | None = None,
-          exclude: str | None = None) -> tuple[str, list[str]]:
+          exclude: str | None = None, board_layers: dict | None = None) -> tuple[str, list[str]]:
     from shapely.geometry import LineString, Polygon
 
+    from . import dsn_layers
+
+    layers = dsn_layers.policy(s, planes, copper, signal_layers, inner_layer, board_layers)
+    signal_layers = layers["signal_layers"]
+    inner_layer = layers["inner_layer"]
+    s, reservations = dsn_layers.reserve_planes(s, layers)
     log: list[str] = []
     ko: list[str] = []
     # 1. dropped pins and their net references
@@ -88,16 +166,19 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             q = re.escape(_q(n))
             s = re.sub(rf"\n\s*\(net {q}\s*\n\s*\(pins[^)]*\)\s*\)", "", s)
             s = re.sub(rf"(\(class \S+[^\n]*?) {q}(?=[ \n])", r"\1", s)
-        s = re.sub(r"\n\s*\(plane [^\n]*\n[^\n]*\)\)", "", s)
-    # 4. power layers
-    for lay in copper:
-        if lay not in signal_layers:
-            s, k = re.subn(rf"\(layer {re.escape(lay)}\s*\(type signal\)", f"(layer {lay}\n      (type power)", s)
-            if k != 1:
-                raise ValueError(f"DSN: signal layer {lay} not found once (found {k})")
+    # 4. Explicit overrides may turn a formerly power-typed layer into signal.
+    for lay, old_type in layers['types'].items():
+        new_type = 'signal' if lay in signal_layers else 'power'
+        if new_type != old_type:
+            s = re.sub(rf'(\(layer {re.escape(_q(lay))}\s*\(type )\w+(\))',
+                       lambda m, typ=new_type: m[1] + typ + m[2], s)
+
     # 5. fixed pre-placed copper
-    s = re.sub(r"(\(wire \(path [^\n]*?\)\(net [^)]*\)\(type) route\)", r"\1 fix)", s)
-    s = re.sub(rf'(\(via {VIA_NAME}\s+-?\d+ -?\d+ \(net [^)]*\)\(type) route\)', r"\1 fix)", s)
+    wi = s.find("(wiring")
+    if wi >= 0:
+        # KiCad wraps long names/paths and exports fractional um coordinates.
+        # Matching individual one-line integer wires silently left copper movable.
+        s = s[:wi] + re.sub(r"\(type\s+route\)", "(type fix)", s[wi:])
     if ko:
         k = s.find('\n    (via "')
         if k < 0:
@@ -125,7 +206,7 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             return re.sub(rf"(\(path \S+ ){w['from']} ", rf"\g<1>{w['to']} ", m.group(1))
         s = re.sub(rf"(\(padstack {re.escape(w['padstack'])}.*?\(attach off\))", widen, s, flags=re.S)
     # 9. inner signal layer only for inner_nets
-    if inner_layer and inner_layer in signal_layers:
+    if inner_layer and inner_layer in signal_layers and inner_nets:
         a = s.index("  (network")
         b = s.index("  (wiring", a)
         net_s = s[a:b]
@@ -141,8 +222,7 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             for n in allowed:
                 head = re.sub(rf'\s{re.escape(n)}(?=[\s)])', "", head, count=1)
             net_s = net_s[:i0] + head + net_s[j0:]
-        others = " ".join(lay for lay in signal_layers if lay != inner_layer)
-        net_s = re.sub(r'(\(use_via (?:"[^"]+"|\S+)\)\n)', lambda m: m.group(1) + f"        (use_layer {others})\n", net_s)
+
         if allowed:
             ic = dsn_cfg.get("inner_class") or {}
             cls = (f"    (class {ic.get('name', 'InnerOk')} " + " ".join(allowed) +
@@ -153,6 +233,20 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             net_s = net_s[:k] + cls + net_s[k:]
         s = s[:a] + net_s + s[b:]
         log.append(f"{inner_layer} allowed for {len(allowed)} nets: {' '.join(allowed)}")
+    s = dsn_layers.constrain_classes(s, signal_layers, inner_layer, bool(inner_nets),
+                                    (dsn_cfg.get('inner_class') or {}).get('name', 'InnerOk'))
+    log.extend(reservations)
+    log.append('signal classes use_layer: ' + ', '.join(signal_layers))
     if nets or exclude:
         s = subset_nets(s, nets, exclude)
+    # Geometry-preserving degree-two chain join. Required to avoid Freerouting
+    # 2.2.4's to_trace_entries NPE (issue #721); optional on 2.5.0+ where that
+    # crash is fixed upstream. Default on: harmless when unneeded.
+    if dsn_cfg.get("coalesce_fixed_chains", True):
+        s, joined = normalize_wiring(s)
+        if joined:
+            log.append(f"coalesced {joined} fixed wire chain joins (geometry unchanged)")
+    else:
+        log.append("coalesce_fixed_chains disabled")
+    s = dsn_layers.ensure_plane_nets(s)
     return s, log

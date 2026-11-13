@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Escape-room placement rules (lessons of a hand-routed QFN board; see docs/LAYOUT.md "Escape room").
 
 Run on the placed, not yet routed board (rule 4 only applies then). Every rule returns findings

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Commit trailers (check commits, hook, ohmai commit, review authors) and phase-7 schematic checks."""
 
 from __future__ import annotations
@@ -274,7 +276,7 @@ def test_passives_look_through_series_resistor(proj):
     assert _tst(proj, ["100n", "100n"], r_value="10k").status == "FAIL"   # nominal 1k: ±5 %
 
 
-# ---------- readability: text placement rules added after pico-k Reviewer-A F1/F13/F14/F15 ----------
+# ---------- readability: text placement rules added after reference-board Reviewer-A F1/F13/F14/F15 ----------
 
 PWR_LIB = ('(symbol "power:VCC" (power) (property "Reference" "#PWR" (at 0 0 0)) (property "Value" "VCC" (at 0 -3.81 0))'
            ' (symbol "VCC_1_1" (pin power_in line (at 0 0 90) (length 0) (name "VCC") (number "1"))))')
@@ -303,7 +305,7 @@ def test_readability_power_text_on_foreign_junction():
 def test_readability_title_overflow():
     fails, _ = analyze(_sheet2("", "short"))
     assert not any("title:" in f for f in fails)
-    fails, _ = analyze(_sheet2("", "pico-k: 5 Pico edge, castellations, test pads (Pico 2 datasheet Fig. 2, §3.1)"))
+    fails, _ = analyze(_sheet2("", "reference-board: 5 Pico edge, castellations, test pads (Pico 2 datasheet Fig. 2, §3.1)"))
     assert any("title:" in f for f in fails), fails
 
 
@@ -373,6 +375,14 @@ def test_hooks_install_outside_a_project(tmp_path, monkeypatch, capsys):
 
 @needs_git
 def test_doctor_warns_without_hook(tmp_path, monkeypatch, capsys):
+    from ohmai import kicad, pins
+
+    monkeypatch.setattr(kicad, "kicad_cli", lambda: "fictional-kicad-cli")
+    monkeypatch.setattr(kicad, "version", lambda: "9.0.2")
+    monkeypatch.setattr(pins, "detect_freerouting", lambda pin=None: ("2.5.0", None, None))
+    monkeypatch.setattr(pins, "detect_jdk", lambda: ("25.0.4.1", "java"))
+    monkeypatch.setattr(pins, "detect_easyeda", lambda: ("1.0.1", "easyeda2kicad"))
+    monkeypatch.delenv("OHMAI_ALLOW_UNPINNED", raising=False)
     d = tmp_path / "plain"
     d.mkdir()
     git(d, "init", "-q")
@@ -391,3 +401,27 @@ def test_doctor_warns_without_hook(tmp_path, monkeypatch, capsys):
     (tr.hooks_dir(d) / "commit-msg").unlink()
     main(["doctor", "--strict"])
     assert "INFO  hooks" in capsys.readouterr().out   # CI clones have no hooks: not a warning there
+
+
+@needs_git
+def test_pre_push_preserves_lfs_gate_and_ref_stdin(repo, tmp_path, monkeypatch):
+    import os
+
+    from ohmai import trailers
+    root = repo.root if hasattr(repo, 'root') else repo
+    # A fake LFS executable records stdin; this test never contacts a remote.
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    capture = tmp_path / 'lfs-refs.txt'
+    executable = bin_dir / 'git-lfs'
+    executable.write_text('#!/bin/sh\n[ "$1" = pre-push ] || exit 9\ncat > "$LFS_TEST_CAPTURE"\n')
+    executable.chmod(0o755)
+    monkeypatch.setenv('PATH', str(bin_dir) + os.pathsep + os.environ['PATH'])
+    monkeypatch.setenv('LFS_TEST_CAPTURE', str(capture))
+    subprocess.run(['git', '-C', str(root), 'config', '--local', 'filter.lfs.process', 'git-lfs filter-process'], check=True)
+    trailers.install_hook(root)
+    hook = trailers.hooks_dir(root) / 'pre-push'
+    result = subprocess.run(['sh', str(hook), 'origin', 'fictional-remote'], cwd=root,
+                            input='fictional ref update\n', text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text() == 'fictional ref update\n'

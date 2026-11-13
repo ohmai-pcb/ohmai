@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Autonomous passive package swap helper (`ohmai passives swap` / `ohmai parts swap`).
 
 Allows resizing standard passives (R, C, L, FB across 0402..1206 / 2016..3030) during Schematic and Layout

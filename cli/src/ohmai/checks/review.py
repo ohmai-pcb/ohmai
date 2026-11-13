@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`review` check: the independent review gate for a phase (see ohmai/review.py)."""
 
 from __future__ import annotations
@@ -49,7 +51,7 @@ def _post_review_ok(project, phase, r, rp, who, cur, nit_files, res_rows, errs, 
 
 # Work checks that are a hard part of a phase's review gate: a FAIL here can never be accepted as debt, waived,
 # or carried past the gate (a dogfood board's Phase 7 reached "review PASS" with 167 readability problems accepted as
-# debt, while the previous project, pico-k, had to be drawn clean). Fix the drawing, then re-review.
+# debt, while the previous project, reference-board, had to be drawn clean). Fix the drawing, then re-review.
 HARD_GATE_CHECKS: dict[str, tuple[str, ...]] = {"schematic": ("readability",)}
 
 

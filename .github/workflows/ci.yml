@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 name: ci
 
 on:
@@ -52,7 +54,9 @@ jobs:
           git config --global user.name ci && git config --global user.email ci@localhost
           ohmai new /tmp/demo --idea "CI KiCad test"
           cd /tmp/demo
-          ohmai check sheet-load erc render     # must PASS on the empty template
+          # The template sheet is empty: sheet-load/erc FAIL on 0 symbols by design; the script asserts
+          # every sheet loads, that is the only FAIL reason, and render PASSes (ldo-led golden runs them to PASS).
+          python3 "$GITHUB_WORKSPACE/scripts/ci_fresh_project.py"
           ohmai check drc || true               # empty board: no outline yet, expected FAIL
           ohmai release rev-A --dry-run || true
       - name: Golden + known-bad suites (pinned libraries)

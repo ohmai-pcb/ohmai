@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`ohmai release rev-X`: preflight, fab outputs via kicad-cli, manifest, optional local tag.
 
 Never pushes. The GitHub release (gerbers/BOM/PnP) is made by CI (KiBot) when the tag is pushed,
@@ -16,7 +18,7 @@ from ohmai import __version__, kicad
 from ohmai.project import Project
 
 REV_RE = re.compile(r"^rev-[A-Z][0-9]*$")
-PREFLIGHT = ("erc", "drc", "bom-lock")
+PREFLIGHT = ("erc", "drc", "bom-lock", "docs:docs/tool-issues.md")
 
 
 def _git(project: Project, *args: str) -> subprocess.CompletedProcess:
@@ -97,7 +99,8 @@ def release(project: Project, rev: str, dry_run: bool, tag: bool, force: bool) -
         "- [ ] ERC/DRC clean with fab rules (`ohmai check fab`)\n"
         "- [ ] BOM locked; fab actual-purchase list diffed and approved (`ohmai check bom --fab ...`)\n"
         "- [ ] 3D view, 1:1 print, pin-1 and rotation checked against PnP\n"
-        "- [ ] Bring-up plan written (`test/bringup-plan.md`)\n",
+        "- [ ] Bring-up plan written (`test/bringup-plan.md`)\n"
+        "- [ ] All-tool issue report complete (`docs/tool-issues.md`), with versions, repros, impacts, workarounds, fix commits, severity and upstream drafts\n",
         encoding="utf-8",
     )
     print(f"  outputs in {dest.relative_to(project.root)}/ (not committed; attach to the GitHub release)")

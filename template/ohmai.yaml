@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 # OhmAI project config. ohmai_version = the OhmAI release this project was created with.
 ohmai_version: "{{ohmai_version}}"
 project: "{{project_name}}"
@@ -42,6 +44,8 @@ kicad:
 # (version null = not used), FAIL on mismatch; tier 2 helpers
 # = ranges, WARN. kicad.app / kicad.libraries above stay the policy; the lock pins the exact build inside them.
 # Move a tier-1 pin only with `ohmai upgrade <tool> <version>` (golden + known-bad suites, own commit).
+# Distinct from OhmAI's *release* pins in pinned-tools.yaml (`ohmai setup` / `ohmai doctor`).
+# Set allow_unpinned: true (or OHMAI_ALLOW_UNPINNED=1) only when testing a tool version this release did not pin.
 toolchain:
   lock: toolchain.lock.yaml
 

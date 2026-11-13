@@ -1,6 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Build tiny kicadsexpr netlists for tests (no KiCad needed)."""
 
 from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
 
 TPS63001_PINS = {
     "1": "SCL", "2": "SDA", "3": "ALT", "4": "FB", "5": "ISEN-", "6": "ISEN+", "7": "VOUT", "8": "BST2",
@@ -42,3 +49,12 @@ def good_tps63001():
         nets[f"/N{n}"] = [f"U1.{n}"]
     libparts = {"TPS63001": TPS63001_PINS, "C": {"1": "~", "2": "~"}, "R": {"1": "~", "2": "~"}}
     return comps, nets, libparts
+
+
+def kicad_python() -> str | None:
+    """The KiCad Python (pcbnew) the native layout workers use, or None (CI runners without KiCad)."""
+    exe = os.environ.get("OHMAI_KICAD_PYTHON", "/usr/bin/python3")
+    if not shutil.which("kicad-cli") or not Path(exe).exists():
+        return None
+    ok = subprocess.run([exe, "-c", "import pcbnew"], capture_output=True).returncode == 0
+    return exe if ok else None

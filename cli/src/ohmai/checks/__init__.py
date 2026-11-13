@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Check registry. Each check returns a Result; `ohmai check` prints them and writes out/summary.md."""
 
 from __future__ import annotations
 
+import csv
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -60,6 +63,8 @@ def run(project: Project, name: str, opts: dict) -> Result:
         return Result(name, FAIL, f"unknown check '{name}'")
     try:
         return fn(project, opts)
+    except csv.Error as e:
+        return Result(name, FAIL, "invalid CSV", [str(e)])
     except FileNotFoundError as e:
         return Result(name, SKIP if "kicad-cli" in str(e) else FAIL, str(e))
 

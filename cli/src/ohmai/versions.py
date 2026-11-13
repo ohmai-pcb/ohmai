@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Version strings and ranges (shared by the kicad-app check and the toolchain lock)."""
 
 from __future__ import annotations

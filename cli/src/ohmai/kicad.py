@@ -1,4 +1,6 @@
-"""Thin wrapper around kicad-cli (headless KiCad 8/9)."""
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
+"""Thin wrapper around kicad-cli (headless KiCad 9.x)."""
 
 from __future__ import annotations
 
@@ -23,11 +25,13 @@ def version() -> str | None:
     return r.stdout.strip().splitlines()[0] if r.returncode == 0 and r.stdout.strip() else None
 
 
-def run(args: list[str], log: Path | None = None, timeout: int = 600) -> subprocess.CompletedProcess:
+def run(args: list[str], log: Path | None = None, timeout: int = 600,
+        cwd: Path | str | None = None) -> subprocess.CompletedProcess:
     exe = kicad_cli()
     if not exe:
-        raise FileNotFoundError("kicad-cli not found (install KiCad 8 or 9, or set KICAD_CLI)")
-    r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=timeout)
+        raise FileNotFoundError("kicad-cli not found (install KiCad 9.x, or set KICAD_CLI)")
+    r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=timeout,
+                       cwd=str(cwd) if cwd is not None else None)
     if log is not None:
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text(f"$ kicad-cli {' '.join(args)}\n{r.stdout}\n{r.stderr}", encoding="utf-8")

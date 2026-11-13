@@ -1,0 +1,14 @@
+{
+  "name": "ohmai-local",
+  "owner": {
+    "name": "The OhmAI contributors"
+  },
+  "plugins": [
+    {
+      "name": "ohmai",
+      "source": "./plugins/ohmai",
+      "description": "Idea-to-PCB engineering guidance for KiCad with verified tools and human gates."
+    }
+  ],
+  "description": "Local guidance-only OhmAI engineering workflow plugin."
+}

@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
+# OhmAI release tool pins — the single source of truth for this ohmai release.
+# `ohmai setup` installs these exact versions (no prompts); `ohmai doctor` FAILs on a
+# mismatch unless OHMAI_ALLOW_UNPINNED=1 (or toolchain.allow_unpinned in ohmai.yaml).
+# Before tagging a release: bump the pins, re-run the suite and the Freerouting
+# smoke test, then tag.
+schema: ohmai-pinned-tools/v1
+
+tools:
+  freerouting:
+    version: "2.5.0"
+    # Official GitHub release jar (use this, not the GraalVM native CLI — see docs/routing).
+    url: https://github.com/freerouting/freerouting/releases/download/v2.5.0/freerouting-2.5.0.jar
+    sha256: f6f51bb02245e8e717f9359bd260cc9c5c0b1bc0acc8b7cb2cd5b8ffeb5de3c7
+    filename: freerouting-2.5.0.jar
+  jdk:
+    # Major only: Freerouting 2.5.0 needs Java 25; patch builds (e.g. 25.0.4.1) are accepted.
+    # Not fetched by setup — install a JDK 25 (auto-discovered under ~/.local/share/jdk25,
+    # the ohmai cache, or OHMAI_JDK_ROOT) and set FREEROUTING_JAVA if `java` is not on PATH.
+    version: "25"
+    match: major
+  kicad:
+    # Reference build on this release (this box and CI: kicad-cli 9.0.2).
+    # Accepted range is the 9.0 series: official installers and distros ship different 9.0 patches.
+    version: "9.0.2"
+    range: "9.0.x"
+  easyeda2kicad:
+    # Exact PyPI version (AGPL-3.0, subprocess only — never imported by the CLI).
+    version: "1.0.1"
+    pypi: easyeda2kicad
+    # PyPI artifact digests (wheel, then sdist) for `ohmai setup` --require-hashes.
+    sha256:
+      - b5a460650c5dd0af35a70658f433f63355fdbdf2c2b9e3bc411bc11ea98d06ed
+      - 122a48fafa3b918e730185c973dd342183928b8a0dbe24436d13d58b90290e84

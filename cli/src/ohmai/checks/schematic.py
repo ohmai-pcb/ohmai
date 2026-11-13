@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Schematic checks via kicad-cli: sheet-load, ERC, netlist diff, render."""
 
 from __future__ import annotations

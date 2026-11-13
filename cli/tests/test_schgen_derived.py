@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Derived (`extends`) symbols must be embedded the way KiCad's LIB_SYMBOL::Flatten() does it,
 otherwise ERC reports lib_symbol_mismatch (seen on Sensor_Temperature:LM75B extends LM75C)."""
 import os

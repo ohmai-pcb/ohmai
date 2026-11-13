@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Compare a netlist with expected_nets.csv.
 
 expected_nets.csv: one net per row, '#' lines are comments.

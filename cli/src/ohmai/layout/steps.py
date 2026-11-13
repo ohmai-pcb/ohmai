@@ -1,9 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Execution helpers for `ohmai layout {fanout,autoroute,pour,handroute}`."""
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import math
+import os
+import re
 import shutil
 from pathlib import Path
 
@@ -23,7 +28,317 @@ def parse_timeout_sec(t_str: str) -> int:
     return int(parts[0])
 
 
-def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> dict:
+def _same_net(a: str | None, b: str | None) -> bool:
+    """True only when both nets are non-empty and equal. No-net never matches any net."""
+    return bool(a) and bool(b) and a == b
+
+
+def _class_for_net(rules: dict, net: str | None) -> dict:
+    """Netclass width/clearance/via for `net` from rules_resolved; Default / top-level fallback.
+
+    Empty / None nets resolve as Default (KiCad no-net has no class of its own).
+    """
+    net = net or ""
+    classes = rules.get("classes") or {}
+    patterns = rules.get("patterns") or []
+    cname = grid_mod.netclass(patterns, net) if patterns else "Default"
+    default = classes.get("Default") or {}
+    cls = {
+        "width": default.get("width", rules.get("track_w", 0.15)),
+        "clearance": default.get("clearance", rules.get("clearance", 0.1)),
+        "via_d": default.get("via_d", rules.get("via_d", 0.45)),
+        "via_h": default.get("via_h", rules.get("via_h", 0.2)),
+    }
+    if cname in classes:
+        for k, v in classes[cname].items():
+            if v is not None:
+                cls[k] = v
+    return {
+        "name": cname if cname in classes else "Default",
+        "min_width": max(0.127, float(cls.get("min_width") or rules.get("min_track_width") or 0.0)),
+        "width": float(cls.get("width") or rules.get("track_w", 0.15)),
+        "clearance": float(cls.get("clearance") or rules.get("clearance", 0.1)),
+        "via_d": float(cls.get("via_d") or rules.get("via_d", 0.45)),
+        "via_h": float(cls.get("via_h") or rules.get("via_h", 0.2)),
+    }
+
+
+def _pair_clearance(rules: dict, net_a: str | None, net_b: str | None) -> float:
+    """KiCad-style clearance: max of the two netclasses' clearance values.
+
+    None / "" (no-net) uses Default clearance via _class_for_net.
+    """
+    return max(_class_for_net(rules, net_a)["clearance"], _class_for_net(rules, net_b)["clearance"])
+
+
+
+def _footprint_clearance(rules: dict, *refs: str) -> float:
+    return max((float(cl) for pattern, cl in rules.get("pad_clearances", {}).items()
+                if any(fnmatch.fnmatchcase(ref, pattern) for ref in refs)), default=0.0)
+
+
+def _pad_clearance(rules: dict, net: str, pad) -> float:
+    return max(_pair_clearance(rules, net, pad.net), _footprint_clearance(rules, pad.ref))
+
+
+def _handroute_try_widths(hr: dict, nc: dict, net_name: str) -> list[float]:
+    """Class width first, then alt_widths / residual neck ladder (narrower only).
+
+    `alt_widths` may key by net name or class name → list of mm widths.
+    When `residual_neck` is true (default) or the class is in `neck_classes`,
+    also try ~half width (floored at neck_w) and neck_w itself so dense power
+    islands can still bridge without a project-specific alt list.
+    """
+    floor = max(0.127, float(nc.get("min_width") or 0.0))
+    full = max(float(nc["width"]), floor)
+    out: list[float] = [full]
+    alts = hr.get("alt_widths") or {}
+    for key in (net_name, nc.get("name")):
+        if not key:
+            continue
+        for w in alts.get(key) or []:
+            wf = max(float(w), floor)
+            if 0 < wf < full - 1e-9 and all(abs(wf - x) > 1e-9 for x in out):
+                out.append(wf)
+    allow_neck = bool(hr.get("residual_neck", True)) or (
+        nc.get("name") in set(hr.get("neck_classes") or [])
+    )
+    if allow_neck:
+        neck = max(floor, float(hr.get("neck_w") or 0.15))
+        # Prefer the widest residual that still fits: 3/4 → 1/2 → 2/5 → neck floor.
+        for frac in (0.75, 0.5, 0.375):
+            w = max(neck, round(full * frac, 3))
+            if 0 < w < full - 1e-9 and all(abs(w - x) > 1e-9 for x in out):
+                out.append(w)
+        if neck > 0 and neck < full - 1e-9 and all(abs(neck - x) > 1e-9 for x in out):
+            out.append(neck)
+    return out
+
+def _sort_handroute_nets(rules: dict, nets: list[str]) -> list[str]:
+    """Thin-first for multi-net handroute: narrower netclass width first, then name.
+
+    Wide power copper laid early can block later 0.6–0.8 mm nets; sorting ascending
+    by track width (stable by name) lets thin nets claim corridors first.
+    """
+    return sorted(nets, key=lambda n: (_class_for_net(rules, n)["width"], n))
+
+
+def _clamp_via_size(rules: dict, via_d: float, via_h: float) -> tuple[float, float]:
+    """Prefer netclass via size, but never below board / .kicad_dru floors (or annular)."""
+    min_d = float(rules.get("min_via_d") or 0.0)
+    min_h = float(rules.get("min_via_h") or 0.0)
+    min_ann = float(rules.get("min_via_annular") or 0.0)
+    d = max(float(via_d), min_d) if min_d else float(via_d)
+    h = max(float(via_h), min_h) if min_h else float(via_h)
+    if min_ann and d < h + 2 * min_ann:
+        d = h + 2 * min_ann
+    if min_d:
+        d = max(d, min_d)
+    return d, h
+
+
+def _thick_seg_box(x0: float, y0: float, x1: float, y1: float, half: float) -> tuple[float, float, float, float]:
+    """Axis-aligned bbox of a thick segment (conservative vs true capsule)."""
+    return (
+        min(x0, x1) - half,
+        min(y0, y1) - half,
+        max(x0, x1) + half,
+        max(y0, y1) + half,
+    )
+
+
+def _disk_box(x: float, y: float, r: float) -> tuple[float, float, float, float]:
+    return (x - r, y - r, x + r, y + r)
+
+
+def _zone_obstacles(pcb: Path) -> list[tuple[str, tuple[str, ...], tuple[float, float, float, float], bool]]:
+    """Foreign-zone AABBs from the live board: (net, layers, box, keepout_no_via).
+
+    Keepouts with vias not_allowed and copper zones (non-empty net) block fanout copper.
+    Outline polygons only (filled_polygon not required) — conservative bbox.
+    """
+    try:
+        tree = sexp.parse(pcb.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return []
+    out: list[tuple[str, tuple[str, ...], tuple[float, float, float, float], bool]] = []
+    for z in sexp.find(tree, "zone"):
+        nn = sexp.first(z, "net_name")
+        net = str(nn[1]) if nn and len(nn) > 1 else ""
+        layers_node = sexp.first(z, "layers") or sexp.first(z, "layer")
+        layers: tuple[str, ...] = ()
+        if layers_node and len(layers_node) > 1:
+            layers = tuple(str(x) for x in layers_node[1:] if isinstance(x, str))
+        keep = sexp.first(z, "keepout")
+        keepout_no_via = False
+        if keep is not None:
+            vias_rule = sexp.first(keep, "vias")
+            keepout_no_via = bool(vias_rule and len(vias_rule) > 1 and str(vias_rule[1]) == "not_allowed")
+        if not keepout_no_via and not net:
+            continue
+        xs: list[float] = []
+        ys: list[float] = []
+        for poly in list(sexp.find(z, "polygon")) + list(sexp.find(z, "filled_polygon")):
+            pts = sexp.first(poly, "pts")
+            if not pts:
+                continue
+            for xy in sexp.find(pts, "xy"):
+                if len(xy) >= 3:
+                    xs.append(float(xy[1]))
+                    ys.append(float(xy[2]))
+        if not xs:
+            continue
+        out.append((net, layers, (min(xs), min(ys), max(xs), max(ys)), keepout_no_via))
+    return out
+
+
+def _fanout_escape_ok(
+    *,
+    pad,
+    vx: float,
+    vy: float,
+    via_d: float,
+    stub_w: float,
+    stub_layer: str,
+    rules: dict,
+    all_pads: list,
+    segments: list,
+    vias: list,
+    zones: list,
+    planned: list[dict],
+    pad_gap: float,
+) -> bool:
+    """True if via + pad→via stub clear foreign copper (pads/tracks/vias/zones) by clearance.
+
+    Same-net copper is allowed. Source pad is skipped. Full pad boxes (incl. large EPADs) are
+    obstacles — never a centre-only point check. Prefer rejecting the candidate over a short.
+    """
+    v_r = via_d / 2
+    stub_half = stub_w / 2
+    v_box = _disk_box(vx, vy, v_r)
+    stub_box = _thick_seg_box(pad.x, pad.y, vx, vy, stub_half)
+
+    def _cl(other_net: str, other_pad=None) -> float:
+        # Explicit custom footprint rules are never relaxed to an IC toe gap.
+        refs = (pad.ref, other_pad.ref) if other_pad is not None else (pad.ref,)
+        explicit = _footprint_clearance(rules, *refs)
+        # Max of pair clearance and fanout pad_gap so dense QFN toes still clear.
+        # Same-footprint pads are already denser than power netclass clearance (0.4 mm
+        # pitch vs 0.5 mm BATT); use pad_gap only between toes of this IC.
+        if (other_pad is not None and getattr(other_pad, "ref", None) == pad.ref
+                and pad.ref.startswith("U") and _pair_clearance(rules, pad.net, other_net) < 1.0):
+            return max(pad_gap, explicit)
+        return max(explicit, _pair_clearance(rules, pad.net, other_net or ""), pad_gap)
+
+    # Foreign pads (full boxes, including EPAD). No-net is never same-net.
+    for o in all_pads:
+        if o is pad or _same_net(o.net, pad.net):
+            continue
+        # Layer-aware for stub; vias pierce all copper layers.
+        stub_hit = (not o.layers) or stub_layer in o.layers or "*.Cu" in o.layers
+        cl = _cl(o.net, o)
+        if L.overlap(L.grow(v_box, cl), o.box, 0.0):
+            return False
+        if stub_hit and L.overlap(L.grow(stub_box, cl), o.box, 0.0):
+            return False
+        # Also require via copper itself stays pad_gap clear of the raw pad box.
+        if L.overlap(L.grow(v_box, pad_gap), o.box, 0.0):
+            return False
+
+    # Existing tracks.
+    for seg in segments:
+        if _same_net(seg.net, pad.net):
+            continue
+        cl = _cl(seg.net)
+        # Via hits every layer; stub only its layer.
+        seg_half = seg.width / 2
+        sbox = _thick_seg_box(seg.x0, seg.y0, seg.x1, seg.y1, seg_half)
+        if L.overlap(L.grow(v_box, cl), sbox, 0.0):
+            return False
+        if seg.layer == stub_layer and L.overlap(L.grow(stub_box, cl), sbox, 0.0):
+            return False
+
+    # Existing vias.
+    for v in vias:
+        if _same_net(v.net, pad.net):
+            continue
+        cl = _cl(v.net)
+        ob = _disk_box(v.x, v.y, v.size / 2)
+        if L.overlap(L.grow(v_box, cl), ob, 0.0):
+            return False
+        if L.overlap(L.grow(stub_box, cl), ob, 0.0):
+            return False
+
+    # Zones / keepouts.
+    # Vias intentionally pierce plane pours (GND/power); the pour refill punches clearance.
+    # Treating filled-zone AABBs as via walls blocked every non-GND escape on poured boards.
+    # Keepouts still forbid vias. Stubs still cannot run through a foreign pour on stub_layer.
+    for znet, zlayers, zbox, keepout_no_via in zones:
+        if keepout_no_via:
+            if L.overlap(v_box, zbox, 0.0) or L.overlap(stub_box, zbox, 0.0):
+                return False
+            continue
+        if _same_net(znet, pad.net):
+            continue
+        cl = _cl(znet)
+        stub_layer_hit = (not zlayers) or stub_layer in zlayers
+        if stub_layer_hit and L.overlap(L.grow(stub_box, cl), zbox, 0.0):
+            return False
+
+    # Already-accepted fanout copper this call.
+    for pv in planned:
+        if _same_net(pv["net"], pad.net):
+            continue
+        # Escape vias from the same IC use pad_gap, not power netclass clearance.
+        same_ic = str(pv.get("ref") or "") == pad.ref
+        cl = pad_gap if (same_ic and pad.ref.startswith("U") and
+                          _pair_clearance(rules, pad.net, pv["net"]) < 1.0) else _cl(pv["net"])
+        ob = _disk_box(pv["x"], pv["y"], float(pv["size"]) / 2)
+        if L.overlap(L.grow(v_box, cl), ob, 0.0):
+            return False
+        if L.overlap(L.grow(stub_box, cl), ob, 0.0):
+            return False
+        # Their stub vs our via/stub.
+        other_stub = _thick_seg_box(pv["pad_x"], pv["pad_y"], pv["x"], pv["y"], float(pv["width"]) / 2)
+        other_layer = pv.get("layer", "F.Cu")
+        if L.overlap(L.grow(v_box, cl), other_stub, 0.0):
+            return False
+        if other_layer == stub_layer and L.overlap(L.grow(stub_box, cl), other_stub, 0.0):
+            return False
+    return True
+
+
+def _fanout_exclusions(all_pads, specs):
+    """Resolve REF.PAD:radius to circles; reject typos rather than silently routing there."""
+    circles = []
+    for spec in specs:
+        try:
+            name, radius = spec.rsplit(":", 1)
+            ref, num = name.rsplit(".", 1)
+            radius = float(radius)
+        except (ValueError, AttributeError) as e:
+            raise ValueError("exclude-near must be REF.PAD:radius_mm") from e
+        if not math.isfinite(radius) or radius <= 0:
+            raise ValueError("exclude-near radius must be finite and positive")
+        found = [p for p in all_pads if p.ref == ref and str(p.num) == num]
+        if not found:
+            raise ValueError(f"exclude-near: unknown pad {name}")
+        circles.extend((p.x, p.y, radius) for p in found)
+    return circles
+
+
+def _fanout_excluded(pad, vx, vy, via_d, stub_w, circles):
+    if not circles:
+        return False
+    from shapely.geometry import LineString, Point
+    stub = LineString([(pad.x, pad.y), (vx, vy)])
+    return any(math.hypot(vx-x, vy-y) <= radius + via_d/2 or
+               stub.distance(Point(x, y)) <= radius + stub_w/2 for x, y, radius in circles)
+
+
+def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False,
+               nets: str | None = None, exclude_near: list[str] | None = None,
+               exclude_pads: list[str] | None = None) -> dict:
     pcb = Path(cfg["board"])
     if not pcb.is_file():
         raise FileNotFoundError(f"{pcb}: board not found")
@@ -39,62 +354,448 @@ def run_fanout(cfg: dict, staged: Path | None = None, dry_run: bool = False) -> 
     angles = int(fo.get("angles") or 24)
     planes = set((cfg.get("planes") or {}).keys())
 
+    # Materialize pads once: nested iteration over the generator would consume it and
+    # skip foreign-pad collision checks for every escape after the first.
+    all_pads = list(b.pads())
+    net_filter = re.compile(nets or fo.get("nets")) if (nets or fo.get("nets")) else None
+    circles = _fanout_exclusions(all_pads, list(fo.get("exclude_near") or []) + list(exclude_near or []))
+    excluded_pads = set(fo.get("exclude_pads") or []) | set(exclude_pads or [])
+    known_pads = {f"{p.ref}.{p.num}" for p in all_pads}
+    if excluded_pads - known_pads:
+        raise ValueError(f"exclude-pad: unknown pads {sorted(excluded_pads - known_pads)}")
     existing_holes = [(v.x, v.y, v.drill / 2) for v in b.vias] + [
-        (p.x, p.y, p.drill / 2) for p in b.pads() if p.hole
+        (p.x, p.y, p.drill / 2) for p in all_pads if p.hole
     ]
-    all_pads = b.pads()
     eb = b.edge_box
+    zones = _zone_obstacles(pcb)
 
     escape_specs = fo.get("escape") or []
     target_refs = {spec["ref"] for spec in escape_specs if isinstance(spec, dict) and "ref" in spec}
 
     planned_vias: list[dict] = []
+    skipped: list[dict] = []
+    fo_track_fallback = float(fo.get("track_w") or 0.25)
+    thin_stub = min(fo_track_fallback, 0.15)
+
+    def _size_attempts_for(pad) -> list[tuple[float, float, float]]:
+        nc = _class_for_net(rules, pad.net)
+        p_via_d, p_via_h = _clamp_via_size(rules, float(nc["via_d"]), float(nc["via_h"]))
+        p_track_w = float(nc["width"]) if nc["name"] != "Default" else fo_track_fallback
+        attempts = [(p_via_d, p_via_h, p_track_w)]
+        def_d, def_h = _clamp_via_size(rules, float(rules["via_d"]), float(rules["via_h"]))
+        if (def_d < p_via_d - 1e-9) or (def_h < p_via_h - 1e-9):
+            attempts.append((def_d, def_h, thin_stub))
+        elif thin_stub < p_track_w - 1e-9:
+            # Same via floor, but a thinner escape stub helps adjacent QFN toes diverge.
+            attempts.append((p_via_d, p_via_h, thin_stub))
+        return attempts
+
+    def _angle_order(pad, n_ang: int, planned: list[dict]) -> list[float]:
+        """Prefer bearings that diverge from nearby same-IC escape vias already planned."""
+        base = [2 * math.pi * k / n_ang for k in range(n_ang)]
+        neighbors = [
+            pv for pv in planned
+            if str(pv.get("ref") or "") == pad.ref
+            and math.hypot(float(pv["x"]) - pad.x, float(pv["y"]) - pad.y) <= 2.5
+        ]
+        if not neighbors:
+            # No neighbor yet: alternate a few degrees off due-east by pad row so the
+            # next toe can claim the opposite diverge before pair-resolve is needed.
+            try:
+                pn = int(str(pad.num))
+            except ValueError:
+                pn = 0
+            bias = (math.pi / 36) if (pn % 2) else (-math.pi / 36)  # ±5°
+            # Outward from footprint centroid if known.
+            same = [q for q in all_pads if q.ref == pad.ref]
+            if same:
+                cx = sum(q.x for q in same) / len(same)
+                cy = sum(q.y for q in same) / len(same)
+                outward = math.atan2(pad.y - cy, pad.x - cx) + bias
+            else:
+                outward = bias
+
+            def _near_out(a: float) -> float:
+                return abs((a - outward + math.pi) % (2 * math.pi) - math.pi)
+
+            return sorted(base, key=_near_out)
+        # Mean bearing of neighbors from this pad; sort angles by angular distance to that
+        # bearing so parallel east/east collisions lose to +/- a few degrees.
+        bearings = [math.atan2(float(pv["y"]) - pad.y, float(pv["x"]) - pad.x) for pv in neighbors]
+        mean = math.atan2(
+            sum(math.sin(b) for b in bearings) / len(bearings),
+            sum(math.cos(b) for b in bearings) / len(bearings),
+        )
+
+        def _away(a: float) -> float:
+            d = abs((a - mean + math.pi) % (2 * math.pi) - math.pi)
+            return -d  # larger angular separation first
+
+        return sorted(base, key=_away)
+
+    def _try_place(pad, planned: list[dict], holes: list, n_ang: int | None = None) -> dict | None:
+        stub_layer = pad.layers[0] if pad.layers else "F.Cu"
+        n_ang = int(n_ang or angles)
+        for attempt_i, (cand_d, cand_h, cand_w) in enumerate(_size_attempts_for(pad)):
+            for r_step in steps:
+                dist = max(pad.w, pad.h) / 2 + cand_d / 2 + r_step
+                for ang in _angle_order(pad, n_ang, planned):
+                    vx = round(pad.x + dist * math.cos(ang), 4)
+                    vy = round(pad.y + dist * math.sin(ang), 4)
+                    if eb and (vx - cand_d / 2 < eb[0] + edge_cl or vx + cand_d / 2 > eb[2] - edge_cl or
+                               vy - cand_d / 2 < eb[1] + edge_cl or vy + cand_d / 2 > eb[3] - edge_cl):
+                        continue
+                    if any(math.hypot(vx - hx, vy - hy) < (cand_h / 2 + hr + hole_hole) for hx, hy, hr in holes):
+                        continue
+                    if _fanout_excluded(pad, vx, vy, cand_d, cand_w, circles):
+                        continue
+                    if not _fanout_escape_ok(
+                        pad=pad, vx=vx, vy=vy, via_d=cand_d, stub_w=cand_w, stub_layer=stub_layer,
+                        rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
+                        planned=planned, pad_gap=pad_gap,
+                    ):
+                        continue
+                    return {
+                        "ref": pad.ref, "pad": pad.num, "net": pad.net, "x": vx, "y": vy,
+                        "pad_x": pad.x, "pad_y": pad.y, "layer": stub_layer,
+                        "size": cand_d, "drill": cand_h, "width": cand_w,
+                        "via_relaxed": attempt_i > 0,
+                    }
+        return None
+
+    def _pair_resolve(pad_a, pad_b, planned: list[dict], holes: list) -> tuple[dict, dict] | None:
+        """Search diverging escapes for two same-IC toes that greedily blocked each other."""
+        stub_layer_a = pad_a.layers[0] if pad_a.layers else "F.Cu"
+        # 5° grid: 7.5° (48) misses the ±2–5° diverge slots QFN 0.4 mm toes need.
+        n_ang = max(angles, 72)
+
+        def _pair_angles(pad, n: int, planned_local: list[dict]) -> list[float]:
+            ordered = _angle_order(pad, n, planned_local)
+            # Only search the outward cone — full-circle 72² is too slow and never wins for QFN toes.
+            same = [q for q in all_pads if q.ref == pad.ref]
+            if not same:
+                return ordered
+            cx = sum(q.x for q in same) / len(same)
+            cy = sum(q.y for q in same) / len(same)
+            outward = math.atan2(pad.y - cy, pad.x - cx)
+            cone = []
+            for a in ordered:
+                d = abs((a - outward + math.pi) % (2 * math.pi) - math.pi)
+                if d <= math.radians(50):
+                    cone.append(a)
+            return cone or ordered
+
+        for attempt_a_i, (da, ha, wa) in enumerate(_size_attempts_for(pad_a)):
+            for ra in steps:
+                dist_a = max(pad_a.w, pad_a.h) / 2 + da / 2 + ra
+                for ang_a in _pair_angles(pad_a, n_ang, planned):
+                    ax = round(pad_a.x + dist_a * math.cos(ang_a), 4)
+                    ay = round(pad_a.y + dist_a * math.sin(ang_a), 4)
+                    if eb and (ax - da / 2 < eb[0] + edge_cl or ax + da / 2 > eb[2] - edge_cl or
+                               ay - da / 2 < eb[1] + edge_cl or ay + da / 2 > eb[3] - edge_cl):
+                        continue
+                    if any(math.hypot(ax - hx, ay - hy) < (ha / 2 + hr + hole_hole) for hx, hy, hr in holes):
+                        continue
+                    if not _fanout_escape_ok(
+                        pad=pad_a, vx=ax, vy=ay, via_d=da, stub_w=wa, stub_layer=stub_layer_a,
+                        rules=rules, all_pads=all_pads, segments=b.segments, vias=b.vias, zones=zones,
+                        planned=planned, pad_gap=pad_gap,
+                    ):
+                        continue
+                    if _fanout_excluded(pad_a, ax, ay, da, wa, circles):
+                        continue
+                    trial_a = {
+                        "ref": pad_a.ref, "pad": pad_a.num, "net": pad_a.net, "x": ax, "y": ay,
+                        "pad_x": pad_a.x, "pad_y": pad_a.y, "layer": stub_layer_a,
+                        "size": da, "drill": ha, "width": wa, "via_relaxed": attempt_a_i > 0,
+                    }
+                    planned_ab = planned + [trial_a]
+                    holes_ab = holes + [(ax, ay, ha / 2)]
+                    trial_b = _try_place(pad_b, planned_ab, holes_ab, n_ang=n_ang)
+                    if trial_b:
+                        return trial_a, trial_b
+        return None
+
+    pending_pads: list = []
     for p in all_pads:
         if p.hole or not p.net:
             continue
-        if target_refs and p.ref not in target_refs:
+        # No-connect / schematic-unconnected pads do not need escapes and steal
+        # dense QFN toe slots from real nets (e.g. U1.21 blocking VSYS_BB U1.22).
+        if str(p.net).startswith("unconnected-") or str(p.net).startswith("Net-(unconnected-"):
             continue
-        if not target_refs and p.net not in planes:
+        if f"{p.ref}.{p.num}" in excluded_pads:
             continue
+        if net_filter:
+            if not net_filter.search(p.net):
+                continue
+        else:
+            if target_refs and p.ref not in target_refs:
+                continue
+            if not target_refs and p.net not in planes:
+                continue
         # Already has a same-net via within 1.2 mm?
         if any(v.net == p.net and math.hypot(v.x - p.x, v.y - p.y) <= 1.2 for v in b.vias):
             continue
-        placed = None
-        for r_step in steps:
-            dist = max(p.w, p.h) / 2 + via_d / 2 + r_step
-            for k in range(angles):
-                ang = 2 * math.pi * k / angles
-                vx = round(p.x + dist * math.cos(ang), 4)
-                vy = round(p.y + dist * math.sin(ang), 4)
-                if eb and (vx - via_d / 2 < eb[0] + edge_cl or vx + via_d / 2 > eb[2] - edge_cl or
-                           vy - via_d / 2 < eb[1] + edge_cl or vy + via_d / 2 > eb[3] - edge_cl):
-                    continue
-                if any(math.hypot(vx - hx, vy - hy) < (via_h / 2 + hr + hole_hole) for hx, hy, hr in existing_holes):
-                    continue
-                v_box = (vx - via_d / 2, vy - via_d / 2, vx + via_d / 2, vy + via_d / 2)
-                if any(o.net != p.net and L.box_gap(v_box, (o.x - o.w / 2, o.y - o.h / 2, o.x + o.w / 2, o.y + o.h / 2)) < pad_gap
-                       for o in all_pads):
-                    continue
-                placed = {"ref": p.ref, "pad": p.num, "net": p.net, "x": vx, "y": vy,
-                          "pad_x": p.x, "pad_y": p.y, "layer": p.layers[0] if p.layers else "F.Cu"}
-                existing_holes.append((vx, vy, via_h / 2))
-                break
-            if placed:
-                break
+        pending_pads.append(p)
+
+    # Dense QFN toes: place priority / fat power nets before drivers (HIDRV/LODRV)
+    # so SW/VSYS can claim diverging east slots before a neighbor steals them.
+    priority_nets = {str(n) for n in (fo.get("priority_nets") or [])}
+    priority_classes = {str(n) for n in (fo.get("priority_classes") or ["SW_NODE", "BATT_12V", "STEREO_12V"])}
+
+    def _pad_priority(pad) -> tuple:
+        nc = _class_for_net(rules, pad.net)
+        is_pri = (pad.net in priority_nets) or (nc.get("name") in priority_classes)
+        # Among priority, thinner stub pitch first (south→north by y) so pair-resolve
+        # sees neighbors; non-priority last.
+        return (0 if is_pri else 1, pad.ref, float(pad.y), str(pad.num))
+
+    pending_pads.sort(key=_pad_priority)
+
+    for p in pending_pads:
+        nc = _class_for_net(rules, p.net)
+        pri = (p.net in priority_nets) or (nc.get("name") in priority_classes)
+        placed = _try_place(p, planned_vias, existing_holes, n_ang=(max(angles, 72) if pri else angles))
         if placed:
             planned_vias.append(placed)
+            existing_holes.append((placed["x"], placed["y"], float(placed["drill"]) / 2))
+        else:
+            skipped.append({"ref": p.ref, "pad": p.num, "net": p.net, "reason": "no_legal_escape"})
+
+    # Pair-resolve: skipped priority toe next to a same-IC planned escape → rip neighbor
+    # and search diverging slots so 0.4 mm QFN pitch can host two 0.45 mm vias.
+    if skipped:
+        still_skipped: list[dict] = []
+        for sk in skipped:
+            nc_sk = _class_for_net(rules, sk["net"])
+            if sk["net"] not in priority_nets and nc_sk.get("name") not in priority_classes:
+                still_skipped.append(sk)
+                continue
+            pad_b = next((p for p in pending_pads if p.ref == sk["ref"] and str(p.num) == str(sk["pad"])), None)
+            if pad_b is None:
+                still_skipped.append(sk)
+                continue
+            # Nearest same-IC planned via within 1.5 mm of this pad.
+            nbr_i = None
+            nbr_dist = 1e9
+            for i, pv in enumerate(planned_vias):
+                if str(pv.get("ref") or "") != pad_b.ref:
+                    continue
+                d = math.hypot(float(pv["x"]) - pad_b.x, float(pv["y"]) - pad_b.y)
+                if d < nbr_dist and d <= 1.5:
+                    nbr_dist = d
+                    nbr_i = i
+            if nbr_i is None:
+                still_skipped.append(sk)
+                continue
+            nbr = planned_vias[nbr_i]
+            pad_a = next(
+                (p for p in pending_pads if p.ref == nbr["ref"] and str(p.num) == str(nbr["pad"])),
+                None,
+            )
+            if pad_a is None:
+                still_skipped.append(sk)
+                continue
+            # Rip neighbor via from planned + holes, then pair-search.
+            planned_rest = [pv for i, pv in enumerate(planned_vias) if i != nbr_i]
+            holes_rest = [
+                h for h in existing_holes
+                if not (abs(h[0] - float(nbr["x"])) < 1e-6 and abs(h[1] - float(nbr["y"])) < 1e-6)
+            ]
+            pair = _pair_resolve(pad_a, pad_b, planned_rest, holes_rest)
+            if not pair:
+                # Try opposite order (B first as A).
+                pair = _pair_resolve(pad_b, pad_a, planned_rest, holes_rest)
+                if pair:
+                    pair = (pair[1], pair[0])  # keep (pad_a_escape, pad_b_escape) naming loose
+            if not pair:
+                still_skipped.append(sk)
+                continue
+            esc_a, esc_b = pair
+            # If opposite-order returned swapped nets, keep both escapes regardless of label.
+            planned_vias = planned_rest + [esc_a, esc_b]
+            existing_holes = holes_rest + [
+                (esc_a["x"], esc_a["y"], float(esc_a["drill"]) / 2),
+                (esc_b["x"], esc_b["y"], float(esc_b["drill"]) / 2),
+            ]
+        skipped = still_skipped
 
     target = staged or (pcb if not dry_run else None)
     if target is not None:
-        _append_copper_to_pcb(pcb, target, planned_vias, [], via_d, via_h, float(fo.get("track_w") or 0.25))
+        # Wipe-or-replace: always rebuild staged from the live board + this fanout only.
+        # Prefer writing zero fanout copper over illegal copper when every pad was skipped.
+        _append_copper_to_pcb(pcb, target, planned_vias, [], via_d, via_h, fo_track_fallback)
+        if staged is not None:
+            _ensure_staged_project_files(pcb, Path(staged))
 
     return {
         "board": str(pcb),
         "staged": str(staged) if staged else None,
         "dry_run": dry_run,
         "vias_added": len(planned_vias),
+        "vias_relaxed": sum(1 for v in planned_vias if v.get("via_relaxed")),
         "vias": planned_vias,
+        "skipped": skipped,
+        "skipped_count": len(skipped),
     }
+
+
+def _ensure_staged_project_files(board: Path, staged: Path) -> None:
+    """Copy .kicad_pro / .kicad_dru next to a staged PCB so DRC picks up project design rules.
+
+    Staged boards live under work_dir (often out/layout/), away from the live board's project
+    files. KiCad binds rules by *basename* (staged.kicad_pcb ↔ staged.kicad_pro), so copies are
+    renamed to the staged stem — keeping the live board's name leaves KiCad on default via mins
+    (0.5 / 0.3) and false via_diameter / drill_out_of_range.
+    """
+    src_dir = Path(board).resolve().parent
+    staged_p = Path(staged).resolve()
+    dst_dir = staged_p.parent
+    stem = staged_p.stem
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    board_stem = Path(board).stem
+    for ext in (".kicad_pro", ".kicad_dru"):
+        src = src_dir / f"{board_stem}{ext}"
+        if not src.is_file():
+            # Fall back to any single matching file in the board dir.
+            matches = list(src_dir.glob(f"*{ext}"))
+            src = matches[0] if len(matches) == 1 else None
+        if src is None or not Path(src).is_file():
+            continue
+        dst = dst_dir / f"{stem}{ext}"
+        if dst.resolve() == Path(src).resolve():
+            continue
+        shutil.copy2(src, dst)
+
+
+def _fanout_vias_from_staged(live_pcb: Path, staged_pcb: Path) -> list[dict]:
+    """Fanout via+stub copper present on staged but not on live (for wipe-or-replace chaining).
+
+    Identifies vias that are missing from live and have a same-net stub segment from a pad
+    centre to the via. Mid-route handroute vias (no pad stub) are not returned here.
+    """
+    live = L.load(live_pcb)
+    st = L.load(staged_pcb)
+    live_via_pos = {(round(v.x, 4), round(v.y, 4)) for v in live.vias}
+    pads = list(live.pads())
+    out: list[dict] = []
+    for v in st.vias:
+        key = (round(v.x, 4), round(v.y, 4))
+        if key in live_via_pos:
+            continue
+        stub = None
+        for seg in st.segments:
+            if seg.net != v.net:
+                continue
+            ends = [((seg.x0, seg.y0), (seg.x1, seg.y1)), ((seg.x1, seg.y1), (seg.x0, seg.y0))]
+            for (ex, ey), (ox, oy) in ends:
+                if math.hypot(ex - v.x, ey - v.y) > 0.05:
+                    continue
+                for p in pads:
+                    if p.net != v.net:
+                        continue
+                    if math.hypot(ox - p.x, oy - p.y) <= 0.05:
+                        stub = (p, seg)
+                        break
+                if stub:
+                    break
+            if stub:
+                break
+        if not stub:
+            continue
+        p, seg = stub
+        out.append({
+            "ref": p.ref,
+            "pad": p.num,
+            "net": v.net,
+            "x": v.x,
+            "y": v.y,
+            "pad_x": p.x,
+            "pad_y": p.y,
+            "layer": seg.layer or (p.layers[0] if p.layers else "F.Cu"),
+            "size": v.size,
+            "drill": v.drill,
+            "width": seg.width,
+        })
+    return out
+
+
+def _kept_handroute_from_staged(
+    live_pcb: Path, staged_pcb: Path, rip_nets: set[str],
+) -> tuple[list[dict], list[dict]]:
+    """Prior handroute copper on staged for nets outside rip_nets (incremental --nets).
+
+    Re-running the same nets replaces their copper (no doubling). Other nets' staged tracks
+    and mid-route vias are carried forward onto the wipe-or-replace write from live.
+    """
+    live = L.load(live_pcb)
+    st = L.load(staged_pcb)
+    live_seg = {
+        (s.net, s.layer, round(s.x0, 4), round(s.y0, 4), round(s.x1, 4), round(s.y1, 4), round(s.width, 4))
+        for s in live.segments
+    }
+    live_via = {(round(v.x, 4), round(v.y, 4), v.net) for v in live.vias}
+    pads = list(live.pads())
+    # Fanout stubs (pad→via) are carried separately; skip them here.
+    fanout_stub_keys = set()
+    for v in st.vias:
+        for seg in st.segments:
+            if seg.net != v.net:
+                continue
+            for (ex, ey), (ox, oy) in [
+                ((seg.x0, seg.y0), (seg.x1, seg.y1)),
+                ((seg.x1, seg.y1), (seg.x0, seg.y0)),
+            ]:
+                if math.hypot(ex - v.x, ey - v.y) > 0.05:
+                    continue
+                if any(p.net == v.net and math.hypot(ox - p.x, oy - p.y) <= 0.05 for p in pads):
+                    fanout_stub_keys.add((
+                        seg.net, seg.layer,
+                        round(seg.x0, 4), round(seg.y0, 4),
+                        round(seg.x1, 4), round(seg.y1, 4),
+                        round(seg.width, 4),
+                    ))
+    tracks: list[dict] = []
+    for s in st.segments:
+        if s.net in rip_nets:
+            continue
+        key = (s.net, s.layer, round(s.x0, 4), round(s.y0, 4), round(s.x1, 4), round(s.y1, 4), round(s.width, 4))
+        if key in live_seg or key in fanout_stub_keys:
+            continue
+        tracks.append({
+            "net": s.net, "layer": s.layer,
+            "x0": s.x0, "y0": s.y0, "x1": s.x1, "y1": s.y1, "width": s.width,
+        })
+    vias: list[dict] = []
+    for v in st.vias:
+        if v.net in rip_nets:
+            continue
+        key = (round(v.x, 4), round(v.y, 4), v.net)
+        if key in live_via:
+            continue
+        # Skip fanout vias (have pad stubs) — those come from _fanout_vias_from_staged.
+        is_fanout = False
+        for seg in st.segments:
+            if seg.net != v.net:
+                continue
+            for (ex, ey), (ox, oy) in [
+                ((seg.x0, seg.y0), (seg.x1, seg.y1)),
+                ((seg.x1, seg.y1), (seg.x0, seg.y0)),
+            ]:
+                if math.hypot(ex - v.x, ey - v.y) > 0.05:
+                    continue
+                if any(p.net == v.net and math.hypot(ox - p.x, oy - p.y) <= 0.05 for p in pads):
+                    is_fanout = True
+                    break
+            if is_fanout:
+                break
+        if is_fanout:
+            continue
+        vias.append({
+            "net": v.net, "x": v.x, "y": v.y, "size": v.size, "drill": v.drill,
+        })
+    return vias, tracks
 
 
 def _append_copper_to_pcb(
@@ -121,12 +822,14 @@ def _append_copper_to_pcb(
             ["layers", "F.Cu", "B.Cu"],
             ["net", str(nid)],
         ])
+        # Fanout vias carry pad_x/pad_y and need a stub. Mid-route handroute vias do not —
+        # connecting tracks in `tracks` (or already on src) keep them from dangling.
         if "pad_x" in v and "pad_y" in v:
             tree.append([
                 "segment",
                 ["start", str(v["pad_x"]), str(v["pad_y"])],
                 ["end", str(v["x"]), str(v["y"])],
-                ["width", str(default_w)],
+                ["width", str(v.get("width", default_w))],
                 ["layer", v.get("layer", "F.Cu")],
                 ["net", str(nid)],
             ])
@@ -144,6 +847,73 @@ def _append_copper_to_pcb(
     dst_pcb.write_text(sexp.dumps(tree) + "\n", encoding="utf-8")
 
 
+def _freerouting_jar() -> str:
+    """Absolute Freerouting jar when known; else the relative name for the caller's cwd.
+
+    The pinned release jar (pinned-tools.yaml) is preferred. Older cached jars are
+    used only when OHMAI_ALLOW_UNPINNED is set.
+    """
+    for key in ("OHMAI_FREEROUTING_JAR", "FREEROUTING_JAR"):
+        env = os.environ.get(key)
+        if env and Path(env).is_file():
+            return str(Path(env).resolve())
+    try:
+        from ohmai import pins
+        pinned = pins.freerouting_cache_jar()
+        if pinned.is_file():
+            return str(pinned.resolve())
+        if not pins.allow_unpinned():
+            return str(pinned)
+    except (FileNotFoundError, KeyError, ValueError):
+        pinned = None
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ohmai/freerouting"
+    for cand in (
+        cache / "freerouting-2.5.0.jar",
+        cache / "freerouting-2.2.4.jar",
+        cache / "freerouting-2.1.0.jar",
+        Path.home() / ".cache/ohmai/freerouting/freerouting.jar",
+        Path.home() / ".local/share/freerouting/2.5.0/freerouting-2.5.0.jar",
+    ):
+        if cand.is_file():
+            return str(cand.resolve())
+    return "freerouting.jar"
+
+
+def _freerouting_java_bin() -> str:
+    """Java that runs Freerouting: FREEROUTING_JAVA overrides, else a discovered JDK 25."""
+    try:
+        from ohmai import pins
+        ver, exe = pins.discover_jdk()
+        if exe:
+            return exe
+    except (FileNotFoundError, KeyError, ValueError):
+        pass
+    import shutil
+    env = os.environ.get("FREEROUTING_JAVA") or os.environ.get("OHMAI_FREEROUTING_JAVA")
+    if env:
+        p = Path(env)
+        if p.is_file():
+            return str(p.resolve())
+        for cand in (p / "bin" / "java", p / "java"):
+            if cand.is_file():
+                return str(cand.resolve())
+    which = shutil.which("java")
+    if which:
+        return which
+    return "java"
+
+
+def _freerouting_user_data_path(jar: str | None = None) -> Path:
+    """Per-version OhmAI userdata directory; never ~/.config/freerouting."""
+    from ohmai import pins
+    ver = None
+    if jar:
+        ver = pins._jar_version(Path(jar))
+    path = pins.freerouting_user_data_path(ver)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def prepare_autoroute(
     cfg: dict,
     dsn_in: Path | None = None,
@@ -152,6 +922,8 @@ def prepare_autoroute(
     timeout: str | None = None,
     via_costs: int | None = None,
     threads: int | None = None,
+    nets: str | None = None,
+    exclude: str | None = None,
 ) -> dict:
     ar = cfg["autoroute"]
     work = Path(cfg["work_dir"])
@@ -168,33 +940,73 @@ def prepare_autoroute(
     eff_threads = threads if threads is not None else ar.get("threads")
 
     dsn_edited = False
+    dsn_log: list[str] = []
     if raw_dsn.is_file():
-        tree = dsn_mod.parse(raw_dsn.read_text(encoding="utf-8", errors="replace"))
+        # dsn.patch edits Specctra text in place (no sexp tree API).
         dsn_cfg = dict(ar.get("dsn") or {})
-        dsn_cfg["planes"] = cfg.get("planes") or {}
-        dsn_cfg["inner_nets"] = ar.get("inner_nets")
-        dsn_cfg["signal_layers"] = cfg.get("signal_layers") or ["F.Cu", "B.Cu"]
-        dsn_cfg["inner_signal_layer"] = cfg.get("inner_signal_layer")
-        dsn_mod.edit_dsn(tree, dsn_cfg)
-        patched_dsn.write_text(dsn_mod.dumps(tree), encoding="utf-8")
+        planes = dict(cfg.get("planes") or {})
+        # The merged F/B handroute default must not masquerade as an explicit
+        # autorouter override. Derive default DSN policy from real stackup roles.
+        signal_layers = (list(cfg['signal_layers']) if cfg.get('signal_layers') is not None
+                         and cfg.get('_signal_layers_explicit', True) else None)
+        copper = list(cfg.get('copper') or [])
+        from . import dsn_layers
+        raw_text = raw_dsn.read_text(encoding='utf-8', errors='replace')
+        board_layers = dsn_layers.board_layers(pcb)
+        layer_policy = dsn_layers.policy(raw_text, planes, copper, signal_layers,
+                                        cfg.get('inner_signal_layer'), board_layers)
+        patched, dsn_log = dsn_mod.patch(
+            raw_text,
+            dsn_cfg,
+            planes,
+            copper,
+            signal_layers,
+            inner_layer=cfg.get("inner_signal_layer"),
+            inner_nets=ar.get("inner_nets"),
+            nets=nets,
+            exclude=exclude,
+            board_layers=board_layers,
+        )
+        if nets:
+            dsn_log = list(dsn_log) + [f"subset nets={nets!r}"]
+        if exclude:
+            dsn_log = list(dsn_log) + [f"exclude nets={exclude!r}"]
+        if ses_out.is_file():
+            try:
+                bad = dsn_layers.ses_non_signal_wires(ses_out.read_text(), layer_policy['signal_layers'])
+                if bad:
+                    dsn_log.append(f'WARNING: existing SES has non-signal-layer wires: {bad}; reroute, do not import')
+            except ValueError:
+                dsn_log.append('WARNING: existing SES cannot be parsed; do not import')
+        patched_dsn.write_text(patched, encoding="utf-8")
         dsn_edited = True
 
+    jar = _freerouting_jar()
+    java_bin = _freerouting_java_bin()
+    # Freerouting 2.5.0 prefers nested router.autorouter.* keys; keep legacy
+    # Router.* aliases for 2.2.x jars that still accept the flat form.
     cmd = [
-        "java",
+        java_bin,
         "-Djava.awt.headless=true",
         "-jar",
-        "freerouting.jar",
+        jar,
         "-de",
         str(patched_dsn if dsn_edited else raw_dsn),
         "-do",
         str(ses_out),
         "-mp",
         str(eff_passes),
+        "--router.autorouter.max_passes=" + str(eff_passes),
+        "--router.optimizer.max_passes=" + str(eff_opt),
+        "--router.job_timeout=" + eff_timeout,
+        "--router.scoring.via_costs=" + str(eff_via_costs),
         "--Router.max_passes=" + str(eff_passes),
         "--Router.optimizer_max_passes=" + str(eff_opt),
         "--Router.job_timeout=" + eff_timeout,
         "--Router.via_costs=" + str(eff_via_costs),
         "--gui.enabled=false",
+        "--usage_and_diagnostic_data.disable_analytics=true",
+        "--user_data_path=" + str(_freerouting_user_data_path(jar)),
     ]
     if eff_threads:
         cmd.extend(["-mt", str(eff_threads)])
@@ -204,19 +1016,146 @@ def prepare_autoroute(
         "raw_dsn": str(raw_dsn),
         "patched_dsn": str(patched_dsn),
         "dsn_edited": dsn_edited,
+        "dsn_log": dsn_log,
+        "signal_layers": layer_policy["signal_layers"] if dsn_edited else [],
+        "non_signal_layers": layer_policy["non_signal_layers"] if dsn_edited else [],
         "ses_out": str(ses_out),
         "passes": eff_passes,
         "opt_passes": eff_opt,
         "timeout": eff_timeout,
         "timeout_sec": parse_timeout_sec(eff_timeout),
         "via_costs": eff_via_costs,
+        "threads": eff_threads,
+        "jar": jar,
+        "java": java_bin,
+        "user_data_path": str(_freerouting_user_data_path(jar)),
+        "nets": nets,
+        "exclude": exclude,
         "cmd": cmd,
     }
 
 
-def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged: Path | None = None) -> dict:
+def run_autoroute(prepared: dict) -> dict:
+    """Execute Freerouting; FAIL when the log shows a routing error or the SES adds no route copper."""
+    import re
+    import subprocess
+
+    cmd = list(prepared["cmd"])
+    # Prefer FREEROUTING_JAVA even if prepare baked a stale "java" token.
+    java_bin = _freerouting_java_bin()
+    if cmd:
+        cmd[0] = java_bin
+    ud = prepared.get("user_data_path") or str(_freerouting_user_data_path())
+    Path(ud).mkdir(parents=True, exist_ok=True)
+    if not any(str(a) == f"--user_data_path={ud}" or str(a).startswith("--user_data_path=") for a in cmd):
+        cmd.append(f"--user_data_path={ud}")
+    jar = Path(cmd[cmd.index("-jar") + 1]) if "-jar" in cmd else Path("freerouting.jar")
+    if not jar.is_file() and jar.name == str(jar):
+        raise FileNotFoundError(
+            f"freerouting jar not found ({jar}); set OHMAI_FREEROUTING_JAR or place freerouting.jar on cwd"
+        )
+    if not jar.is_file():
+        raise FileNotFoundError(f"{jar}: freerouting jar not found")
+    if java_bin == "java" and not Path(java_bin).is_file():
+        # bare name — require it resolve on PATH
+        import shutil
+        if not shutil.which("java"):
+            raise FileNotFoundError(
+                "java not found; install JDK 25 (auto-discovered under "
+                "~/.local/share/jdk25, the ohmai cache, or OHMAI_JDK_ROOT) "
+                "or set FREEROUTING_JAVA to the java binary"
+            )
+    de = Path(prepared["patched_dsn"] if prepared.get("dsn_edited") else prepared["raw_dsn"])
+    if not de.is_file():
+        raise FileNotFoundError(f"{de}: DSN input missing (export Specctra to {prepared['raw_dsn']} first)")
+    timeout = int(prepared.get("timeout_sec") or 600)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout + 30,
+        cwd=str(Path(prepared["ses_out"]).resolve().parent),
+    )
+
+    def _tail(s: str, n: int = 40) -> str:
+        lines = (s or "").splitlines()
+        return "\n".join(lines[-n:])
+
+    log = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    ses_path = Path(prepared["ses_out"])
+    ses_text = ses_path.read_text(encoding="utf-8", errors="replace") if ses_path.is_file() else ""
+    # Real SES uses network_out/net scopes, multiline paths, and omits "type"
+    # for new copper. Explicit protect/fix items are pre-existing, not progress.
+    route_wires = route_vias = 0
+    ses_invalid = False
+    if ses_text.strip():
+        try:
+            session = sexp.parse(ses_text)
+            for kind in ("wire", "via"):
+                for item in sexp.walk(session, kind):
+                    typ = sexp.first(item, "type")
+                    if typ and typ[1] in {"protect", "fix"}:
+                        continue
+                    if kind == "wire":
+                        path = sexp.first(item, "path")
+                        if not path or len(path) < 7:
+                            continue
+                        route_wires += 1
+                    else:
+                        route_vias += 1
+        except (ValueError, IndexError):
+            ses_invalid = True
+    from . import dsn_layers
+    non_signal = (dsn_layers.ses_non_signal_wires(ses_text, prepared['signal_layers'])
+                  if ses_text.strip() and not ses_invalid and prepared.get('signal_layers') else {})
+    error_pass = bool(re.search(r"Error during routing passes", log, re.I))
+    npe = bool(re.search(r"NullPointerException|to_trace_entries is null", log))
+    ok = (proc.returncode == 0) and (not error_pass) and (not npe) and (not ses_invalid) and (route_wires + route_vias > 0) and not non_signal
+    # Freerouting often exits 0 after a mid-pass crash — force failure for the CLI.
+    rc = 0 if ok else (proc.returncode if proc.returncode else 1)
+    reasons = []
+    if non_signal:
+        reasons.append("non_signal_layer_wires")
+    if ses_invalid:
+        reasons.append("ses_invalid")
+    if error_pass:
+        reasons.append("routing_pass_error")
+    if npe:
+        reasons.append("freerouting_npe")
+    if route_wires + route_vias == 0:
+        reasons.append("ses_no_route_copper")
+    if proc.returncode != 0:
+        reasons.append(f"java_exit_{proc.returncode}")
+    return {
+        "returncode": rc,
+        "ok": ok,
+        "fail_reasons": reasons,
+        "java": java_bin,
+        "ses_exists": ses_path.is_file(),
+        "ses_non_signal_wires": non_signal,
+        "warnings": [f"SES has non-signal-layer wires: {non_signal}; do not import"] if non_signal else [],
+        "ses_route_wires": route_wires,
+        "ses_route_vias": route_vias,
+        "ignored_options": [line for line in log.splitlines() if "Unknown settings property" in line],
+        "stack_signature": "\n".join(line.strip() for line in log.splitlines()
+                                      if "NullPointerException" in line or "merge_entries_in_front" in line
+                                      or "combine_at_start" in line),
+        "stdout_tail": _tail(proc.stdout),
+        "stderr_tail": _tail(proc.stderr),
+    }
+
+
+
+
+def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged: Path | None = None,
+             board_path: Path | None = None, sections: list[tuple[str, float]] | None = None,
+             widths_at: list[tuple[float, float]] | None = None) -> dict:
+    """Measure a pour on a refilled scratch copy. ``board_path`` measures any .kicad_pcb read-only
+    (rules come from its same-stem .kicad_pro/.kicad_dru, else the project's)."""
+    if staged and board_path:
+        raise ValueError("use either --staged or --board, not both")
     src_pcb = Path(cfg["board"])
-    pcb = staged or src_pcb
+    pcb = Path(board_path) if board_path else (staged or src_pcb)
     if staged and not pcb.is_file() and src_pcb.is_file():
         pcb.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_pcb, pcb)
@@ -227,22 +1166,40 @@ def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged
     player = pour_cfg.get("layer")
     if not pnet or not player:
         raise ValueError("pour net and layer must be specified via layout.yaml pour: or --net / --layer")
-    geom, pts, _ = pourgeom.extract_filled_pour(pcb, pnet, player)
-    board = L.load(pcb)
-    local_pts: list[tuple[float, float]] = []
-    lcfg_local = pour_cfg.get("local") or {}
-    lrefs = lcfg_local.get("refs") or []
-    margin = float(lcfg_local.get("margin", 2.0))
-    if lrefs:
-        boxes = [board.footprints[r].courtyard for r in lrefs if r in board.footprints and board.footprints[r].courtyard]
-        if boxes:
-            bx = (min(b[0] for b in boxes) - margin, min(b[1] for b in boxes) - margin,
-                  max(b[2] for b in boxes) + margin, max(b[3] for b in boxes) + margin)
-            local_pts = [(x, y) for x, y in pts if bx[0] <= x <= bx[2] and bx[1] <= y <= bx[3]]
-    rep = pourgeom.report(geom, pts, local_pts, pour_cfg)
+    # Never trust cached pours or change the live board while measuring them.
+    # All refill callers use the same isolated native transaction as the guard.
+    import tempfile
+
+    from . import refill
+
+    root = Path(cfg["work_dir"]) / "pour-refill"
+    root.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="pour-", dir=root))
+    source = work / "source.kicad_pcb"
+    shutil.copy2(pcb, source)
+    for ext in (".kicad_pro", ".kicad_dru"):
+        rules = pcb.with_suffix(ext)
+        if not rules.exists():
+            rules = src_pcb.with_suffix(ext)
+        if rules.exists():
+            shutil.copy2(rules, source.with_suffix(ext))
+    measured = work / "filled.kicad_pcb"
+    floor = max(.127, float(cfg.get("rules_resolved", {}).get("min_connection", 0)))
+    refill_result = refill.run(source, measured, work, floor=floor)
+    geom, _pts, _ = pourgeom.extract_filled_pour(measured, pnet, player)
+    board = L.load(measured)
+    local_box = _pour_local_box(board, pour_cfg)
+    rep = pourgeom.measure(geom, pourgeom.attach_features(measured, pnet, player), local_box, pour_cfg)
     ok = pourgeom.verdict(rep, pour_cfg)
+    if sections:
+        rep["sections"] = [row for axis, value in sections for row in pourgeom.section(geom, axis, value)]
+    if widths_at:
+        rep["widths_at"] = [dict(xy=[x, y], width=(None if (w := pourgeom.width_at(geom, x, y)) is None
+                                                    else round(w, 3))) for x, y in widths_at]
     return {
         "board": str(pcb),
+        "measured_board": str(measured),
+        "refill": refill_result,
         "net": pnet,
         "layer": player,
         "min_neck": pour_cfg["min_neck"],
@@ -250,6 +1207,17 @@ def run_pour(cfg: dict, net: str | None = None, layer: str | None = None, staged
         **rep,
         "ok": ok,
     }
+
+
+def _pour_local_box(board, pour_cfg: dict):
+    lcfg_local = pour_cfg.get("local") or {}
+    lrefs = lcfg_local.get("refs") or []
+    margin = float(lcfg_local.get("margin", 2.0))
+    boxes = [board.footprints[r].courtyard for r in lrefs if r in board.footprints and board.footprints[r].courtyard]
+    if not boxes:
+        return None
+    return (min(b[0] for b in boxes) - margin, min(b[1] for b in boxes) - margin,
+            max(b[2] for b in boxes) + margin, max(b[3] for b in boxes) + margin)
 
 
 def lcfg_pour(cfg: dict, net: str | None, layer: str | None) -> dict:
@@ -265,42 +1233,263 @@ def lcfg_pour(cfg: dict, net: str | None, layer: str | None) -> dict:
     return base
 
 
+def _handroute_pad_shape(pad):
+    """Inscribed copper, never the empty corners of a placement bounding box.
+
+    Custom pads are their anchor plus every copper primitive (filled polygons,
+    rects, circles, strokes and arcs), exactly as KiCad connects them; never the
+    primitive bounding box. Unknown shapes (trapezoid) fail closed to the anchor
+    point. Placement obstacle envelopes intentionally remain conservative AABBs.
+    """
+    from shapely import affinity
+    from shapely.geometry import LineString, Point, box
+
+    size = getattr(pad, "size", None)
+    if size is None:  # Legacy programmatic rectangle pads.
+        return box(*pad.box)
+    w, h = size
+    kind = getattr(pad, "shape", "rect")
+    if kind == "circle":
+        shape = Point(0, 0).buffer(min(w, h) / 2, quad_segs=32)
+    elif kind == "oval":
+        radius = min(w, h) / 2
+        a = (max(0, w / 2 - radius), max(0, h / 2 - radius))
+        shape = LineString([(-a[0], -a[1]), a]).buffer(radius, quad_segs=32)
+    elif kind == "roundrect":
+        radius = min(w, h) * getattr(pad, "roundrect_ratio", 0)
+        shape = box(-w / 2 + radius, -h / 2 + radius,
+                    w / 2 - radius, h / 2 - radius).buffer(radius, quad_segs=32) if radius else box(-w/2, -h/2, w/2, h/2)
+    elif kind == "rect":
+        shape = box(-w / 2, -h / 2, w / 2, h / 2)
+    else:
+        # A custom anchor can be circular; an inscribed disk is safe for both
+        # circle and rectangle anchors. Unsupported trapezoids fail closed.
+        if kind == "custom":
+            shape = (box(-w / 2, -h / 2, w / 2, h / 2) if getattr(pad, "anchor", "circle") == "rect"
+                     else Point(0, 0).buffer(min(w, h) / 2, quad_segs=32))
+            prims = _custom_primitive_shapes(getattr(pad, "primitives", ()) or ())
+            if prims is not None:
+                shape = shape.union(prims)
+        else:
+            shape = Point(0, 0)
+    shape = affinity.rotate(shape, -getattr(pad, "rotation", 0), origin=(0, 0))
+    return affinity.translate(shape, pad.x, pad.y)
+
+
+def _custom_primitive_shapes(primitives):
+    """Union of custom-pad primitives (pad-local frame), or None when there are none."""
+    from shapely.geometry import LineString, Point, Polygon, box
+    from shapely.ops import unary_union
+
+    def stroke(coords, width):
+        return LineString(coords).buffer(max(width, 1e-6) / 2, quad_segs=16)
+
+    parts = []
+    for prim in primitives:
+        kind = prim[0]
+        if kind == "poly":
+            _, pts, width, filled = prim
+            ring = list(pts) + [pts[0]]
+            if filled:
+                poly = Polygon(pts)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                parts.append(poly.buffer(width / 2, quad_segs=16) if width > 0 else poly)
+            else:
+                parts.append(stroke(ring, width))
+        elif kind == "rect":
+            _, a, b, width, filled = prim
+            r = box(min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
+            if filled:
+                parts.append(r.buffer(width / 2, quad_segs=16) if width > 0 else r)
+            else:
+                parts.append(stroke(list(r.exterior.coords), width))
+        elif kind == "circle":
+            _, c, radius, width, filled = prim
+            if filled:
+                parts.append(Point(c).buffer(radius + width / 2, quad_segs=32))
+            else:
+                parts.append(Point(c).buffer(radius + width / 2, quad_segs=32)
+                             .difference(Point(c).buffer(max(0.0, radius - width / 2), quad_segs=32)))
+        elif kind == "line":
+            _, a, b, width = prim
+            parts.append(stroke([a, b], width))
+        elif kind == "arc":
+            _, a, m, b, width = prim
+            parts.append(stroke(_arc_points(a, m, b), width))
+    parts = [g for g in parts if not g.is_empty]
+    return unary_union(parts) if parts else None
+
+
+def _arc_points(a, m, b, segments: int = 24) -> list:
+    """Polyline through a three-point arc (start, mid, end)."""
+    ax, ay = a
+    bx, by = m
+    cx, cy = b
+    d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(d) < 1e-12:
+        return [a, m, b]
+    ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
+    uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
+    r = math.hypot(ax - ux, ay - uy)
+    t0, tm, t1 = (math.atan2(y - uy, x - ux) for x, y in (a, m, b))
+
+    def ccw(t_from, t_to):
+        return (t_to - t_from) % (2 * math.pi)
+
+    sweep = ccw(t0, t1)
+    if ccw(t0, tm) > sweep:  # mid not on the CCW sweep: go the other way
+        sweep -= 2 * math.pi
+    return [(ux + r * math.cos(t0 + sweep * k / segments), uy + r * math.sin(t0 + sweep * k / segments))
+            for k in range(segments + 1)]
+
+
+def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
+    """Same-net geometry for copper_island, including filled zones when present.
+
+    Pads use inscribed actual copper rather than placement bounding boxes;
+    tracks are round-ended strokes, vias span all modeled copper layers, and
+    filled pours use their actual polygons, never empty space inside an AABB.
+    Include non-routing copper in connectivity, but not as A* landing cells.
+    """
+    from shapely.geometry import LineString, Point, Polygon, box
+
+    # Routing layers retain their A* indices. Extra copper layers participate in
+    # island connectivity only (e.g. two fanout vias joined by an inner track).
+    other_layers = {s.layer for s in board.segments if s.layer.endswith(".Cu")}
+    other_layers.update(lay for p in board.pads() for lay in p.layers
+                        if lay.endswith(".Cu") and lay != "*.Cu")
+    # Filled pour layers (e.g. an In1.Cu GND plane) must be known before vias and
+    # through-hole pads are modelled, or those never touch the plane copper.
+    other_layers.update(z.layer for z in getattr(board, "zones", []) or []
+                        if getattr(z, "filled", True) and _same_net(z.net, net_name) and z.layer.endswith(".Cu"))
+    copper_layers = layers + sorted(other_layers - set(layers))
+    items = []
+    for p in board.pads():
+        if _same_net(p.net, net_name):
+            copper = _handroute_pad_shape(p)
+            if copper.is_empty:
+                continue
+            shapes = {
+                li: copper for li, lay in enumerate(copper_layers)
+                if lay in p.layers or "*.Cu" in p.layers
+            }
+            if shapes:
+                items.append((net_name, shapes))
+    for v in board.vias:
+        if _same_net(v.net, net_name):
+            disk = Point(v.x, v.y).buffer(v.size / 2)
+            items.append((net_name, dict.fromkeys(range(len(copper_layers)), disk)))
+    for s in board.segments:
+        if _same_net(s.net, net_name) and s.layer in copper_layers:
+            stroke = LineString([(s.x0, s.y0), (s.x1, s.y1)]).buffer(s.width / 2)
+            items.append((net_name, {copper_layers.index(s.layer): stroke}))
+    for z in getattr(board, "zones", []) or []:
+        # Only filled pours are copper terminals; unfilled outlines are keepout-ish obstacles.
+        if not getattr(z, "filled", True) or not _same_net(z.net, net_name):
+            continue
+        if z.layer not in copper_layers:
+            if z.layer.endswith(".Cu"):
+                copper_layers.append(z.layer)
+            else:
+                continue
+        points = getattr(z, "polygon", None)
+        shape = Polygon(points) if points else box(*z.box)
+        if not shape.is_valid:
+            # KiCad fractures holes with doubled bridge edges. Repair into real
+            # polygon interiors; the bridges must not become filled AABB copper.
+            shape = shape.buffer(0)
+        if not shape.is_empty:
+            items.append((net_name, {copper_layers.index(z.layer): shape}))
+    return items
+
+
+def _handroute_islands(items: list) -> list[list[int]]:
+    """Partition touching copper using the existing geometric connectivity helper."""
+    remaining = set(range(len(items)))
+    islands = []
+    while remaining:
+        island = grid_mod.copper_island(items, min(remaining))
+        islands.append(island)
+        remaining.difference_update(island)
+    return islands
+
+
+def _handroute_terminal_cells(items: list, island: list[int], g, free: dict, inset: float = 0.0, anchors: dict | None = None) -> set:
+    """Rasterize copper centres, never overriding inflated foreign-copper obstacles.
+
+    Own copper was never blocked. Filtering by free also avoids seeding A* inside
+    a foreign clearance envelope (unblocking such a cell can manufacture a short).
+    """
+    import numpy as np
+    from shapely import intersects_xy
+
+    cells = set()
+    for i in island:
+        for li, shape in items[i][1].items():
+            if li not in free:
+                continue
+            core = shape.buffer(-inset) if inset else shape
+            if core.is_empty:
+                continue
+            if anchors is None:
+                shape = core
+            x0, y0, x1, y1 = shape.bounds
+            ix0, iy0 = g.cell(x0, y0)
+            ix1, iy1 = g.cell(x1, y1)
+            xa, xb = max(0, ix0), min(g.nx - 1, ix1)
+            ya, yb = max(0, iy0), min(g.ny - 1, iy1)
+            if xa > xb or ya > yb:
+                continue
+            ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
+            mask = intersects_xy(shape, g.x0 + (xs + 0.5) * g.res,
+                                 g.y0 + (ys + 0.5) * g.res)
+            mask &= free[li][ya:yb + 1, xa:xb + 1]
+            for y, x in zip(ys[mask], xs[mask], strict=True):
+                cell = (li, int(y), int(x))
+                cells.add(cell)
+                if anchors is not None:
+                    anchors.setdefault(cell, core)
+    return cells
+
+
 def run_handroute(
     cfg: dict,
     action: str = "status",
     nets: list[str] | None = None,
     staged: Path | None = None,
     dry_run: bool = False,
+    verify_drc: bool = False,
 ) -> dict:
     pcb = Path(cfg["board"])
     base_path = Path(cfg["base"])
     routes_path = Path(cfg["routes"])
 
     if action == "status":
-        b = L.load(pcb) if pcb.is_file() else None
+        board = L.load(pcb) if pcb.is_file() else None
         routes_data = json.loads(routes_path.read_text(encoding="utf-8")) if routes_path.is_file() else {}
         return {
             "action": "status",
             "board": str(pcb),
             "base_exists": base_path.is_file(),
             "routes_exists": routes_path.is_file(),
-            "segments_on_board": len(b.segments) if b else 0,
-            "vias_on_board": len(b.vias) if b else 0,
+            "segments_on_board": len(board.segments) if board else 0,
+            "vias_on_board": len(board.vias) if board else 0,
             "hand_routed_nets": sorted((routes_data.get("routes") or {}).keys()) if isinstance(routes_data, dict) else [],
         }
 
     if action == "freeze":
         if not pcb.is_file():
             raise FileNotFoundError(f"{pcb}: board not found")
-        b = L.load(pcb)
+        board = L.load(pcb)
         snap = {
             "segments": [
                 {"net": s.net, "layer": s.layer, "x0": s.x0, "y0": s.y0, "x1": s.x1, "y1": s.y1, "width": s.width}
-                for s in b.segments
+                for s in board.segments
             ],
             "vias": [
                 {"net": v.net, "x": v.x, "y": v.y, "size": v.size, "drill": v.drill}
-                for v in b.vias
+                for v in board.vias
             ],
         }
         if not dry_run:
@@ -308,72 +1497,485 @@ def run_handroute(
             base_path.write_text(json.dumps(snap, indent=2) + "\n", encoding="utf-8")
         return {"action": "freeze", "base": str(base_path), "segments": len(snap["segments"]), "vias": len(snap["vias"])}
 
-    if action in ("route", "apply"):
+    if action == "apply":
+        # Promote staged copper onto the live board. Do not silently succeed with an empty no-op.
+        src = staged or (Path(cfg["work_dir"]) / "staged.kicad_pcb")
+        if not src.is_file():
+            raise FileNotFoundError(f"{src}: staged board not found (run fanout/handroute --staged first)")
+        if src.resolve() == pcb.resolve():
+            raise ValueError("handroute apply: staged path is the live board; refusing no-op promote")
+        # Cheap validity: must parse as kicad_pcb and contain at least one via or segment.
+        tree = sexp.parse(src.read_text(encoding="utf-8", errors="replace"))
+        if not isinstance(tree, list) or not tree or tree[0] != "kicad_pcb":
+            raise ValueError(f"{src}: not a kicad_pcb")
+        n_via = sum(1 for _ in sexp.walk(tree, "via"))
+        n_seg = sum(1 for _ in sexp.walk(tree, "segment"))
+        if n_via + n_seg == 0:
+            raise ValueError(f"{src}: staged board has no vias/segments to apply")
+        verification = None
+        rules = cfg.get("rules_resolved") or {}
+        if verify_drc or float(rules.get("min_connection") or 0) > 0:
+            import tempfile
+
+            from . import native_guard
+
+            floor = max(0.127, float(rules.get("min_track_width") or 0),
+                        float(rules.get("min_connection") or 0))
+            with tempfile.TemporaryDirectory(prefix="ohmai-handroute-apply-") as directory:
+                candidate = Path(directory) / "candidate.kicad_pcb"
+                shutil.copy2(src, candidate)
+                _ensure_staged_project_files(pcb, candidate)
+                verification = native_guard.validate(pcb, candidate, set(nets or []), floor,
+                                                     evidence_dir=Path(cfg.get("work_dir") or pcb.parent) / "handroute-verification")
+        rejected = verification is not None and not verification["ok"]
+        if not dry_run and not rejected:
+            from datetime import datetime
+
+            pcb.parent.mkdir(parents=True, exist_ok=True)
+            if pcb.exists():
+                shutil.copy2(pcb, str(pcb) + ".bak." + datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
+            shutil.copy2(src, pcb)
+        return {
+            "action": "apply",
+            "board": str(pcb),
+            "staged": str(src),
+            "dry_run": dry_run,
+            "routed_nets": [],
+            "segments_added": 0 if rejected else n_seg,
+            "vias_on_staged": n_via,
+            "promoted": not dry_run and not rejected,
+            "proposal_rejected": rejected,
+            "verification": verification,
+            "routes": {},
+        }
+
+    if action == "route":
         if not pcb.is_file():
             raise FileNotFoundError(f"{pcb}: board not found")
-        b = L.load(pcb)
+        # Obstacle board: see fanout copper on an existing staged file when chaining.
+        # Write base is always the live board (wipe-or-replace); fanout vias are re-carried.
+        route_src = pcb
+        carry_fanout: list[dict] = []
+        keep_vias: list[dict] = []
+        keep_tracks: list[dict] = []
+        target_nets = nets or []
+        if not target_nets:
+            raise ValueError("handroute route requires --nets (refusing empty success)")
+        if staged is not None and Path(staged).is_file() and Path(staged).resolve() != pcb.resolve():
+            route_src = Path(staged)
+            carry_fanout = _fanout_vias_from_staged(pcb, Path(staged))
+            keep_vias, keep_tracks = _kept_handroute_from_staged(pcb, Path(staged), set(target_nets))
+        # Route against exactly the copper that survives the wipe-or-replace write.
+        # Old target-net staged tracks must not become terminals: they are removed.
+        board = L.load(pcb)
+        if route_src != pcb:
+            for v in carry_fanout + keep_vias:
+                board.vias.append(L.Via(v["x"], v["y"], v["size"], v["net"], v["drill"]))
+            for v in carry_fanout:
+                board.segments.append(L.Track(v["net"], v["layer"], v["pad_x"], v["pad_y"],
+                                             v["x"], v["y"], v["width"]))
+            board.segments.extend(L.Track(**s) for s in keep_tracks)
         rules = cfg["rules_resolved"]
+        # Thin-first: narrower class before wider so 1.0 mm BATT/STEREO does not block later thin nets.
+        target_nets = _sort_handroute_nets(rules, list(target_nets))
         res = float((cfg.get("grid") or {}).get("res", 0.05))
-        eb = b.edge_box or (95.0, 95.0, 125.0, 155.0)
+        eb = board.edge_box or (95.0, 95.0, 125.0, 155.0)
         layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])
         routed: dict[str, list[dict]] = {}
-        target_nets = nets or []
+        remaining_islands: dict[str, int] = {}
+        initial_islands: dict[str, int] = {}
+        # Copper laid earlier in this call — later nets must clear it.
+        fresh_tracks: list[dict] = []
+        fresh_vias: list[dict] = []
+        import numpy as np
+
+        hr = cfg.get("handroute") or {}
+        budget = grid_mod.SearchBudget(float(hr.get("budget_seconds", 60)),
+                                      int(hr.get("max_total_expand", 2_500_000)),
+                                      int(hr.get("max_searches", 128)))
+        stop_reasons = {}
+        unattempted = []
         for net_name in target_nets:
-            net_pads = [p for p in b.pads() if p.net == net_name]
-            if len(net_pads) < 2:
+            if budget.reason:
+                unattempted.append(net_name)
                 continue
-            p0, p1 = net_pads[0], net_pads[1]
-            margin = float((cfg.get("handroute") or {}).get("search_margin", 8.0))
+            items = _handroute_copper_items(board, net_name, layers)
+            islands = _handroute_islands(items)
+            initial_islands[net_name] = len(islands)
+            remaining_islands[net_name] = len(islands)
+            if len(islands) < 2:
+                continue  # All exposed copper (including every pad) is already connected.
+            bounds = [shape.bounds for _, shapes in items for shape in shapes.values()]
+            nc = _class_for_net(rules, net_name)
+            hr = cfg.get("handroute") or {}
+            nc["min_width"] = max(nc["min_width"], float(rules.get("min_track_width") or 0.127),
+                                  float(rules.get("min_connection") or 0.0))
+            try_widths = _handroute_try_widths(hr, nc, net_name)
+            margin = float(hr.get("search_margin", 8.0))
             bbox = (
-                max(eb[0], min(p0.x, p1.x) - margin),
-                max(eb[1], min(p0.y, p1.y) - margin),
-                min(eb[2], max(p0.x, p1.x) + margin),
-                min(eb[3], max(p0.y, p1.y) + margin),
+                max(eb[0], min(b[0] for b in bounds) - margin),
+                max(eb[1], min(b[1] for b in bounds) - margin),
+                min(eb[2], max(b[2] for b in bounds) + margin),
+                min(eb[3], max(b[3] for b in bounds) + margin),
             )
-            g = grid_mod.Grid(bbox, res, len(layers))
-            cl = float(rules["clearance"]) + float(rules["track_w"]) / 2
-            for op in b.pads():
-                if op.net != net_name:
+            # Grid.around covers the bbox; free/viaok arrays carry per-layer occupancy.
+            g = grid_mod.Grid.around(bbox, res)
+            if g.nx < 1 or g.ny < 1:
+                continue
+            layer_idxs = list(range(len(layers)))
+            via_d_net = float(nc["via_d"])
+            via_cost = float(hr.get("via_cost", 1.6))
+            pitch = grid_mod.via_pitch_cells(
+                float(nc["via_h"]),
+                float(rules.get("hole_hole", rules.get("hole_to_hole", 0.25))),
+                res,
+            )
+            cost_mult = {
+                li: (1.0 if li == 0 else float((hr.get("inner") or {}).get("cost", 4.0)))
+                for li in layer_idxs
+            }
+            best = None  # (remaining, track_w, paths) — prefer fewer remaining islands
+            for track_w in try_widths:
+                if budget.reason:
+                    stop_reasons[net_name] = budget.reason
+                    break
+                free = {li: np.ones((g.ny, g.nx), dtype=bool) for li in layer_idxs}
+                viaok = np.ones((g.ny, g.nx), dtype=bool)
+                xs = g.x0 + (np.arange(g.nx) + 0.5) * g.res
+                ys = g.y0 + (np.arange(g.ny) + 0.5) * g.res
+
+                def edge_legal(radius, xs=xs, ys=ys):
+                    margin = float(rules.get("edge") or 0) + radius
+                    return ((ys[:, None] >= eb[1] + margin) & (ys[:, None] <= eb[3] - margin)
+                            & (xs[None, :] >= eb[0] + margin) & (xs[None, :] <= eb[2] - margin))
+
+                for li in layer_idxs:
+                    free[li] &= edge_legal(track_w / 2)
+                viaok &= edge_legal(via_d_net / 2)
+
+                def _block_rect(li: int, x0: float, y0: float, x1: float, y1: float,
+                                _free=free, g=g) -> None:
+                    ix0, iy0 = g.cell(x0, y0)
+                    ix1, iy1 = g.cell(x1, y1)
+                    xa, xb = sorted((ix0, ix1))
+                    ya, yb = sorted((iy0, iy1))
+                    xa, xb = max(0, xa), min(g.nx - 1, xb)
+                    ya, yb = max(0, ya), min(g.ny - 1, yb)
+                    if xa <= xb and ya <= yb:
+                        _free[li][ya : yb + 1, xa : xb + 1] = False
+
+                def _block_viaok(x0: float, y0: float, x1: float, y1: float,
+                                 _viaok=viaok, g=g) -> None:
+                    ix0, iy0 = g.cell(x0, y0)
+                    ix1, iy1 = g.cell(x1, y1)
+                    xa, xb = sorted((ix0, ix1))
+                    ya, yb = sorted((iy0, iy1))
+                    xa, xb = max(0, xa), min(g.nx - 1, xb)
+                    ya, yb = max(0, ya), min(g.ny - 1, yb)
+                    if xa <= xb and ya <= yb:
+                        _viaok[ya : yb + 1, xa : xb + 1] = False
+
+                def _block_disk(li: int, x: float, y: float, r: float) -> None:
+                    _block_rect(li, x - r, y - r, x + r, y + r)
+
+                def _block_thick_seg(li: int, x0: float, y0: float, x1: float, y1: float,
+                                     half: float) -> None:
+                    length = math.hypot(x1 - x0, y1 - y0)
+                    n = max(1, int(math.ceil(length / max(res * 0.5, 1e-6))))
+                    for i in range(n + 1):
+                        t = i / n
+                        _block_disk(li, x0 + t * (x1 - x0), y0 + t * (y1 - y0), half)
+
+                def _block_shape(shape, array, g=g):
+                    from shapely import intersects_xy
+
+                    x0, y0, x1, y1 = shape.bounds
+                    ix0, iy0 = g.cell(x0, y0)
+                    ix1, iy1 = g.cell(x1, y1)
+                    xa, xb = max(0, ix0), min(g.nx - 1, ix1)
+                    ya, yb = max(0, iy0), min(g.ny - 1, iy1)
+                    if xa <= xb and ya <= yb:
+                        ys, xs = np.mgrid[ya:yb + 1, xa:xb + 1]
+                        mask = intersects_xy(shape, g.x0 + (xs + 0.5) * g.res,
+                                             g.y0 + (ys + 0.5) * g.res)
+                        array[ya:yb + 1, xa:xb + 1] &= ~mask
+
+                from shapely.geometry import LineString, Polygon, box
+
+                # Inflate obstacles by clearance + half our track width so wide power tracks don't short.
+                for op in board.pads():
+                    if _same_net(op.net, net_name):
+                        continue
+                    grow = _pad_clearance(rules, net_name, op) + track_w / 2
                     for li, lay in enumerate(layers):
-                        if lay in op.layers or "*.Cu" in op.layers:
-                            g.block_rect(li, op.x - op.w / 2 - cl, op.y - op.h / 2 - cl, op.x + op.w / 2 + cl, op.y + op.h / 2 + cl)
-            s_li = 0 if (not p0.layers or layers[0] in p0.layers or "*.Cu" in p0.layers) else min(1, len(layers) - 1)
-            g_li = 0 if (not p1.layers or layers[0] in p1.layers or "*.Cu" in p1.layers) else min(1, len(layers) - 1)
-            start = (s_li, *g.ij(p0.x, p0.y))
-            goal = (g_li, *g.ij(p1.x, p1.y))
-            path = grid_mod.astar(g, [start], {goal})
-            if path:
-                simp = grid_mod.simplify(path)
-                segs = []
-                for (l0, i0, j0), (l1, i1, j1) in zip(simp, simp[1:], strict=False):
-                    if l0 == l1:
-                        x0, y0 = g.xy(i0, j0)
-                        x1, y1 = g.xy(i1, j1)
+                        if (not op.layers) or lay in op.layers or "*.Cu" in op.layers:
+                            _block_rect(
+                                li,
+                                op.box[0] - grow,
+                                op.box[1] - grow,
+                                op.box[2] + grow,
+                                op.box[3] + grow,
+                            )
+                    via_grow = _pad_clearance(rules, net_name, op) + via_d_net / 2
+                    _block_viaok(
+                        op.box[0] - via_grow,
+                        op.box[1] - via_grow,
+                        op.box[2] + via_grow,
+                        op.box[3] + via_grow,
+                    )
+                for seg in board.segments:
+                    if _same_net(seg.net, net_name):
+                        continue
+                    if seg.layer not in layers:
+                        continue
+                    li = layers.index(seg.layer)
+                    grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + track_w / 2
+                    _block_thick_seg(li, seg.x0, seg.y0, seg.x1, seg.y1, grow)
+                    via_grow = seg.width / 2 + _pair_clearance(rules, net_name, seg.net) + via_d_net / 2
+                    _block_shape(LineString([(seg.x0, seg.y0), (seg.x1, seg.y1)]).buffer(via_grow), viaok)
+                for v in board.vias:
+                    if _same_net(v.net, net_name):
+                        continue
+                    grow = v.size / 2 + _pair_clearance(rules, net_name, v.net) + track_w / 2
+                    for li in layer_idxs:
+                        _block_disk(li, v.x, v.y, grow)
+                    via_grow = max(v.size / 2 + _pair_clearance(rules, net_name, v.net) + via_d_net / 2,
+                                   v.drill / 2 + float(nc["via_h"]) / 2 + float(rules.get("hole_hole", 0.25)))
+                    _block_viaok(v.x-via_grow, v.y-via_grow, v.x+via_grow, v.y+via_grow)
+                # Protect foreign power pours as actual polygons, not AABBs. Ground
+                # planes may be repoured around routes; native DRC still checks that
+                # doing so does not disconnect them or any other net.
+                for z in getattr(board, "zones", []) or []:
+                    if getattr(z, "filled", True):
+                        if _same_net(z.net, net_name) or z.net in (cfg.get("planes") or {}):
+                            continue
+                        points = getattr(z, "polygon", None)
+                        shape = Polygon(points) if points else box(*z.box)
+                        if not shape.is_valid:
+                            shape = shape.buffer(0)
+                        if shape.is_empty:
+                            continue
+                        clearance = _pair_clearance(rules, net_name, z.net)
+                        if z.layer in layers:
+                            _block_shape(shape.buffer(clearance + track_w / 2), free[layers.index(z.layer)])
+                        _block_shape(shape.buffer(clearance + via_d_net / 2), viaok)
+                        continue
+                    if z.layer not in layers:
+                        continue
+                    li = layers.index(z.layer)
+                    grow = _pair_clearance(rules, net_name, z.net) + track_w / 2
+                    _block_rect(
+                        li,
+                        z.box[0] - grow,
+                        z.box[1] - grow,
+                        z.box[2] + grow,
+                        z.box[3] + grow,
+                    )
+                    via_grow = _pair_clearance(rules, net_name, z.net) + via_d_net / 2
+                    _block_viaok(
+                        z.box[0] - via_grow,
+                        z.box[1] - via_grow,
+                        z.box[2] + via_grow,
+                        z.box[3] + via_grow,
+                    )
+                for seg in fresh_tracks:
+                    if _same_net(seg["net"], net_name):
+                        continue
+                    if seg["layer"] not in layers:
+                        continue
+                    li = layers.index(seg["layer"])
+                    grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + track_w / 2
+                    _block_thick_seg(li, seg["x0"], seg["y0"], seg["x1"], seg["y1"], grow)
+                    via_grow = float(seg["width"]) / 2 + _pair_clearance(rules, net_name, seg["net"]) + via_d_net / 2
+                    _block_shape(LineString([(seg["x0"], seg["y0"]), (seg["x1"], seg["y1"])]).buffer(via_grow), viaok)
+                for v in fresh_vias:
+                    if _same_net(v["net"], net_name):
+                        continue
+                    grow = float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + track_w / 2
+                    for li in layer_idxs:
+                        _block_disk(li, v["x"], v["y"], grow)
+                    via_grow = max(float(v["size"]) / 2 + _pair_clearance(rules, net_name, v["net"]) + via_d_net / 2,
+                                   float(v["drill"]) / 2 + float(nc["via_h"]) / 2 + float(rules.get("hole_hole", 0.25)))
+                    _block_viaok(v["x"]-via_grow, v["y"]-via_grow, v["x"]+via_grow, v["y"]+via_grow)
+
+                # Never reopen foreign clearance envelopes under own copper. Pads
+                # already inside a safety envelope may have no legal escape; do not
+                # manufacture an unsafe route by marking their interior free again.
+
+                # A grid centre can barely touch a pad/track. Extend route ends
+                # into its eroded copper core rather than trusting that sliver.
+                terminal_anchors = {}
+                terminals = [_handroute_terminal_cells(items, island, g, free,
+                                                       inset=nc["min_width"] / 2 + 0.002,
+                                                       anchors=terminal_anchors)
+                             for island in islands]
+                paths = []
+                while len(terminals) > 1:
+                    if budget.reason:
+                        stop_reasons[net_name] = budget.reason
+                        break
+                    for i, starts in enumerate(terminals):
+                        if not starts:
+                            continue
+                        goals = set().union(*(t for j, t in enumerate(terminals) if j != i and t))
+                        if not goals:
+                            continue
+                        path = grid_mod.astar(
+                            free, viaok, starts, goals, layer_idxs, cost_mult, res,
+                            via_cost, pitch, max_expand=int(hr.get("max_expand", 2_500_000)),
+                            budget=budget,
+                        )
+                        if not path:
+                            continue
+                        path_cells = set(path)
+                        joined = {j for j, t in enumerate(terminals) if path_cells & t} | {i}
+                        if len(joined) < 2:
+                            # A malformed/zero-progress path must never restart the same loop.
+                            stop_reasons[net_name] = "no_progress"
+                            continue
+                        merged = path_cells.union(*(terminals[j] for j in joined))
+                        paths.append(path)
+                        for cell in path:
+                            terminal_anchors.setdefault(cell, None)  # New path centreline is a full-width landing.
+                        terminals = [t for j, t in enumerate(terminals) if j not in joined] + [merged]
+                        for before, after in zip(path, path[1:], strict=False):
+                            if before[0] != after[0]:
+                                yy, xx = np.ogrid[:g.ny, :g.nx]
+                                viaok[(yy - before[1]) ** 2 + (xx - before[2]) ** 2 < pitch ** 2] = False
+                        break
+                    else:
+                        break
+                rem = len(terminals)
+                cand = (rem, track_w, paths, terminal_anchors)
+                if best is None or cand[0] < best[0] or (cand[0] == best[0] and cand[1] > best[1]):
+                    # Prefer fewer remaining islands; tie-break prefer wider copper.
+                    best = cand
+                if stop_reasons.get(net_name) == "no_progress":
+                    break
+                if rem <= 1:
+                    break  # fully connected at this width
+
+            remaining_islands[net_name] = best[0] if best else len(islands)
+            segs = []
+            net_vias = []
+            if best and best[2]:
+                track_w = best[1]
+                for path in best[2]:
+                    runs = grid_mod.simplify(path, g.xy)
+                    seg_pairs, via_pts = grid_mod.runs_to_segments(runs)
+                    from shapely.geometry import Point
+                    from shapely.ops import nearest_points
+
+                    for cell in (path[0], path[-1]):
+                        core = best[3].get(cell)
+                        if core is not None:
+                            centre = g.xy(cell[2], cell[1])
+                            point = nearest_points(core, Point(centre))[0]
+                            anchor = (point.x, point.y)
+                            if math.dist(centre, anchor) > 1e-6:
+                                seg_pairs.append((cell[0], centre, anchor))
+                    for l0, a, bpt in seg_pairs:
                         segs.append({
                             "net": net_name,
                             "layer": layers[l0],
-                            "x0": round(x0, 4),
-                            "y0": round(y0, 4),
-                            "x1": round(x1, 4),
-                            "y1": round(y1, 4),
-                            "width": float(rules["track_w"]),
+                            "x0": round(a[0], 4),
+                            "y0": round(a[1], 4),
+                            "x1": round(bpt[0], 4),
+                            "y1": round(bpt[1], 4),
+                            "width": track_w,
                         })
+                    for pt in via_pts:
+                        net_vias.append({
+                            "net": net_name,
+                            "x": round(pt[0], 4),
+                            "y": round(pt[1], 4),
+                            "size": float(nc["via_d"]),
+                            "drill": float(nc["via_h"]),
+                        })
+            if segs or net_vias:
                 routed[net_name] = segs
+                fresh_tracks.extend(segs)
+                fresh_vias.extend(net_vias)
 
-        all_tracks = [s for segs in routed.values() for s in segs]
-        dst = staged or (pcb if not dry_run else None)
-        if dst is not None:
-            if all_tracks:
-                _append_copper_to_pcb(pcb, dst, [], all_tracks, float(rules["via_d"]), float(rules["via_h"]), float(rules["track_w"]))
-            elif staged and staged != pcb:
+        fresh_track_list = [s for segs in routed.values() for s in segs]
+        all_tracks = list(keep_tracks) + fresh_track_list
+        all_vias = list(carry_fanout) + list(keep_vias) + list(fresh_vias)
+        verification = None
+        rejected = None
+        proposal_counts = None
+        if fresh_track_list or fresh_vias:
+            if verify_drc or float(rules.get("min_connection") or 0) > 0:
+                import tempfile
+
+                from . import native_guard
+
+                with tempfile.TemporaryDirectory(prefix="ohmai-handroute-proposal-") as directory:
+                    proposal = Path(directory) / "proposal.kicad_pcb"
+                    _append_copper_to_pcb(pcb, proposal, all_vias, all_tracks,
+                                          float(rules["via_d"]), float(rules["via_h"]), float(rules["track_w"]))
+                    _ensure_staged_project_files(pcb, proposal)
+                    floor = max(0.127, float(rules.get("min_track_width") or 0),
+                                float(rules.get("min_connection") or 0),
+                                *(_class_for_net(rules, n)["min_width"] for n in target_nets))
+                    # Compare against the complete pre-call staged board, not
+                    # just live copper: otherwise a sibling net improved in an
+                    # earlier staged call could silently regress to the live count.
+                    reference = Path(directory) / "reference.kicad_pcb"
+                    shutil.copy2(route_src, reference)
+                    _ensure_staged_project_files(pcb, reference)
+                    verification = native_guard.validate(reference, proposal, set(target_nets), floor,
+                                                         evidence_dir=Path(cfg.get("work_dir") or pcb.parent) / "handroute-verification")
+                if not verification["ok"]:
+                    rejected = verification
+                    proposal_counts = dict(segments=len(fresh_track_list), vias=len(fresh_vias),
+                                           predicted_islands=dict(remaining_islands))
+                    stop_reasons.update({n: "native_drc_rejected" for n in routed})
+                    routed = {}
+                    fresh_track_list = []
+                    fresh_vias = []
+                    remaining_islands = dict(initial_islands)
+        dst = None if dry_run else (staged or pcb)
+        if rejected:
+            # Back off atomically, including for a staged-chain caller: retain the
+            # exact pre-call staged source instead of replacing it with a bad route.
+            if dst is not None and not Path(dst).exists():
+                shutil.copy2(route_src, dst)
+                _ensure_staged_project_files(pcb, Path(dst))
+        elif dst is not None:
+            # Wipe-or-replace from live: fanout + kept sibling handroute + this call's copper.
+            # Re-routed nets are not in keep_* so they cannot double on a second --staged run.
+            if all_tracks or all_vias:
+                _append_copper_to_pcb(
+                    pcb, dst, all_vias, all_tracks,
+                    float(rules["via_d"]), float(rules["via_h"]), float(rules["track_w"]),
+                )
+            elif staged and Path(staged).resolve() != pcb.resolve():
                 shutil.copy2(pcb, staged)
+            if staged is not None:
+                _ensure_staged_project_files(pcb, Path(staged))
         return {
             "action": action,
             "board": str(pcb),
             "staged": str(staged) if staged else None,
             "dry_run": dry_run,
             "routed_nets": sorted(routed.keys()),
-            "segments_added": len(all_tracks),
+            "initial_islands": initial_islands,
+            "remaining_islands": remaining_islands,
+            "predicted_islands": remaining_islands,
+            "already_connected_nets": sorted(n for n, count in initial_islands.items() if count < 2),
+            "copper_written": not rejected and dst is not None and bool(all_tracks or all_vias),
+            "verification": verification,
+            "proposal_rejected": rejected is not None,
+            "rejected_proposal": proposal_counts,
+            "budget_exhausted": (budget.reason if unattempted or
+                                 any(count > 1 for count in remaining_islands.values()) else None),
+            "stop_reasons": stop_reasons,
+            "unattempted_nets": unattempted,
+            "searches": budget.searches,
+            "expanded": budget.expanded,
+            "segments_added": len(fresh_track_list),
+            "vias_added": len(fresh_vias),
+            "fanout_carried": len(carry_fanout),
             "routes": routed,
         }
 

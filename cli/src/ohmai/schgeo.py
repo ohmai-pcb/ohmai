@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Schematic geometry shared by `ohmai schematic build` and `ohmai check readability`.
 
 Coordinates are KiCad schematic mm, y down. Library symbols are y up; `xform` maps them.

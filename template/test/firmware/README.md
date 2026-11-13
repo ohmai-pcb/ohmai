@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 <!-- ohmai:template: generate test/firmware/bringup_selftest.{py,c,ino} and update this README before boards arrive (phase 12), then delete this marker line. -->
 # Bring-up self-test firmware (`test/firmware/`)
 

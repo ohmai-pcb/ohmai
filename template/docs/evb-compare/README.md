@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # EVB comparison
 
 For every power IC whose constraints file has `evb_reference`, create `<PART>.md` here before the

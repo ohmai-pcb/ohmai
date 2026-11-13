@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Read a KiCad kicadsexpr netlist into plain dicts."""
 
 from __future__ import annotations

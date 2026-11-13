@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Build small kicadsexpr netlists from YAML (known-bad fixtures, tests). No KiCad needed.
 
     parts:   {U1: {value: AP2112K-3.3, part: "Regulator_Linear:AP2112K-3.3", mpn: AP2112K-3.3TRG1}, ...}

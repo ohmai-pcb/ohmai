@@ -1,13 +1,19 @@
-# ⚡ OhmAI
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/ohmai-logo-dark-transparent.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo/ohmai-logo-light-transparent.svg">
+  <img src="docs/assets/logo/ohmai-logo-dark-transparent.svg" alt="OhmAI" width="420">
+</picture>
 
 **Turn a one-line hardware idea into a datasheet-verified, DRC-clean KiCad 9 project — with an AI agent doing the legwork and you in the driver's seat.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![KiCad 9](https://img.shields.io/badge/KiCad-9.0+-314CB0.svg)](https://www.kicad.org/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB.svg)](https://www.python.org/)
-[![Status: v0.1 Experimental](https://img.shields.io/badge/Status-v0.1_Experimental-orange.svg)](#what-works-today-vs-current-limitations)
+[![Status: v0.2 (unreleased) experimental](https://img.shields.io/badge/Status-v0.2_unreleased_experimental-orange.svg)](#what-works-today-vs-current-limitations)
 
-[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**CLI Reference**](#cli-overview) · [**Example Project (`pico-k`)**](https://github.com/ohmai-pcb/pico-k)
+[**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**Layout tools**](#layout-tools) · [**CLI Reference**](#cli-overview) · [**Pinned tools**](#pinned-tool-versions-per-release)
 
 ---
 
@@ -39,6 +45,8 @@ Your agent researches parts, extracts pin tables and layout rules with exact dat
 
 ---
 
+Plugin/skill installation for Cursor, Grok Build, Grok Bot and Claude Code: [INSTALL.md](INSTALL.md). The prepared 0.2.0 plugin is guidance only; external tools are separate.
+
 ## Why OhmAI exists
 
 Left to their own devices on a PCB project, LLM agents tend to guess pin numbers, invent passive values, pick single-source parts that are out of stock, or declare victory while DRC has dozens of unconnected nets.
@@ -55,9 +63,9 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 
 ## What works today vs. current limitations
 
-> **Status: v0.1 (experimental / early-stage).** Tested end-to-end on our first reference-level dogfood board ([`pico-k`](https://github.com/ohmai-pcb/pico-k): RP2350A + TPS63001 + MAX31856 Type-K thermocouple board through Phase 11 fab dry-run and Phase 12 bring-up prep; not yet physically fabricated). See [ROADMAP](docs/ROADMAP.md).
+> **Status: v0.2 (unreleased, experimental / early-stage).** Layout tooling, plugin packaging and release prep are in tree but not tagged. No public example board or physical fabrication is claimed. See [ROADMAP](docs/ROADMAP.md).
 
-### Works well in v0.1
+### Works well today
 - **Datasheet constraint extraction & citation checking (`ohmai check constraints`, `ohmai datasheets`):** Catching pinout/direction mistakes, missing pull-ups, and unverified datasheet claims before schematic capture begins. Tracking datasheet URLs, SHA-256 digests, and cited pages in `datasheets/manifest.yaml` without committing binary `.pdf` blobs.
 - **Schematic, netlist, and BOM parity (`ohmai check schematic`, `ohmai check bom`):** Enforcing 1:1 parity across `expected_nets.csv`, `hardware/*.kicad_sch`, `hardware/*.kicad_pcb`, `hardware/gen/pinmap.yaml`, and `bom/bom.csv`.
 - **3-rule BOM sourcing & `jlcparts` verification:** Requiring multi-manufacturer alternates for passives and active parts (or an explicit `single-source:` justification listing `checked:` rejected candidates + owner decision `D-xxx`), cross-checked against a local `jlcparts` SQLite database (`OHMAI_JLCPARTS_DB`).
@@ -66,6 +74,29 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 ### Still rough / requires heavy human steering
 - **PCB placement and routing (`ohmai layout`):** The 4-stage layout pipeline (`fit`, `fanout`, `autoroute` via Freerouting, `handroute`, `pour`) and `ohmai check placement` (`critical_loops` and `keepouts`) can close a dense board to `0` DRC violations and `0` unconnected nets, **but the resulting copper looks like an autorouter output plus scripted patch routes — not a clean, human-crafted PCB layout.** Closing tight boards in v0.1 required human guidance, iterative placement adjustments, passive package swaps (`0603` → `0402`), and explicit owner waivers (such as allowing signal hops on an internal power plane).
 - **Reference-level complexity so far:** v0.1 has been exercised on datasheet-application-note circuits (MCU + buck-boost SMPS + SPI sensor front end), not high-speed impedance-controlled, RF, or high-voltage designs.
+
+---
+
+## Layout tools
+
+The 4-stage layout pipeline (`fit`, `fanout`, `autoroute`, `handroute`, `pour`) is documented in [docs/LAYOUT.md](docs/LAYOUT.md). When to use OhmAI handroute versus Freerouting: [docs/routing/ROUTER-GUIDE.md](docs/routing/ROUTER-GUIDE.md).
+
+- **`ohmai layout apply-changes`** — versioned board edits, including copper-zone add, resize and delete, with dry-run, refill, DRC gate and rollback.
+- **`ohmai layout zones`** — list zones with a ready `expect` block for change lists.
+- **`ohmai layout current`** — IPC-2152 (or legacy IPC-2221) screening of current targets against copper weight and temperature rise; reports width, pour-neck pass/fail and stitching-via count.
+- **`ohmai layout pour --board` / `--section` / `--width-at`** — plane continuity and width reports on a chosen board or cut line.
+- **`ohmai layout handroute`** — bounded router for power, high-current and custom-rule nets; island counts are intended to match KiCad.
+- **`ohmai layout autoroute`** — Freerouting 2.5.0 (jar + JDK 25) as a staged subprocess, scoped with `--nets` / `--exclude-nets`. An SES is not a DRC pass.
+
+Closing a dense board still needs human steering. The copper often looks like an autorouter output plus scripted patch routes, not a clean hand-crafted layout.
+
+## Example projects
+
+These boards are being prepared as public examples. They are not published yet, so this list has no links.
+
+- pico-k
+- usb-c-12v-stereo
+- hohme-sense
 
 ---
 
@@ -93,14 +124,15 @@ Details: [`skill/phases/`](skill/phases/), [`docs/ARCHITECTURE.md`](docs/ARCHITE
 ## Quickstart
 
 ### Requirements
-- **Python ≥ 3.10**, **git**, and **KiCad 9** (`kicad-cli` on `PATH`; KiCad checks report `SKIP` without it).
-- Shared or ephemeral agent boxes: restore with `scripts/restore-toolchain.sh` (KiCad 9 + durable `~/ohmai-venv`, HTTPS-mirror fallback, single-installer lock); see [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md).
-- Optional external helpers: `rsvg-convert` (`librsvg2-bin` for PNG schematic renders), Java + `freerouting.jar` (for `ohmai layout autoroute`), and a local `jlcparts` SQLite database (`OHMAI_JLCPARTS_DB` or `~/.cache/ohmai/jlcparts/cache.sqlite3`).
+- **Python ≥ 3.10**, **git**, and **KiCad 9.0.x** (`kicad-cli` on `PATH`; this release was tested with 9.0.2). KiCad checks report `SKIP` without it.
+- Shared or ephemeral agent boxes: restore with `scripts/restore-toolchain.sh` (pinned KiCad + durable `~/ohmai-venv` + `ohmai setup`, HTTPS-mirror fallback, single-installer lock); see [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md).
+- External tools this release pins (see [Pinned tool versions per release](#pinned-tool-versions-per-release)): Freerouting 2.5.0 (jar + JDK 25) and easyeda2kicad 1.0.1, plus optional `rsvg-convert` (`librsvg2-bin`) and a local `jlcparts` SQLite database (`OHMAI_JLCPARTS_DB` or `~/.cache/ohmai/jlcparts/cache.sqlite3`).
 
 ### Install & Create a Project
 ```bash
-pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.0#subdirectory=cli"
+pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.2.0#subdirectory=cli"   # v0.2.0 tag is created at release; before that, install from a checkout (next line)
 # contributors: git clone https://github.com/ohmai-pcb/ohmai.git && cd ohmai && pip install -e "cli[dev,layout]"
+ohmai setup                            # install this release's pinned tools (no prompts)
 ohmai skill install                    # copies skill/ to ~/.cursor/skills/ohmai (use --dest for other agents)
 
 # Create a new project (add --anonymous for clean public repos using role labels & repo-relative paths)
@@ -116,16 +148,17 @@ Then tell your agent: *"My idea is a solar-powered USB-C charger for 2 phones, u
 
 | Command | Purpose |
 |---|---|
-| `ohmai new <path> --idea "..." [--anonymous]` | Initialize a project repo from `template/`, pin `.ohmai/phases/`, and install git hooks |
+| `ohmai new <path> --idea "..." [--anonymous] [--github OWNER/NAME]` | Initialize a project repo from `template/`, pin `.ohmai/phases/`, and install git hooks. `--github` prints the exact `gh repo create` command (private by default) and runs it only after an interactive y/N confirm or `--yes` |
 | `ohmai status [--set-phase N --gate G --decision D-xxx]` | Show current phase, gate status, locked decisions, and open questions; set phase/gate in STATUS.md front matter |
 | `ohmai check [current\|<phase>\|<check>] [--gate]` | Run deterministic checks (`--list` to view all checks); writes `out/summary.md` |
 | `ohmai review start <phase>` | Generate `reviews/<phase>/BRIEF.md` (with SHA-256 `files_hash`) and `resolutions.md` |
-| `ohmai layout {fit,fanout,autoroute,pour,handroute}` | Run the 4-stage PCB layout helpers (`critical_loops`, `keepouts`, pour neck width) |
+| `ohmai layout {fit,fanout,autoroute,pour,handroute,zones,current,apply-changes}` | 4-stage layout helpers, zone list/edit, current sizing; autoroute is Freerouting 2.5.0 with `--nets` / `--exclude-nets`. See [docs/LAYOUT.md](docs/LAYOUT.md) |
 | `ohmai passives swap <REF> --package <0402\|0603\|0805>` | Swap a passive package across schematic/layout specs while keeping BOM parity |
 | `ohmai datasheets {manifest,fetch,check}` | Manage `datasheets/manifest.yaml` (SHA-256 digests + cited pages) and fetch PDFs on demand |
 | `ohmai kicad-libs {install,tables,models,status}` | Manage pinned KiCad libraries and fetch/generate project-scoped 3D `.step` models |
 | `ohmai kicad-libs {fetch,import,verify,list} <MPN>` | Agent-only fetch/import of parts the pinned libraries lack (LCSC/EasyEDA via easyeda2kicad, direct manufacturer URL) into `hardware/lib/` + lib tables + `manifest.yaml`, datasheet pin check and pin types; walled sources exit 75 |
 | `ohmai commit -m "..." [-a]` / `ohmai hooks {install,status}` | Commit with `OhmAI-Author:` trailers and manage `commit-msg` / `pre-push` hooks |
+| `ohmai setup` / `ohmai doctor` | Install and verify this release's pinned tools (`pinned-tools.yaml`); doctor also checks git hooks |
 | `ohmai lock` / `ohmai upgrade` / `ohmai release <tag>` | Manage `toolchain.lock.yaml` or build a fabrication release (`--dry-run` supported) |
 | `ohmai golden` / `ohmai known-bad` | Run golden reference projects and the planted-bug mutation fixtures (`tests/fixtures/known-bad/`) |
 
@@ -139,11 +172,32 @@ template/         Project skeleton copied by `ohmai new` (AGENTS.md, STATUS.md, 
 cli/              Python package (`ohmai`): CLI commands, checks, layout helpers, review & datasheet manifest tools
 tests/            known-bad mutation fixtures (one planted bug per check) and golden reference projects
 scripts/          canary.py (newest KiCad/libs vs the suites), pylock.py
-docs/             ARCHITECTURE.md, REVIEWS.md, ROADMAP.md, TESTING.md
+docs/             ARCHITECTURE.md, LAYOUT.md, REVIEWS.md, ROADMAP.md, TESTING.md, assets/logo/, routing/
 ```
 
 ---
 
+## Pinned tool versions per release
+
+Each ohmai release ships `pinned-tools.yaml` with the exact external tool versions it was
+tested with. `ohmai setup` installs those versions with no questions and verifies
+checksums; `ohmai doctor` FAILs on a mismatch and prints the expected version, the found
+version, and the fix. Set `OHMAI_ALLOW_UNPINNED=1` (or `toolchain.allow_unpinned: true` in
+a project) to downgrade a mismatch to a warning when you are testing a newer tool.
+
+This release pins:
+
+| Tool | Pin |
+|---|---|
+| Freerouting | 2.5.0 jar (GitHub release URL + sha256); use the jar with JDK 25, not the GraalVM native CLI. `ohmai layout autoroute` always passes `--user_data_path` under `~/.local/share/ohmai/freerouting/<ver>/userdata` so the shared `~/.config/freerouting` is never touched. |
+| JDK | 25 (major; any 25.x build). Auto-discovered from `~/.local/share/jdk25`, the ohmai cache, or `OHMAI_JDK_ROOT` (an optional extra search root); `FREEROUTING_JAVA` remains an override. |
+| KiCad (`kicad-cli`) | 9.0.2 tested; accepted range `9.0.x` |
+| easyeda2kicad | 1.0.1 (PyPI, AGPL-3.0, subprocess only) |
+
+A project's `toolchain.lock.yaml` is separate: it records the tools that design was built
+with. Before tagging a release, bump the pins and re-run the suite plus the Freerouting
+smoke test (see [docs/TESTING.md](docs/TESTING.md)).
+
 ## License
 
-Apache-2.0 (see [LICENSE](LICENSE)). GPL/AGPL tools (`kicad-cli`, Freerouting, KiBot, SKiDL) are invoked as separate external processes and are never vendored or imported. Projects you generate with `ohmai new` are yours.
+Apache-2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Copyright 2026 The OhmAI contributors. GPL/AGPL tools (`kicad-cli`/pcbnew, Freerouting, easyeda2kicad, KiBot, SKiDL) are invoked as separate external processes and are never vendored or imported. `ohmai setup` may install easyeda2kicad (AGPL-3.0) and the Freerouting jar (GPL-3.0) as separate programs; downloads from EasyEDA follow EasyEDA's terms. Projects you generate with `ohmai new` are yours.

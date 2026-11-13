@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Checks for the failures that mattered on generator-drawn sheets (dogfooding feedback):
 
 gen-netlist  every pin-to-net the generator intends must appear in the KiCad-exported netlist: same net

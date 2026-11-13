@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Project layout config: `hardware/layout.yaml` (or the file named by ohmai.yaml `layout.config`).
 
 Everything project-specific for the layout steps lives in that file: plane nets and layers, inner signal layer,
@@ -33,6 +35,7 @@ DEFAULTS: dict = {
     "rules": {"margin": 0.03, "via_hole_cu": None, "pth_hole_trk": None, "hole_hole": None, "edge": None},
     "fanout": {"clearance": None, "hole_trk": None, "hole_hole": None, "edge": None, "pad_gap": 0.12,
                "track_w": 0.25, "bridge_reach": 2.6, "steps": [0.30, 0.45, 0.65, 0.9, 1.2], "angles": 24,
+               "nets": None, "exclude_near": [], "exclude_pads": [],
                "channel": None, "escape": [], "stitch": None},
     "autoroute": {"lock": "toolchain.lock.yaml", "passes": 30, "timeout": "00:10:00", "via_costs": 50,
                   "opt_passes": 2, "threads": None, "netns": True, "inner_nets": None,
@@ -40,9 +43,10 @@ DEFAULTS: dict = {
                           "plane_via_keepout": 0.5, "class_split": None, "widen_padstacks": [],
                           "inner_class": {"name": "InnerOk", "width": 0.15, "clearance": 0.1}}},
     "pour": None,                  # {net, layer, zone_clearance, edge, attach, min_neck, local_neck, local}
-    "handroute": {"via_cost": 1.6, "plane_window": 4.0, "search_margin": 8.0, "neck_w": 0.1,
-                  "neck_classes": ["Default"], "alt_widths": OPEN, "no_inner": [], "no_rip": [], "rip_cap": 4,
+    "handroute": {"via_cost": 1.6, "plane_window": 4.0, "search_margin": 8.0, "neck_w": 0.15,
+                  "neck_classes": ["Default"], "residual_neck": True, "alt_widths": OPEN, "no_inner": [], "no_rip": [], "rip_cap": 4,
                   "rip_pen": 0.4, "inner": {"cost": 4.0, "max_run": 2.5, "wide_w": 1.4, "narrow_pen": 0.3},
+                  "budget_seconds": 60.0, "max_searches": 128, "max_total_expand": 2500000,
                   "max_expand": 2500000, "solid_pads": OPEN, "manual": OPEN},
     "escape_room": None,
     "placement": None,
@@ -85,6 +89,7 @@ def load(project, path: Path | None = None) -> dict:
     path = path or config_path(project)
     given = yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else {}
     cfg = _merge(DEFAULTS, given or {}, "layout")
+    cfg["_signal_layers_explicit"] = "signal_layers" in (given or {})
     if cfg["pour"] is not None:
         cfg["pour"] = _merge({**POUR_DEFAULTS, "local": POUR_DEFAULTS["local"]}, cfg["pour"], "layout.pour")
     cfg["_file"] = str(path) if path.is_file() else None
@@ -105,22 +110,93 @@ def resolve_rules(cfg: dict) -> dict:
     ns = data.get("net_settings", {})
     classes = {c["name"]: {"clearance": c.get("clearance", 0.1), "width": c.get("track_width", 0.15),
                            "via_d": c.get("via_diameter"), "via_h": c.get("via_drill")} for c in ns.get("classes", [])}
+    for c in ns.get("classes", []):
+        minimum = c.get("min_width", c.get("min_track_width"))
+        if minimum is not None:
+            classes[c["name"]]["min_width"] = minimum
     classes.setdefault("Default", {"clearance": 0.1, "width": 0.15, "via_d": 0.45, "via_h": 0.2})
     for name, over in (cfg.get("classes") or {}).items():
         classes.setdefault(name, dict(classes["Default"])).update(over or {})
     r = (data.get("board", {}).get("design_settings", {}).get("rules", {}))
     rules = cfg["rules"]
     via_hole_cu = rules["via_hole_cu"] if rules["via_hole_cu"] is not None else r.get("min_hole_clearance", 0.25)
+    # Board-setup via floors (KiCad DRC via_diameter / drill_out_of_range). Prefer netclass sizes
+    # when present, but never emit below these mins. .kicad_dru may raise them further.
+    min_track_w = max(0.127, float(r.get("min_track_width") or 0.0))
+    min_connection = float(r.get("min_connection") or 0.0)
+    edge_clearance = float(rules["edge"] if rules["edge"] is not None else r.get("min_copper_edge_clearance", 0.2))
+    min_via_d = float(r.get("min_via_diameter") or 0.0)
+    min_via_h = float(r.get("min_through_hole_diameter") or 0.0)
+    min_via_ann = float(r.get("min_via_annular_width") or 0.0)
+    pad_clearances = {}
+    dru_path = Path(cfg["project_file"]).with_suffix(".kicad_dru")
+    if dru_path.is_file():
+        import re as _re
+        dru = dru_path.read_text(encoding="utf-8", errors="replace")
+        from .. import sexp
+        # Conservative subset: positive footprint selectors. Apply their minimum to
+        # the whole footprint, not just the condition's narrower object pairing.
+        clean = _re.sub(r"(?m)^\s*#.*$", "", dru)
+        tree = sexp.parse("(rules " + clean + ")")
+        for constraint in sexp.walk(tree, "constraint"):
+            if constraint[1] in {"track_width", "edge_clearance"}:
+                minimum = sexp.first(constraint, "min")
+                if minimum and _re.fullmatch(r"[0-9.]+mm", str(minimum[1])):
+                    # Conservative: conditional track minima may raise the global
+                    # floor but can never lower a class or board manufacturing rule.
+                    value = float(str(minimum[1])[:-2])
+                    if constraint[1] == "track_width":
+                        min_track_w = max(min_track_w, value)
+                    else:
+                        edge_clearance = max(edge_clearance, value)
+        for rule in sexp.find(tree, "rule"):
+            cond = sexp.first(rule, "condition")
+            if not cond:
+                continue
+            refs = _re.findall(r"[AB]\.memberOfFootprint\('([^']+)'\)", str(cond[1]))
+            for constraint in sexp.find(rule, "constraint"):
+                if constraint[1] != "clearance":
+                    continue
+                minimum = sexp.first(constraint, "min")
+                if not minimum:
+                    continue
+                value = str(minimum[1])
+                if not _re.fullmatch(r"[0-9.]+mm", value):
+                    continue
+                for ref in refs:
+                    pad_clearances[ref] = max(pad_clearances.get(ref, 0), float(value[:-2]))
+        for m in _re.finditer(
+            r'\(constraint\s+via_diameter\s*\(min\s+([0-9.]+)\s*mm\)\)', dru
+        ):
+            min_via_d = max(min_via_d, float(m.group(1)))
+        for m in _re.finditer(
+            r'\(constraint\s+hole_size\s*\(min\s+([0-9.]+)\s*mm\)\)\s*'
+            r'\(condition\s+"A\.Type\s*==\s*\'Via\'"\)',
+            dru,
+        ):
+            min_via_h = max(min_via_h, float(m.group(1)))
+        for m in _re.finditer(
+            r'\(constraint\s+annular_width\s*\(min\s+([0-9.]+)\s*mm\)\)\s*'
+            r'\(condition\s+"A\.Type\s*==\s*\'Via\'"\)',
+            dru,
+        ):
+            min_via_ann = max(min_via_ann, float(m.group(1)))
     out = {
+        "min_track_width": min_track_w,
+        "min_connection": min_connection,
+        "pad_clearances": pad_clearances,
         "classes": classes,
         "patterns": [(p["pattern"], p["netclass"]) for p in ns.get("netclass_patterns", []) or []],
         "via_d": cfg["via"]["d"] or classes["Default"].get("via_d") or 0.45,
         "via_h": cfg["via"]["h"] or classes["Default"].get("via_h") or 0.2,
+        "min_via_d": min_via_d,
+        "min_via_h": min_via_h,
+        "min_via_annular": min_via_ann,
         "margin": rules["margin"],
         "via_hole_cu": via_hole_cu,
         "pth_hole_trk": rules["pth_hole_trk"] if rules["pth_hole_trk"] is not None else via_hole_cu,
         "hole_hole": rules["hole_hole"] if rules["hole_hole"] is not None else r.get("min_hole_to_hole", 0.25),
-        "edge": rules["edge"] if rules["edge"] is not None else r.get("min_copper_edge_clearance", 0.2),
+        "edge": edge_clearance,
     }
     fo = cfg["fanout"]
     maxcl = max(c["clearance"] for c in classes.values())

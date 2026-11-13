@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`skidl-netlist` check: an independent netlist built by SKiDL from expected_nets.csv must match KiCad's export.
 
 Why: `netlist` compares KiCad's export with expected_nets.csv in ohmai's own code. This check builds a second
@@ -24,6 +26,7 @@ from ohmai import kicadlibs
 from ohmai.checks import FAIL, PASS, SKIP, WARN, Result, register
 from ohmai.checks import netdiff as nd
 from ohmai.checks.schematic import _need_cli, export_netlist
+from ohmai.jsonout import last_json_object
 from ohmai.netlist import Netlist, base, load
 
 RUNNER = Path(__file__).resolve().parents[1] / "_skidl_runner.py"
@@ -129,8 +132,8 @@ def skidl_netlist(project, opts: dict) -> Result:
         r = subprocess.run([py, str(RUNNER), str(Path(td) / "spec.json")], capture_output=True, text=True,
                            timeout=600, cwd=td)
         try:
-            res = json.loads(r.stdout.strip().splitlines()[-1])
-        except (json.JSONDecodeError, IndexError):
+            res = last_json_object(r.stdout)
+        except ValueError:
             return Result(name, FAIL, f"SKiDL run failed (exit {r.returncode})", [(r.stderr or r.stdout)[-1500:]])
         if not out.is_file():
             return Result(name, FAIL, "SKiDL wrote no netlist", res.get("errors", []))

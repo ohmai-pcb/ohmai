@@ -1,0 +1,22 @@
+{
+  "name": "ohmai",
+  "version": "0.2.0",
+  "description": "Idea-to-PCB engineering guidance for KiCad with verified tools and human gates.",
+  "author": {
+    "name": "The OhmAI contributors"
+  },
+  "homepage": "https://github.com/ohmai-pcb/ohmai",
+  "repository": "https://github.com/ohmai-pcb/ohmai",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ohmai",
+    "kicad",
+    "pcb",
+    "hardware",
+    "grok-bot",
+    "grok-build"
+  ],
+  "skills": [
+    "./skills/ohmai"
+  ]
+}

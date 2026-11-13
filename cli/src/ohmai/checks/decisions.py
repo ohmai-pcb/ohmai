@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`decisions`: every decision id cited in STATUS.md or a review resolutions file has a record in
 docs/decisions.md.
 

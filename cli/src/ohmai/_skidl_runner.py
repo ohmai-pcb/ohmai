@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """SKiDL side of `ohmai check skidl-netlist`. Runs ONLY as a separate process (python _skidl_runner.py spec.json):
 SKiDL imports InSpice (GPL-3.0-or-later), so it must never be imported into the ohmai process.
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Placement model read straight from a .kicad_pcb (no KiCad needed): footprints, pads, courtyards, vias, tracks.
 
 Geometry is axis-aligned boxes: a pad is the bounding box of its rotated rectangle (exact at 0/90/180/270 degrees,
@@ -28,10 +30,30 @@ class Pad:
     net: str
     layers: tuple[str, ...]
     hole: bool = False
+    # Hole diameter mm from (drill …). Oval (drill oval w h): max(w, h).
+    drill: float = 0.0
+    # Preserve the true pad for routing terminals. A placement AABB is a safe
+    # obstacle envelope but NOT copper (round/rotated pads have empty corners).
+    shape: str = "rect"
+    size: tuple[float, float] | None = None
+    rotation: float = 0.0
+    roundrect_ratio: float = 0.0
+    # Custom pads: KiCad anchor shape ("circle"/"rect") and copper primitives in
+    # the pad-local frame (before pad rotation). See `pad_primitives`.
+    anchor: str = "circle"
+    primitives: tuple = ()
 
     @property
     def name(self) -> str:
         return f"{self.ref}.{self.num}"
+
+    @property
+    def w(self) -> float:
+        return self.box[2] - self.box[0]
+
+    @property
+    def h(self) -> float:
+        return self.box[3] - self.box[1]
 
 
 @dataclass
@@ -63,8 +85,14 @@ class Footprint:
 class Via:
     x: float
     y: float
-    d: float
+    d: float  # outer diameter (from via size); public meaning unchanged
     net: str
+    drill: float = 0.0
+
+    @property
+    def size(self) -> float:
+        """Alias for outer diameter `d` (handroute / freeze snapshots)."""
+        return self.d
 
 
 @dataclass(frozen=True)
@@ -78,6 +106,16 @@ class Track:
     width: float
 
 
+@dataclass(frozen=True)
+class Zone:
+    """Filled copper zone (pour). `box` is AABB of filled_polygon pts (or outline if unfilled)."""
+    net: str
+    layer: str
+    box: Box
+    filled: bool = True
+    polygon: tuple[tuple[float, float], ...] | None = None
+
+
 @dataclass
 class Board:
     footprints: dict[str, Footprint]
@@ -85,6 +123,12 @@ class Board:
     tracks: list[tuple[str, str]]      # (net, layer) per segment / arc
     edge: Box | None
     segments: list[Track] = field(default_factory=list)
+    zones: list[Zone] = field(default_factory=list)
+
+    @property
+    def edge_box(self) -> Box | None:
+        """Alias for `edge` (fanout / handroute)."""
+        return self.edge
 
     def pads(self, side: str | None = None):
         for fp in self.footprints.values():
@@ -118,11 +162,130 @@ def _num(s: str) -> bool:
         return False
 
 
+def _drill(node) -> float:
+    """Parse KiCad `(drill …)`. Circular: first number. Oval `(drill oval w h)`: max(w, h)."""
+    c = sexp.first(node, "drill")
+    if c is None:
+        return 0.0
+    nums = [float(v) for v in c[1:] if isinstance(v, str) and _num(v)]
+    if not nums:
+        return 0.0
+    return max(nums) if len(nums) > 1 else nums[0]
+
+
 def _rect_box(cx, cy, w, h, deg) -> Box:
     pts = [rotate(dx, dy, deg) for dx, dy in ((-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2))]
     xs = [cx + p[0] for p in pts]
     ys = [cy + p[1] for p in pts]
     return min(xs), min(ys), max(xs), max(ys)
+
+
+def _pad_box(p, cx, cy, w, h, deg) -> Box:
+    """Pad bbox incl. custom-pad primitives (anchor `size` alone can be 0.005 mm)."""
+    x0, y0, x1, y1 = _rect_box(cx, cy, w, h, deg)
+    prim = sexp.first(p, "primitives")
+    if not prim:
+        return x0, y0, x1, y1
+    pts: list[tuple[float, float]] = []
+    for g in prim[1:]:
+        if not isinstance(g, list) or not g:
+            continue
+        wn = _f(g, "width", 1)
+        half = (wn[0] if wn else 0.0) / 2
+        local: list[tuple[float, float]] = []
+        if g[0] == "gr_poly":
+            pl = sexp.first(g, "pts")
+            for xy in (pl[1:] if pl else []):
+                if isinstance(xy, list) and xy and xy[0] == "xy":
+                    local.append((float(xy[1]), float(xy[2])))
+        elif g[0] in ("gr_rect", "gr_line"):
+            a, b = _f(g, "start"), _f(g, "end")
+            if a and b:
+                local += [tuple(a), tuple(b), (a[0], b[1]), (b[0], a[1])]
+        elif g[0] == "gr_circle":
+            c, e = _f(g, "center"), _f(g, "end")
+            if c and e:
+                r = math.hypot(e[0] - c[0], e[1] - c[1])
+                local += [(c[0] - r, c[1] - r), (c[0] + r, c[1] + r), (c[0] - r, c[1] + r), (c[0] + r, c[1] - r)]
+        for lx, ly in local:
+            for ox, oy in ((-half, -half), (half, -half), (half, half), (-half, half)):
+                rx, ry = rotate(lx + ox, ly + oy, deg)
+                pts.append((cx + rx, cy + ry))
+    if pts:
+        x0 = min(x0, *(q[0] for q in pts))
+        y0 = min(y0, *(q[1] for q in pts))
+        x1 = max(x1, *(q[0] for q in pts))
+        y1 = max(y1, *(q[1] for q in pts))
+    return x0, y0, x1, y1
+
+
+def _fill_yes(g, default: bool) -> bool:
+    f = sexp.first(g, "fill")
+    if f is None or len(f) < 2:
+        return default
+    return str(f[1]) in ("yes", "solid", "true")
+
+
+def pad_primitives(p) -> tuple:
+    """Custom-pad copper primitives in the pad-local frame, unrotated.
+
+    Each entry is a plain tuple so Pad stays hashable/serialisable:
+    ("poly", pts, width, filled), ("rect", start, end, width, filled),
+    ("circle", center, radius, width, filled), ("line", start, end, width),
+    ("arc", start, mid, end, width). Bezier curves are kept as their control
+    polyline ("line" chain), which is inside their hull and so never invents copper
+    far outside the real curve.
+    """
+    prim = sexp.first(p, "primitives")
+    if not prim:
+        return ()
+    out = []
+    for g in prim[1:]:
+        if not isinstance(g, list) or not g:
+            continue
+        wn = _f(g, "width", 1)
+        width = wn[0] if wn else 0.0
+        head = g[0]
+        if head == "gr_poly":
+            pl = sexp.first(g, "pts")
+            pts = tuple((float(xy[1]), float(xy[2])) for xy in (pl[1:] if pl else [])
+                        if isinstance(xy, list) and xy and xy[0] == "xy")
+            if len(pts) >= 3:
+                # Pad polygons are filled unless explicitly (fill no/none).
+                out.append(("poly", pts, width, _fill_yes(g, True)))
+            elif len(pts) == 2:
+                out.append(("line", pts[0], pts[1], width))
+        elif head == "gr_rect":
+            a, b = _f(g, "start"), _f(g, "end")
+            if a and b:
+                out.append(("rect", tuple(a), tuple(b), width, _fill_yes(g, False)))
+        elif head == "gr_circle":
+            c, e = _f(g, "center"), _f(g, "end")
+            if c and e:
+                out.append(("circle", tuple(c), math.hypot(e[0] - c[0], e[1] - c[1]), width, _fill_yes(g, False)))
+        elif head == "gr_line":
+            a, b = _f(g, "start"), _f(g, "end")
+            if a and b:
+                out.append(("line", tuple(a), tuple(b), width))
+        elif head == "gr_arc":
+            a, m, b = _f(g, "start"), _f(g, "mid"), _f(g, "end")
+            if a and m and b:
+                out.append(("arc", tuple(a), tuple(m), tuple(b), width))
+            elif a and b:
+                out.append(("line", tuple(a), tuple(b), width))
+        elif head in ("gr_curve", "gr_bezier"):
+            pl = sexp.first(g, "pts")
+            pts = [(float(xy[1]), float(xy[2])) for xy in (pl[1:] if pl else [])
+                   if isinstance(xy, list) and xy and xy[0] == "xy"]
+            for a, b in zip(pts, pts[1:], strict=False):
+                out.append(("line", a, b, width))
+    return tuple(out)
+
+
+def _pad_anchor(p) -> str:
+    opts = sexp.first(p, "options")
+    anc = sexp.first(opts, "anchor") if opts else None
+    return str(anc[1]) if anc and len(anc) > 1 else "circle"
 
 
 def _graphic_points(g) -> list[tuple[float, float]]:
@@ -241,14 +404,18 @@ def load(path: Path) -> Board:
             net = (net_n[2] if len(net_n) > 2 else nets.get(net_n[1], "")) if net_n else ""
             lay = sexp.first(p, "layers")
             layers = tuple(lay[1:]) if lay else ()
-            fp.pads.append(Pad(ref, p[1], x + dx, y + dy, _rect_box(x + dx, y + dy, size[0], size[1], pdeg), net,
-                               layers, hole=len(p) > 2 and p[2] in ("thru_hole", "np_thru_hole")))
+            fp.pads.append(Pad(ref, p[1], x + dx, y + dy, _pad_box(p, x + dx, y + dy, size[0], size[1], pdeg), net,
+                               layers, hole=len(p) > 2 and p[2] in ("thru_hole", "np_thru_hole"),
+                               drill=_drill(p), shape=p[3] if len(p) > 3 else "rect",
+                               size=tuple(size), rotation=pdeg,
+                               roundrect_ratio=(_f(p, "roundrect_rratio", 1) or [0.0])[0],
+                               anchor=_pad_anchor(p), primitives=pad_primitives(p)))
         fps[ref] = fp
     vias = []
     for v in sexp.find(tree, "via"):
         at, sz, n = sexp.first(v, "at"), sexp.first(v, "size"), sexp.first(v, "net")
         net = (n[2] if len(n) > 2 else nets.get(n[1], "")) if n else ""
-        vias.append(Via(float(at[1]), float(at[2]), float(sz[1]) if sz else 0.0, net))
+        vias.append(Via(float(at[1]), float(at[2]), float(sz[1]) if sz else 0.0, net, drill=_drill(v)))
     tracks = []
     segments: list[Track] = []
     for t in sexp.find(tree, "segment") + sexp.find(tree, "arc"):
@@ -265,7 +432,45 @@ def load(path: Path) -> Board:
         if isinstance(g, list) and g and g[0].startswith("gr_") and _layer(g) == "Edge.Cuts":
             pts += _graphic_points(["fp" + g[0][2:], *g[1:]])
     edge = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)) if pts else None
-    return Board(fps, vias, tracks, edge, segments)
+    zones: list[Zone] = []
+    for z in sexp.find(tree, "zone"):
+        nn = sexp.first(z, "net_name")
+        net = nn[1] if nn and len(nn) > 1 and isinstance(nn[1], str) else ""
+        if not net:
+            n = sexp.first(z, "net")
+            if n and len(n) > 2 and isinstance(n[2], str):
+                net = n[2]
+            elif n and len(n) > 1:
+                net = nets.get(n[1], "")
+        lay_n = sexp.first(z, "layer")
+        if lay_n and len(lay_n) > 1:
+            zlayers = [lay_n[1]]
+        else:
+            lays = sexp.first(z, "layers")
+            zlayers = list(lays[1:]) if lays else []
+        # Prefer filled copper; fall back to zone outline polygon (unfilled keepout-ish).
+        filled_nodes = [c for c in z[1:] if isinstance(c, list) and c and c[0] == "filled_polygon"]
+        outline_nodes = [c for c in z[1:] if isinstance(c, list) and c and c[0] == "polygon"]
+        src_nodes = filled_nodes or outline_nodes
+        filled = bool(filled_nodes)
+        for node in src_nodes:
+            # filled_polygon may carry (layer ...); else use zone layer list.
+            nlay = _layer(node) if sexp.first(node, "layer") else None
+            use_layers = [nlay] if nlay else zlayers
+            pl = sexp.first(node, "pts")
+            xys = []
+            for xy in (pl[1:] if pl else []):
+                if isinstance(xy, list) and xy and xy[0] == "xy":
+                    xys.append((float(xy[1]), float(xy[2])))
+            if len(xys) < 3:
+                continue
+            xs = [p[0] for p in xys]
+            ys = [p[1] for p in xys]
+            zb = (min(xs), min(ys), max(xs), max(ys))
+            for zl in use_layers:
+                if isinstance(zl, str) and zl.endswith(".Cu"):
+                    zones.append(Zone(net, zl, zb, filled=filled, polygon=tuple(xys)))
+    return Board(fps, vias, tracks, edge, segments, zones)
 
 
 # ---------------------------------------------------------------- box geometry
@@ -274,6 +479,9 @@ def gap(a: Box, b: Box) -> float:
     dx = max(a[0] - b[2], b[0] - a[2], 0.0)
     dy = max(a[1] - b[3], b[1] - a[3], 0.0)
     return math.hypot(dx, dy)
+
+
+box_gap = gap  # fanout / steps alias
 
 
 def overlap(a: Box, b: Box, tol: float = 0.005) -> bool:
@@ -386,7 +594,8 @@ def moved_pads(fp: Footprint, x: float, y: float, rot: float | None = None) -> l
         if round((r - fp.rot) / 90) % 2:
             w, h = h, w
         px, py = x + dx, y + dy
-        out.append(Pad(p.ref, p.num, px, py, (px - w / 2, py - h / 2, px + w / 2, py + h / 2), p.net, p.layers, p.hole))
+        out.append(Pad(p.ref, p.num, px, py, (px - w / 2, py - h / 2, px + w / 2, py + h / 2), p.net, p.layers, p.hole,
+                       drill=p.drill))
     return out
 
 

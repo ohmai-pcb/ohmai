@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Library import (`ohmai kicad-libs fetch|import|verify|list`)
 
 Missing KiCad parts are an agent tool problem. The agent fetches, imports and verifies them end-to-end.
@@ -17,7 +19,7 @@ The owner does nothing: no downloads, captchas or vendor terms.
 | Source | How | Automatable |
 |---|---|---|
 | KiCad official libs (pinned tag) | `ohmai kicad-libs install/tables` | yes |
-| LCSC / EasyEDA | `easyeda2kicad --full --lcsc_id=C…` (subprocess, MIT), API `easyeda.com/api/products/<C…>/components` | yes, no login |
+| LCSC / EasyEDA | `easyeda2kicad --full --lcsc_id=C…` (subprocess only, AGPL-3.0; not bundled), API `easyeda.com/api/products/<C…>/components` | yes, no login |
 | Manufacturer direct file / mirror | `--url` (HTTP GET with a plain User-Agent) | yes when the URL is a file |
 | Ultra Librarian, SnapEDA, TI/ADI/ST CAD portals | `--source portal` probe | no: login/terms/captcha walls (HTTP 302/403 or HTML); exits 75 |
 

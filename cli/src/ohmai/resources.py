@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Locate the project template and the skill (repo checkout or installed wheel)."""
 
 from __future__ import annotations
@@ -11,6 +13,8 @@ _PKG = Path(__file__).resolve().parent
 def _candidates(name: str) -> list[Path]:
     env = os.environ.get(f"OHMAI_{name.upper()}_DIR")
     out = [Path(env)] if env else []
+    if name == "skill":
+        out.append(_PKG.parents[2] / "skills" / "ohmai")
     out.append(_PKG.parents[2] / name)  # editable install: <repo>/cli/src/ohmai -> <repo>/<name>
     out.append(_PKG / "_data" / name)  # wheel install
     return out
@@ -41,3 +45,10 @@ def tests_dir() -> Path:
 
 def constraints_schema_path() -> Path:
     return template_dir() / "parts" / "constraints.schema.json"
+
+
+def pins_path() -> Path:
+    """Release pin manifest (repo-root pinned-tools.yaml, or ohmai/_data/ in a wheel)."""
+    from ohmai.pins import manifest_path
+    return manifest_path()
+

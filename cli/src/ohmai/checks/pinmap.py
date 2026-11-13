@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Netlist vs per-part constraints: pin map, NC pins, one source per net, passives, pull-ups, I2C, EVB.
 
 Binding: a constraints file binds to netlist parts by the symbol's MPN field (`match.mpn`), by

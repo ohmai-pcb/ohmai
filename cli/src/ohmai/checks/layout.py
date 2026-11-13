@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Layout checks: DRC with schematic parity."""
 
 from __future__ import annotations
@@ -20,8 +22,15 @@ def drc(project: Project, opts: dict) -> Result:
     if not project.pcb.is_file():
         return Result("drc", FAIL, f"{project.pcb} not found")
     out = project.out / "drc.json"
-    kicad.run(["pcb", "drc", "--format", "json", "--severity-all", "--schematic-parity", "-o", str(out),
-               str(project.pcb)], log=project.out / "drc.log")
+    # Drop any prior report so a failed load cannot reuse stale counts.
+    if out.is_file():
+        out.unlink()
+    # Run from the PCB directory so .kicad_pro / .kicad_dru next to the board (or a staged
+    # copy that received _ensure_staged_project_files) are applied — not default rules.
+    r = kicad.run(["pcb", "drc", "--format", "json", "--severity-all", "--schematic-parity", "-o", str(out),
+                   str(project.pcb)], log=project.out / "drc.log", cwd=project.pcb.parent)
+    if kicad.load_failed(r):
+        return Result("drc", FAIL, "Failed to load board (see out/drc.log)")
     try:
         d = json.loads(out.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:

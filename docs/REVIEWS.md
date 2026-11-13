@@ -1,8 +1,19 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Independent review gates
 
 OhmAI gates that check facts line by line (constraints, schematic, layout, BOM, safety plan, manual)
 need an **independent review** before the owner approves. The mechanism is plain files in the repo, so it
 works with any agent (Cursor, Claude Code, others), any model vendor, or a human reviewer.
+
+## Schematic/layout/generator review checklist
+- Reuse before invent: did this create machinery OhmAI already provides?
+- Could a per-sheet gate, label policy, split sheet or one placement edit suffice?
+- No private maze/BFS router or generator-local `check()` hill-climb; supported tools stay capped.
+- Placement commit before wires/routes; fresh exact gate output + exit before completion claims.
+- Stop outranks unbounded redraw; retro targets skill/check improvements, no readability debt.
+- Never cut safety, constraints, datasheet calibration or ERC/DRC/readability gates.
+- End gate/stop reports with skipped/not checked + residual risk.
 
 ## Flow
 1. The author finishes the phase work and runs `ohmai review start <phase>`. This writes

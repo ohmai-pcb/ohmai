@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """DSN edits (ohmai.layout.dsn) on a FICTIONAL Specctra file shaped like KiCad 9's export. Needs shapely."""
 
 from __future__ import annotations
@@ -90,8 +92,8 @@ def test_all_steps():
     assert '(keepout "" (polygon signal 0  100000 -100000 100800 -100000 100800 -120000 100000 -120000' in s
     # 2: the cut-out keepout is grown (no longer the bare square)
     assert "110000 -110000  111000 -110000" not in s
-    # 3: GND copper -> keepouts, GND net and plane statement out, GND out of its class
-    assert "(net GND)" not in s and "(net GND\n" not in s and "(plane GND" not in s
+    # 3: GND fixed copper -> keepouts; preserve its dedicated plane with a pinless net
+    assert "(net GND)" in s and "(net GND\n" not in s and "(plane GND" in s
     assert '(keepout "" (circle signal 500 102000 -101000))' in s and '(keepout "" (polygon F.Cu 0' in s
     assert "(class Power VIN VOUT" not in s
     # 4: In1 carries no signals
@@ -99,7 +101,7 @@ def test_all_steps():
     # 5: the signal copper is fixed
     assert "(net /A)(type fix))" in s and "(type route)" not in s
     # keepouts sit before the structure via line
-    assert s.index('(keepout "" (circle') < s.index('(via "Via[0-2]_450:200_um")\n  )')
+    assert s.index('(keepout "" (circle') < s.index('(via "Via[0-2]_450:200_um")')
     # 6: Power split: VOUT thin at 200, VIN keeps 300 in PowerHi
     assert "(class Power VOUT" in s and "(class PowerHi VIN" in s
     thin = s[s.index("(class Power VOUT"):]
@@ -113,7 +115,8 @@ def test_inner_layer_only_for_listed_nets():
     s, log = dsn.patch(DSN, {}, {}, COPPER, ["F.Cu", "In1.Cu", "B.Cu"], inner_layer="In1.Cu", inner_nets="^/B$")
     assert "(class InnerOk /B\n" in s and "(class kicad_default /A\n" in s
     assert s.count("(use_layer F.Cu B.Cu)") == 2          # kicad_default and Power; not InnerOk
-    assert log == ["In1.Cu allowed for 1 nets: /B"]
+    assert log[0] == "In1.Cu allowed for 1 nets: /B"
+    assert log[-1] == "signal classes use_layer: F.Cu, In1.Cu, B.Cu"
 
 
 def test_subset_and_missing_layer():
@@ -121,3 +124,52 @@ def test_subset_and_missing_layer():
     assert "(net /A\n" in s and "(net /B\n" not in s and "(net VIN\n" not in s
     with pytest.raises(ValueError, match="signal layer In9.Cu"):
         dsn.patch(DSN, {}, {}, COPPER + ["In9.Cu"], COPPER)
+
+
+def test_fixed_wire_chain_is_coalesced_without_changing_geometry():
+    from ohmai import sexp
+    text = '''(pcb fictional
+      (parser (string_quote "))
+      (wiring
+        (wire (path F.Cu 600 0 0 50 0) (net VBUS) (type fix))
+        (wire (path F.Cu 600 50 0 750 -700) (net VBUS) (type fix))
+        (wire (path F.Cu 600 750 -700 1000 -700 1200 -900) (net VBUS) (type fix))
+      ))'''
+    out, n = dsn.normalize_wiring(text)
+    assert n == 2
+    tree = sexp.parse(out[out.index('(wiring'):out.rfind(')')])
+    wires = sexp.find(tree, 'wire')
+    assert len(wires) == 1
+    path = sexp.first(wires[0], 'path')
+    assert len(path[3:]) == 10  # All five original vertices survive, including the tiny stub.
+    assert dsn.normalize_wiring(out) == (out, 0)
+
+
+def test_wire_chains_preserve_branches_widths_and_layers():
+    text = '''(pcb fictional (wiring
+      (wire (path F.Cu 150 0 0 100 0)(net A)(type fix))
+      (wire (path F.Cu 150 100 0 200 0)(net A)(type fix))
+      (wire (path F.Cu 150 100 0 100 100)(net A)(type fix))
+      (wire (path B.Cu 150 200 0 300 0)(net A)(type fix))
+      (wire (path F.Cu 200 200 0 300 0)(net A)(type fix))
+    ))'''
+    assert dsn.normalize_wiring(text) == (text, 0)
+
+
+def test_wrapped_fractional_copper_is_fixed():
+    text = DSN.replace('104000 -103000)(net /A)(type route)',
+                       '104000.5 -103000)\n(net "Net-(U1-A)")\n(type route)')
+    out, _ = dsn.patch(text, {}, {}, COPPER, COPPER)
+    assert '(type route)' not in out
+
+
+def test_coalesce_fixed_chains_can_be_disabled():
+    """2.5.0 no longer needs coalescing; projects may opt out via dsn config."""
+    text = """(pcb fictional
+      (wiring
+        (wire (path F.Cu 150 0 0 1000 0)(net SIG)(type fix))
+        (wire (path F.Cu 150 1000 0 2000 0)(net SIG)(type fix))
+      ))"""
+    out, log = dsn.patch(text, {"coalesce_fixed_chains": False}, {}, ["F.Cu"], ["F.Cu"])
+    assert "coalesce_fixed_chains disabled" in log
+    assert out.count("(wire") == 2

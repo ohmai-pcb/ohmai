@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Phase 12 bring-up firmware / self-test code check (`bringup-code`).
 
 Verifies that `test/firmware/` contains ready-to-run bring-up test code (no TODOs or template markers)

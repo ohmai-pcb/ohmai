@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Grid router core (ohmai.layout.grid): A*, via spacing, simplification, rip bookkeeping. Needs numpy."""
 
 from __future__ import annotations
@@ -132,3 +134,29 @@ def test_keep_records_manual_survives():
     auto = {"net": "N", "why": "a -> b"}
     other = {"net": "O", "why": "a -> b"}
     assert keep_records([man, auto, other], {"N"}) == [man, other]
+
+
+def test_astar_expired_shared_budget(monkeypatch):
+    budget = G.SearchBudget(seconds=1)
+    monkeypatch.setattr(G.time, "monotonic", lambda: budget.deadline + 1)
+    args = ({(0, 20, 5)}, {(0, 20, 60)}, [0, 1], {0: 1, 1: 1}, RES, 1.6, PITCH)
+    assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget) is None
+    assert budget.searches == budget.expanded == 0
+
+
+def test_astar_shared_search_cap():
+    budget = G.SearchBudget(max_searches=1)
+    args = ({(0, 20, 5)}, {(0, 20, 6)}, [0, 1], {0: 1, 1: 1}, RES, 1.6, PITCH)
+    assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget)
+    assert G.astar(field(), np.ones((40, 80), bool), *args, budget=budget) is None
+    assert budget.searches == 1
+
+
+def test_astar_cannot_cut_through_a_subfloor_diagonal_corner():
+    free = {0: np.zeros((3, 3), dtype=bool)}
+    free[0][1, 0] = free[0][0, 1] = True
+    viaok = np.zeros((3, 3), dtype=bool)
+    args = ({(0, 1, 0)}, {(0, 0, 1)}, [0], {0: 1}, 0.05, 1.6, 4)
+    assert G.astar(free, viaok, *args) is None
+    free[0][0, 0] = True
+    assert G.astar(free, viaok, *args) is not None

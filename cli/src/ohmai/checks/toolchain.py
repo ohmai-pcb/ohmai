@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """`toolchain` check: installed tools vs the project's toolchain.lock.yaml (see ohmai/toolchain.py)."""
 
 from __future__ import annotations

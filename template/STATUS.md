@@ -8,6 +8,9 @@ authors:            # identities that write this project's work; reviewers must 
   - {name: "", kind: agent, vendor: "", model: "", instructions: "ohmai skill {{ohmai_version}}"}
 updated: {{date}}
 ---
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
+
 # STATUS: {{project_name}}
 
 > This file is the spec of record. If chat and this file disagree, this file wins until the owner changes it.

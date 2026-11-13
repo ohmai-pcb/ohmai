@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 # OhmAI project CI. On every PR: run the checks for the phase in STATUS.md, render the schematic,
 # diff netlist and BOM against the base branch, and post one sticky comment.
 # On rev-* tags: KiBot builds fab outputs and a GitHub release (gerbers, BOM, PnP).

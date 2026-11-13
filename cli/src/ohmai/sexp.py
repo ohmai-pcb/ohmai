@@ -1,10 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Minimal S-expression reader for KiCad files (.kicad_sch, kicadsexpr netlists).
 
-parse(text) -> nested lists; atoms are str (quotes removed). No dependencies.
+parse(text) -> nested lists; atoms are str (quotes removed), with originally-quoted
+tokens returned as Atom(str) so dumps can round-trip KiCad PCB/schematic files.
 """
 from __future__ import annotations
 
 import re
+
+
+class Atom(str):
+    """String atom that remembers whether the source token was a quoted string.
+
+    Subclasses str so existing `== "Reference"` / `isinstance(..., str)` call sites keep working.
+    dumps() always re-quotes atoms with quoted=True (pad numbers, layer names, net names, …).
+    """
+
+    __slots__ = ("_quoted",)
+
+    def __new__(cls, value: str, quoted: bool = False):
+        obj = str.__new__(cls, value)
+        obj._quoted = bool(quoted)
+        return obj
+
+    @property
+    def quoted(self) -> bool:
+        return self._quoted
 
 
 def tokenize(text: str):
@@ -47,7 +69,9 @@ def parse(text: str):
             done = stack.pop()
             stack[-1].append(done)
         else:
-            stack[-1].append(tok[1])
+            kind, val = tok
+            # Preserve quotedness: KiCad requires quotes on layer names, pad numbers, etc.
+            stack[-1].append(Atom(val, quoted=(kind == "S")))
     if len(stack) != 1:
         raise ValueError("unbalanced '('")
     return stack[0][0] if len(stack[0]) == 1 else stack[0]
@@ -73,15 +97,21 @@ def walk(node, key):
                 yield from walk(c, key)
 
 
-_BARE_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$|^[A-Za-z_][A-Za-z0-9_./+-]*$")
+# Bare identifiers: no '.' or '/' (layer names like F.Cu / net paths must be quoted).
+_BARE_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$|^[A-Za-z_][A-Za-z0-9_+-]*$")
 
 
 def _fmt_atom(a: str, is_head: bool = False) -> str:
     s = str(a)
     if is_head:
         return s
-    if s == "":
-        return '""'
+    quoted = getattr(a, "quoted", None)
+    if quoted is True or s == "":
+        esc = s.replace("\\", "\\\\").replace("\"", "\\\"")
+        return f'"{esc}"'
+    if quoted is False:
+        return s
+    # Newly constructed plain str: quote when not a safe bare token.
     if ":" in s or " " in s or "(" in s or ")" in s or "\"" in s or not _BARE_RE.match(s):
         esc = s.replace("\\", "\\\\").replace("\"", "\\\"")
         return f'"{esc}"'

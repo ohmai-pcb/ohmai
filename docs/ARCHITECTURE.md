@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Architecture
 
 OhmAI has three parts: a **skill** that tells an agent how to run a hardware project, a **template** that
@@ -100,8 +102,9 @@ Core (skill, template, CLI) is Apache-2.0, and its Python dependencies are permi
 
 | Tool | License | How OhmAI runs it |
 |---|---|---|
-| KiCad (`kicad-cli`) | GPL-3.0 | subprocess |
-| Freerouting | GPL-3.0 | separate Java process (DSN/SES files); the Java runtime is pinned with the jar (2.2+ needs Java 25) |
+| KiCad (`kicad-cli` / pcbnew) | GPL-3.0 | subprocess; external system install |
+| Freerouting | GPL-3.0 | separate Java process (DSN/SES files); `ohmai setup` downloads the pinned jar (2.2+ needs Java 25) |
+| easyeda2kicad | AGPL-3.0 | subprocess only; `ohmai setup` installs it automatically, not shipped; downloads follow EasyEDA's terms |
 | KiBot | AGPL-3.0 | CI step (its GitHub action / container) |
 | SKiDL | MIT, but imports InSpice (GPL-3.0-or-later) at import time | `ohmai/_skidl_runner.py` in a subprocess (`$OHMAI_SKIDL_PYTHON`) |
 
@@ -145,3 +148,8 @@ See `docs/TESTING.md`. In short: the **known-bad** suite plants one mistake per 
 on it and PASS on a clean twin; **golden** projects rebuild from sources and must match approved
 snapshots; `ohmai upgrade` runs both before a tier-1 pin moves; the weekly **canary** runs both against the
 newest KiCad and libraries and only reports.
+
+## External converter licensing
+`easyeda2kicad` is AGPL-3.0, not MIT. Invoke it only as a separate optional subprocess; never import or bundle it in the agent plugin. KiCad/pcbnew, Freerouting, EasyEDA/LCSC CAD data, KiBot and SKiDL/InSpice remain external tools/data, with their own licenses and terms. The native pcbnew refill lives in the `_REFILL` script string in `layout/native_guard.py` and is executed only by a separate Python process. It is not imported into the Apache CLI process.
+
+The separate `_skidl_runner.py` executable imports SKiDL only in its own interpreter. Core modules must not import the runner, SKiDL/InSpice or pcbnew; package validation checks these direct-import boundaries. Neither runner nor the CLI is included in the guidance-only plugin.

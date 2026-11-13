@@ -1,7 +1,13 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # AGENTS.md: rules for any agent working in this project
 
 This is an OhmAI hardware project (template from OhmAI {{ohmai_version}}). The owner decides. Agents research,
 recommend and do the work, and stop at every gate.
+
+For OhmAI/KiCad/PCB work, load the installed OhmAI skill (`ohmai skill path`),
+complete its CLI/KiCad 9.x bootstrap and run `ohmai doctor`, then follow the pinned
+phase guide. Skill installation alone does not enable ERC/DRC.
 
 ## Read first, in this order
 1. `STATUS.md`: the current phase, locked decisions and open questions. **The spec wins over chat.** If a
@@ -75,3 +81,6 @@ recommend and do the work, and stop at every gate.
 - `ohmai status` shows the phase and open questions. `ohmai check current` runs the current phase's checks.
 - `ohmai check --list` lists every check. Outputs go to `out/`, which is gitignored.
 - GPL/AGPL tools (Freerouting, KiBot) are run as separate processes only. Never vendor or import them.
+
+## Mandatory all-tool issue close-out
+Before fab and again at project completion, complete `docs/tool-issues.md` for every tool used (OhmAI, Freerouting/JDK, KiCad/kicad-cli/pcbnew, importers, JLC/LCSC helpers, generators and bring-up tools). Include versions, symptom, minimal repro/artifacts, impact, actual workaround, fixed status/commit, severity, and an upstream-ready title/body for each issue/limit. Inventory tools with no observed issues too. `ohmai report tools` seeds a local draft from logs; review and finish it. Never file or share upstream without explicit owner approval.

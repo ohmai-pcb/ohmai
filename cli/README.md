@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # ohmai (CLI)
 
 Command-line part of [OhmAI](../README.md). Install from a checkout:

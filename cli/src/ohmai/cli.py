@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """ohmai command line."""
 
 from __future__ import annotations
@@ -15,8 +17,14 @@ STATUS_ICON = {"PASS": "PASS", "FAIL": "FAIL", "WARN": "WARN", "SKIP": "SKIP", "
 
 
 def cmd_new(a) -> int:
-    from ohmai.newproject import create
+    from ohmai.newproject import GithubError, create, publish_github
 
+    if getattr(a, "github", None) and a.no_git:
+        print("ohmai new: --github cannot be used with --no-git", file=sys.stderr)
+        return 2
+    if (getattr(a, "public", False) or getattr(a, "private", False) or getattr(a, "yes", False)) and not getattr(a, "github", None):
+        print("ohmai new: --private, --public and --yes require --github", file=sys.stderr)
+        return 2
     try:
         log = create(Path(a.path), a.idea, a.name, git=not a.no_git, anonymous=getattr(a, 'anonymous', False))
     except (FileExistsError, FileNotFoundError) as e:
@@ -27,6 +35,15 @@ def cmd_new(a) -> int:
     dest = Path(a.path).resolve()
     print(f"\nCreated {dest}\nNext: cd {shlex.quote(str(dest))} && ohmai status")
     print("Agent: read AGENTS.md, then .ohmai/phases/01-requirements.md")
+    if not getattr(a, "github", None):
+        return 0
+    private = not bool(getattr(a, "public", False))
+    try:
+        for line in publish_github(dest, a.github, private=private, yes=bool(getattr(a, "yes", False))):
+            print(f"  {line}")
+    except GithubError as e:
+        print(f"ohmai new: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -170,6 +187,28 @@ def cmd_check(a) -> int:
         gtxt = "".join(f"; GATE {r.name} {r.status}" for r in gate)
         stxt = f"sheet {opts['sheet'].name}: " if opts.get("sheet") else ""
         print(f"RESULT: {stxt}{'FAIL' if failed else 'PASS'} ({len(work)} checks{wtxt}; summary in out/summary.md){gtxt}")
+    from ohmai.attempts import record, retro
+
+    sheet = opts["sheet"].file.relative_to(p.root).as_posix() if opts.get("sheet") else ""
+    command = shlex.join(["ohmai", "check", *(a.targets or (["schematic"] if sheet else ["current"]))])
+    if sheet:
+        command += " --sheet " + shlex.quote(sheet)
+    # Preserve verification options in the attempt evidence (including fixture netlists).
+    for flag in ("strict", "gate", "json"):
+        if getattr(a, flag, False):
+            command += " --" + flag
+    for flag in ("netlist", "fab", "against"):
+        if getattr(a, flag, None):
+            command += " --" + flag + " " + shlex.quote(str(getattr(a, flag)))
+    try:
+        state = record(p.out, failed, sheet, command)
+    except ValueError as e:
+        print(f"STOP: corrupt attempt history (exit 3): {e}", file=sys.stderr)
+        return 3
+    if len(state["attempts"]) >= 3:
+        # Keep --json stdout a machine-readable result array.
+        print(retro(state), file=sys.stderr if a.json else sys.stdout)
+        return 3
     return 1 if failed else 0
 
 
@@ -355,9 +394,26 @@ def cmd_doctor(a) -> int:
 
     items = doctor.run(Path.cwd())
     for it in items:
-        print(f"{it.status:<5} {it.name:<12} {it.message}")
+        print(f"{it.status:<5} {it.name:<14} {it.message}")
     worst = {s.status for s in items}
     if "FAIL" in worst or (a.strict and "WARN" in worst):
+        return 1
+    return 0
+
+
+def cmd_setup(a) -> int:
+    """Install this release's pinned tools with no prompts, then re-check them."""
+    from ohmai import pins
+
+    notices, errors = pins.install_all(download=not a.check)
+    for line in notices:
+        print(line)
+    for err in errors:
+        print(err, file=sys.stderr)
+    items = pins.check_all(Path.cwd())
+    for it in items:
+        print(f"{it.status:<5} {it.name:<14} {it.message}")
+    if errors or any(it.status == "FAIL" for it in items):
         return 1
     return 0
 
@@ -430,13 +486,26 @@ def cmd_skill(a) -> int:
     if a.action == "path":
         print(src)
         return 0
-    dest = Path(a.dest).expanduser().resolve()
+    src = src.resolve()
+    raw_dest = Path(a.dest).expanduser()
+    if raw_dest.is_symlink():
+        print("ohmai skill install: destination must not be a symlink", file=sys.stderr)
+        return 1
+    dest = raw_dest.resolve()
+    if dest == src or src in dest.parents or dest in src.parents:
+        print("ohmai skill install: destination overlaps the canonical skill", file=sys.stderr)
+        return 1
     if dest.exists():
         if not a.force:
             print(f"ohmai skill install: {dest} exists (use --force to replace)", file=sys.stderr)
             return 1
-        shutil.rmtree(dest)
-    shutil.copytree(src, dest)
+        from datetime import datetime
+        from time import time_ns
+
+        backup = dest.with_name(f"{dest.name}.bak.{datetime.now():%Y%m%d-%H%M%S}.{time_ns()}")
+        dest.rename(backup)
+        print(f"Previous skill backed up to {backup}")
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("*.bak*", "__pycache__"))
     print(f"Installed OhmAI skill {__version__} to {dest}")
     return 0
 
@@ -578,6 +647,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--anonymous", action="store_true",
                    help="enable anonymous mode in ohmai.yaml (role labels, repo-relative paths, YYYY-MM-DD dates)")
     s.add_argument("--no-git", action="store_true", help="do not git init / commit")
+    s.add_argument("--github", metavar="OWNER/NAME",
+                   help="after creating the local repo, run owner-approved "
+                        "`gh repo create OWNER/NAME --source PATH --private|--public --push`")
+    vis = s.add_mutually_exclusive_group()
+    vis.add_argument("--private", action="store_true",
+                     help="with --github: create a private repository (default)")
+    vis.add_argument("--public", action="store_true",
+                     help="with --github: create a public repository")
+    s.add_argument("--yes", action="store_true",
+                   help="with --github: skip the interactive y/N confirm and run the printed command")
     s.set_defaults(fn=cmd_new)
 
     s = sub.add_parser("adopt", help="put an existing KiCad repo under OhmAI checks (ohmai.yaml with N/A reasons, "
@@ -597,7 +676,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("check", help="run the checks for a phase (or single checks)",
                        description="Targets: a phase (schematic, 7), a check (erc, netlist, ...), 'current' "
-                                   "(phase in STATUS.md, default) or 'all'.")
+                                   "(phase in STATUS.md, default) or 'all'. Exit codes: 0 pass, 1 fail, "
+                                   "3 stop after third identical failure signature or corrupt attempt history. "
+                                   "History: out/check-attempts.json; "
+                                   "PASS or a changed signature clears valid history; preserve and repair corrupt history. "
+                                   "Stop outranks further redraw.")
     s.add_argument("targets", nargs="*")
     s.add_argument("--list", action="store_true", help="list phases and checks")
     s.add_argument("--json", action="store_true")
@@ -688,11 +771,13 @@ def build_parser() -> argparse.ArgumentParser:
     from ohmai.layout.cli import add_parser as _layout_parser
     from ohmai.passives import add_parser as _passives_parser
     from ohmai.passives import add_swap_parser as _parts_swap_parser
+    from ohmai.tool_report import add_parser as _report_parser
 
     _parts_swap_parser(psub)
     _passives_parser(sub)
     _datasheets_parser(sub)
     _layout_parser(sub)
+    _report_parser(sub)
 
     s = sub.add_parser("golden", help="rebuild golden reference projects and diff netlist/ERC/BOM/symbols/checks "
                                       "against approved snapshots",
@@ -725,11 +810,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true", help="replace a commit-msg hook that is not OhmAI's")
     s.set_defaults(fn=cmd_hooks)
 
-    s = sub.add_parser("doctor", help="environment self-check: git repo, commit-msg hook installed, kicad-cli",
+    s = sub.add_parser("doctor", help="environment self-check: git repo, hooks, and this release's pinned tools",
                        description="Warns about set-up problems that silently weaken the workflow, e.g. a missing "
-                                   "commit-msg hook (git does not version hooks, so a fresh clone has none).")
+                                   "commit-msg hook (git does not version hooks, so a fresh clone has none). "
+                                   "Compares kicad-cli, Freerouting, JDK and easyeda2kicad with pinned-tools.yaml; "
+                                   "a mismatch is FAIL unless OHMAI_ALLOW_UNPINNED=1. Fix with `ohmai setup`.")
     s.add_argument("--strict", action="store_true", help="exit 1 on warnings too")
     s.set_defaults(fn=cmd_doctor)
+
+    s = sub.add_parser("setup", help="install this release's pinned tools (no prompts) and verify checksums",
+                       description="Fetches the pinned Freerouting jar (sha256) and easyeda2kicad (PyPI hashes), "
+                                   "and checks KiCad and JDK 25. Prints one line per tool, plus a one-line "
+                                   "AGPL/EasyEDA terms notice when easyeda2kicad is installed. No questions. "
+                                   "Does not touch a shared Freerouting config. Override checks with "
+                                   "OHMAI_ALLOW_UNPINNED=1.")
+    s.add_argument("--check", action="store_true", help="verify only; do not download or pip install")
+    s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("commit", help="git commit with the OhmAI-Author trailer appended "
                                       "(identity from ohmai.yaml `author:` or OHMAI_AUTHOR_* env)",

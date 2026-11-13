@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 <!-- ohmai:template: fill in, then delete this line. Gate: the owner picks an option (phase 2). -->
 # Architecture: {{project_name}}
 

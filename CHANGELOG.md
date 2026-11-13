@@ -1,10 +1,89 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Changelog
+
+Historical internal project names are anonymized aliases, not public repositories.
+
+## 0.2.0 (unreleased)
+
+The `v0.2.0` tag is created at release; until then the install lines that pin `@v0.2.0` do not resolve.
+
+- Roadmap: v0.2 is now layout tooling, plugin and public release. Dogfood of a real board
+  through rev-A, a frozen rev-A golden project, multi-unit symbols, and dense QFN
+  escape/fanout move to v0.3.
+- `ohmai new --github OWNER/NAME [--private|--public] [--yes]`: after creating the local
+  project, print the exact `gh repo create OWNER/NAME --source PATH --private|--public --push`
+  command and run it only after an interactive y/N confirm or `--yes`. Default is private.
+  Refuses if `gh` is missing or `gh auth status` fails, and refuses `--github` with `--no-git`.
+- Logo and app icons in `docs/assets/logo/` (concept D: navy `#0B1F3A`, copper `#B87333`).
+  README uses the dark/light transparent wordmark. A 64×64 PCM-ready icon is at
+  `docs/assets/logo/pcm/resources/icon.png`; there is no KiCad PCM package yet.
+- README refresh: status is v0.2 (unreleased) experimental; short sections for the new
+  layout tools and upcoming public example projects (pico-k, usb-c-12v-stereo, hohme-sense;
+  no links yet).
+- Router guide and Freerouting run-log template: `docs/routing/ROUTER-GUIDE.md` and
+  `docs/routing/FREEROUTING-RUNS.md`.
+- JDK 25 auto-discovery no longer searches a hard-coded machine-local toolcache path.
+  Set `OHMAI_JDK_ROOT` for an optional extra search root; `FREEROUTING_JAVA` remains
+  an override. Default roots are still `~/.local/share/jdk25` and the ohmai cache.
+- `layout pour`: `--board PCB` (as documented; exclusive with `--staged`), `--section x=MM|y=MM`
+  and `--width-at X,Y` width reports that ignore cuts along outline edges and do not depend on the
+  cut direction. The neck now ignores same-net vias/pads that do not touch the pour (listed under
+  `unattached`), fills drill holes and thermal gaps around attach copper (`neck_raw` keeps the old
+  value), is no longer capped at 2 mm, and is also reported per piece (`pieces_detail`).
+  `layout current --pour-json` refuses a split layer's 0 mm neck with a hint.
+- `apply-changes` zone `expect.polygon` matches within `polygon_tolerance` (default 0.005 mm) from any
+  start vertex; `"match": "uuid"` makes zone delete/edit `expect` optional (base fingerprint still
+  checked). Self-intersecting or zero-area zone polygons are refused at load, before native work.
+- Handroute island counts now match KiCad: custom pads include their primitives (filled polygons,
+  rects, circles, strokes, arcs) and anchor shape, so an exposed pad joins its same-footprint
+  leg pads, and vias and THT pads reach filled inner-layer pours. Fixes false `initial_islands`
+  (stereo SW2_NODE 5 to 1, GND 59 to 2) and needless stitch proposals on already joined nets.
+- `layout apply-changes` zone support: new `zone.delete`; `zone.edit` `set.polygon` resizes a zone;
+  optional zone `name`; zone `expect` needs only `net`, `layer` and `polygon`. New
+  `ohmai layout zones` lists zones with a ready `expect`. Zone ops share the dry-run, refill,
+  DRC gate and rollback of other operations; a KiCad-gated test adds, resizes and checks zones on a
+  synthetic 4-layer board.
+- New `ohmai layout current`: IPC-2152 (or legacy IPC-2221) screening of current targets against
+  copper weight, temperature rise and layers; reports width per layer and for a multi-layer
+  corridor, measured-width or pour-neck pass/fail, resistance/drop/dissipation and stitching-via
+  current and count. Copper thickness comes from flags, the board stackup or 1 oz/0.5 oz defaults.
+- Apache-2.0 NOTICE names "The OhmAI contributors" and credits
+  easyeda2kicad (AGPL-3.0), Freerouting (GPL-3.0) and KiCad/pcbnew (GPL) as separate
+  programs. First-party Python and shell sources carry SPDX plus copyright headers.
+  `ohmai setup` prints a one-line AGPL/EasyEDA terms notice when it installs easyeda2kicad.
+- Each release pins exact external tool versions in `pinned-tools.yaml` (Freerouting 2.5.0 jar + sha256,
+  JDK 25 major, KiCad 9.0.2 / accepted range 9.0.x, easyeda2kicad 1.0.1). `ohmai setup` installs them
+  with no prompts and verifies checksums; `ohmai doctor` FAILs on a mismatch (expected vs found, plus
+  the fix command). `OHMAI_ALLOW_UNPINNED=1` (or `toolchain.allow_unpinned`) downgrades that to a warning.
+- `layout autoroute` derives signal layers from the DSN/board stackup and `planes` with zero config:
+  every class gets `use_layer` with signal layers only; dedicated inner planes are kept and empty power
+  layers get a DSN-only pinless plane reservation, so Freerouting 2.5.0 no longer routes signal wires on
+  GND/PWR planes while through-vias still work. Explicit `signal_layers`/`inner_signal_layer` still
+  override. A run whose SES has wires on a non-signal layer fails (`non_signal_layer_wires`) and warns.
+- Canonical portable skill and guidance-only Grok/Claude/Cursor plugin artifacts.
+- Separate CLI/KiCad 9.x bootstrap; doctor now FAILs missing/wrong KiCad.
+- Public release privacy/licensing gate; current-tree private examples anonymized.
+- Backup-safe skill upgrades; canonical resources in wheels and source distributions.
+
+- #1: `ohmai check` records normalized failure signatures under `out/check-attempts.json`; third
+  identical signature exits 3 with a retro template (0 pass, 1 fail). PASS/changed signature clears history;
+  JSON result stdout stays compatible (stop template on stderr). Help documents codes.
+- #1: ragged BOM CSV now FAILs with row identity + expected/actual field count instead of crashing;
+  regression tests + `bom-schema-ragged` known-bad case. Short rows fail too; quoted commas work.
+- #1: per-sheet default, embedded-library vs unverified-pin adopt guidance, and split-at-pin/junction/label
+  generator contract. Deferred: gen-netlist geometric endpoints and stronger wire-ends foreign-segment /
+  interior-tee detection; current checks do not guarantee all geometric connectivity (ROADMAP).
+- #3, #4: six-rung reuse ladder, systematic fix loop, short region plans, placement before wiring,
+  fresh verification before claims, private-router/local-check-hill-climb prohibition, stop above redraw,
+  scrubbed retro + rationalization table, review reuse checklist and skipped/risk footer. No vendored skills,
+  weakened gates or readability debt. License remains Apache-2.0.
 
 ## 0.1.0 (2026-11-03)
 First release. An AI-agent skill plus the `ohmai` CLI that takes a PCB idea through 12 gated
 phases (requirements to bring-up) with deterministic KiCad 9 checks, owner review gates, attributed commits,
 a pinned toolchain, a known-bad mutation suite and a golden project. See docs/ROADMAP.md for what is in 0.1.0
-and what comes in 0.2 (first real board through rev-A).
+and what was then planned for 0.2 (first real board through rev-A; that goal later moved to v0.3).
 - `ohmai status --set-phase/--gate [--decision D-xxx]`: front-matter edits without hand-editing STATUS.md;
   `approved` requires a logged decision.
 - New `passive-mpn` check: UniRoyal / Yageo RC / Samsung CL / Murata GRM-GCM MPNs are decoded and compared to
@@ -68,7 +147,7 @@ and what comes in 0.2 (first real board through rev-A).
 - Toolchain: the Freerouting tier-1 entry records its Java runtime (`java:`; `FREEROUTING_JAVA` or `java` on
   PATH) and `check toolchain` FAILs on a different runtime (Freerouting >= 2.2 needs Java 25). Release jars say
   `Implementation-Version: unspecified`, which was locked as the version; the file name is used then. Found
-  while moving pico-k from 2.1.0 to 2.2.4 (pico-k D-019). TESTING/ARCHITECTURE updated.
+  while moving the reference board from Freerouting 2.1.0 to 2.2.4. TESTING/ARCHITECTURE updated.
 - Docs: new docs/TESTING.md (unit, known-bad, golden, lock/upgrade, canary); ARCHITECTURE.md gains the
   licensing table and "research tools: what OhmAI uses, in which phase, and why" (atopile, tscircuit, KiCad
   MCP servers and commercial tools not used, with reasons); ROADMAP, SKILL.md cheat sheet (lock, upgrade,
@@ -104,7 +183,7 @@ and what comes in 0.2 (first real board through rev-A).
   netlist), embedded library-symbol digests and check results against `snapshots/`; drc and gerbers artefacts
   exist for goldens with a layout. A difference fails until accepted; `--accept` needs a reason and logs it,
   the changed artefacts and the toolchain in `snapshots/MANIFEST.yaml`. First golden: ldo-led (no layout yet).
-  `source:` + `ref:` mode builds a project repo from `git archive` (pico-k, once frozen; documented, not added).
+  `source:` + `ref:` mode builds a project repo from `git archive` (reference-board, once frozen; documented, not added).
 - Known-bad suite (mutation fixtures, owner 2026-10-15): `tests/fixtures/known-bad/<case>/case.yaml`, one planted
   mistake per check plus a clean twin (`ohmai known-bad [case...] [--json]`, `ohmai.knownbad`, pytest
   `test_known_bad.py`; a coverage test requires a case for every registered check). 30 cases over 27 checks;
@@ -124,7 +203,7 @@ and what comes in 0.2 (first real board through rev-A).
   `cli/requirements.lock` from `scripts/pylock.py`; `version_in_range` moved to `ohmai.versions`.
 - Initial skeleton: skill + 12 phase guides, project template, `ohmai` CLI (`new`, `status`, `check`,
   `release`, `skill`), constraints JSON schema with an TPS63001 example, CI for the tool and the template.
-- Dogfood fixes (pico-k): `ohmai new` prints an absolute, quoted `cd` path; skill states the page and
+- Dogfood fixes (reference-board): `ohmai new` prints an absolute, quoted `cd` path; skill states the page and
   price citation conventions and the `PROPOSAL:` marker; phase 1 guide says a check PASS is not a lock.
 - New `questions` check in phases 1-3: WARN while STATUS.md has open questions not marked "Non-blocking".
 - Target markets are a required phase 1 question: STATUS.md front matter `markets:` (e.g. `[EU, UK, US]`),
@@ -144,15 +223,15 @@ and what comes in 0.2 (first real board through rev-A).
   check lists) FAILs on a missing review, reviewer == author (STATUS `authors:` / `OhmAI-Author:` trailers),
   files changed after review, or an unresolved issue; WARNs on independence below the minimum. Skill
   section 3a, phase guides, template (ohmai.yaml, STATUS.md `authors:`, AGENTS.md, PR template, CI note),
-  `docs/REVIEWS.md` with the GitHub mapping. Dogfood fix (pico-k): only the findings table (with `File` and
+  `docs/REVIEWS.md` with the GitHub mapping. Dogfood fix (reference-board): only the findings table (with `File` and
   `Verdict` columns) is parsed; an identical copy saved at a second accepted path counts once.
 - `ohmai upgrade-guides [--dry-run] [--add-missing]`: re-pin `.ohmai/phases/` to the installed version,
   bump `ohmai_version` in STATUS.md, optionally copy template docs the project lacks (never overwrites).
 - Review gate: reviewer-requested post-review nits. A reviewer's own `[nit]` issue resolved as
   `fixed-post-review` + commit lets the files named in it differ from the reviewed `files_hash` (WARN, no
   re-verification); any other changed file still FAILs. Briefs keep earlier per-file hashes under
-  `history:` so a regenerated brief does not lose the reviewed baseline (dogfood: pico-k Reviewer-A R1).
-- Review gate (dogfood: pico-k Reviewer-A H3): the brief's "Changed since" list is computed against the brief the
+  `history:` so a regenerated brief does not lose the reviewed baseline (found while dogfooding the reference board).
+- Review gate (found while dogfooding the reference board): the brief's "Changed since" list is computed against the brief the
   latest reviewer checked; free-form `OhmAI-Author:` trailers no longer add a duplicate name-only author when
   a full identity with that name exists; setting `review.status: reviewed` in a constraints YAML after the
   review no longer invalidates the review hash (compared without the `review:` block, via git history).
@@ -164,7 +243,7 @@ and what comes in 0.2 (first real board through rev-A).
   `ohmai commit -m ...` appends the trailer from `ohmai.yaml` `author:` / `OHMAI_AUTHOR_*`. The review
   gate takes authors from trailers first; STATUS.md `authors:` only for grandfathered commits. `ohmai new`'s
   initial commit carries a trailer.
-- Phase 7 (dogfood: pico-k D-012): pinned official KiCad libraries + per-project lib tables
+- Phase 7 (found while dogfooding the reference board): pinned official KiCad libraries + per-project lib tables
   (`ohmai kicad-libs install|tables|status`, check `kicad-libs`); per-part symbol maps
   `parts/symbol-maps/<stem>.yaml` (pin-map, passives and pull-ups work in datasheet pins; stale maps FAIL);
   constraints bind by MPN field or `match.refs`, not value substring; passives: rail decoupling vs per-pin,
@@ -174,15 +253,15 @@ and what comes in 0.2 (first real board through rev-A).
   them); new `readability` check (label-only passive joins, local labels with allow-list, crossings,
   junction ambiguity, overlapping text/symbols, wires through bodies, off-grid). `netlist` accepts a
   wired, unlabelled `Net-(...)` net whose nodes match.
-- `readability` (dogfood: pico-k Reviewer-A schematic review F1, F13-F15): FAILs when a power symbol's net name sits
+- `readability` (found while reviewing the reference-board schematic): FAILs when a power symbol's net name sits
   next to another node's wire or junction, a field sits on a pin line or pin number or over a DNP cross, a part's
   text touches a power symbol's name, or the sheet title overflows the title-block field (font ESTIMATE).
-- `kicad-app` check (phases 7, 8, 11; owner request, pico-k D-014): `kicad-cli version` must be inside ohmai.yaml
+- `kicad-app` check (phases 7, 8, 11; owner request): `kicad-cli version` must be inside ohmai.yaml
   `kicad.app` (`">=9.0.2,<9.1"`, `"9.0.x"`); FAIL outside the range or on an unparseable range, WARN when unpinned.
   Template pins `">=9.0,<9.1"` next to `kicad.libraries`.
 - Review independence wording: the WARN and the brief now say "level N or better (1 = most independent)" instead
   of "below the configured minimum" (the logic was right: a larger number is less independent).
-- Review gates: `require_kind: human` (owner request, pico-k 2026-10-15): `ohmai check review:<phase>` FAILs unless
+- Review gates: `require_kind: human` (owner request, reference-board 2026-10-15): `ohmai check review:<phase>` FAILs unless
   a valid review (current hash, full coverage, not an author identity) has `kind: human`; the owner may sign when
   agents authored the work. Template and default gates set it for `bringup`; safety unchanged. Brief, REVIEWS.md,
   SKILL.md, phase 12 guide, tests.
@@ -190,5 +269,5 @@ and what comes in 0.2 (first real board through rev-A).
   > bot/instructions > human) and documents why each was unavailable, then asks the owner. `resolutions.md`
   `accepted_independence: [{gate, reviewer, level, files_hash, by: owner, owner, reason, alternatives_tried, ref}]`
   turns the independence WARN into PASS with a "WAIVED" note for that one review/gate/hash; an entry missing a
-  field (e.g. alternatives_tried) FAILs; it never carries over to a new hash or another gate. Dogfood: pico-k D-016.
+  field (e.g. alternatives_tried) FAILs; it never carries over to a new hash or another gate. Found while dogfooding the reference board.
 

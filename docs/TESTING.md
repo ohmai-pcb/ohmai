@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Testing OhmAI
 
 OhmAI's checks gate real hardware, so they are tested the way a design would be. Four layers, all run by
@@ -10,6 +12,7 @@ is skipped (not passed) when it is missing.
 | Known-bad (mutation) suite | `ohmai known-bad [case...]` | every check FAILs on a planted mistake and PASSes on its clean twin | `tests/fixtures/known-bad/` |
 | Golden projects | `ohmai golden [name...] [--diff]` | reference projects rebuild to approved outputs | `tests/golden/` |
 | Toolchain lock + upgrade | `ohmai lock`, `ohmai check toolchain`, `ohmai upgrade` | results are made with the locked tools; a pin moves only after the suites pass | project `toolchain.lock.yaml` |
+| Release pins | `ohmai setup`, `ohmai doctor` | this ohmai release's external tools match `pinned-tools.yaml` | repo `pinned-tools.yaml` |
 | Canary | `scripts/canary.py`, `.github/workflows/canary.yml` | the newest KiCad/libraries would not break us (reports only) | weekly CI |
 
 ## Known-bad suite
@@ -52,7 +55,7 @@ Any difference fails. Read `ohmai golden <name> --diff`. If the change is intend
 it: `ohmai golden <name> --accept --reason "why"`. That writes `snapshots/*.txt` and logs the reason, the
 changed artefacts and the toolchain in `snapshots/MANIFEST.yaml`. Commit snapshots on their own.
 
-Goldens today: **ldo-led** (header → AP2112K-3.3 → 3V3 → R + LED, two sheets, no layout). **pico-k**
+Goldens today: **ldo-led** (header → AP2112K-3.3 → 3V3 → R + LED, two sheets, no layout). **reference-board**
 becomes a golden by reference once its owner freezes a revision (`tests/golden/README.md`). It is never
 copied or modified.
 
@@ -99,6 +102,19 @@ snapshots were made with (kicad/kicad:9.0.2).
 
 The first local run against libraries 9.0.8 found a fixture that hard-coded the library tag
 (toolchain-kicad-drift). Fixtures now write `@pinned-libs` instead.
+
+## Release checklist (tool pins)
+
+Before tagging an ohmai release:
+
+1. Bump the pins in `pinned-tools.yaml` (Freerouting jar URL + sha256, JDK major, KiCad
+   reference version and accepted range, easyeda2kicad PyPI version + hashes) to the versions
+   the release was tested with.
+2. Re-run the full suite (`pytest cli/tests tests -q`, plus `ohmai known-bad` and `ohmai golden`
+   when the environment has KiCad).
+3. Re-run the Freerouting smoke test (jar + JDK 25 on a retained DSN; no `to_trace_entries` NPE,
+   staged native DRC recorded) and update `docs/routing/freerouting-log.md` if needed.
+4. Then tag. Do not tag with stale pins.
 
 ## Optional tools in tests
 - SKiDL (`skidl-netlist`): the cases declare `needs: [skidl]` and are skipped without it.

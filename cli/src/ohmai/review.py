@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Independent review gates: config, content hash, BRIEF.md, reviewer files, resolutions.
 
 Tool-agnostic: everything is plain files in the repo (reviews/<phase>/). Any agent, any vendor or a human

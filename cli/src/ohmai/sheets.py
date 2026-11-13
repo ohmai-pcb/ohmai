@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Sheet instances of a hierarchical schematic and the `--sheet <name>` scope used by per-sheet gates."""
 
 from __future__ import annotations

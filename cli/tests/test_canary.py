@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """scripts/canary.py: candidate selection and the report; it must never move a pin."""
 
 import importlib.util

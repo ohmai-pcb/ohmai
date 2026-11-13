@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 """Unit tests for the 7 OhmAI workflow and tool improvements."""
 
 from __future__ import annotations
@@ -8,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from helpers import kicad_python
 
 from ohmai import datasheets as ds
 from ohmai import models3d
@@ -248,6 +251,11 @@ def test_improvement2d_4_layout_cli_staged_and_opt_passes(demo_proj, tmp_path):
     assert "(at 16.5 30 90)" in staged_pcb.read_text()
     assert (demo_proj.root / "hardware" / "demo.kicad_pcb").read_text() == orig_txt
 
+
+@pytest.mark.skipif(kicad_python() is None, reason="needs kicad-cli and KiCad Python (pcbnew): pour measures a native refill")
+def test_improvement2d_4_layout_pour_staged(demo_proj, tmp_path):
+    pytest.importorskip("shapely")   # layout extra
+    pytest.importorskip("numpy")
     # Verify `ohmai layout pour --staged` checks the filled pour on the staged board
     layout_yaml = demo_proj.root / "hardware" / "layout.yaml"
     layout_yaml.write_text(
@@ -312,7 +320,7 @@ def test_improvement6_7_pre_push_guard_and_auto_installed_hooks(tmp_path: Path):
     assert "pre-push" in msg
 
     # Clean repo with non-localhost email passes check_pre_push
-    subprocess.run(["git", "-C", str(proj_dir), "config", "user.email", "bot@users.noreply.github.com"], check=True)
+    subprocess.run(["git", "-C", str(proj_dir), "config", "user.email", "bot@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(proj_dir), "config", "user.name", "ohmai-bot"], check=True)
     subprocess.run(
         ["git", "-C", str(proj_dir), "commit", "--amend", "--reset-author", "--no-edit"],
