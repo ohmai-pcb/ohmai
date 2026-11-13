@@ -370,3 +370,145 @@ def test_results_command_quotes_spaces(project, monkeypatch):
 def test_native_apply_does_not_switch_project_after_load():
     assert '.SetProject(' not in SCRIPT
     assert 'SaveBoard(output, board, True)' in SCRIPT
+
+
+ZONE_ADD = dict(id='corridor-in2', op='zone.add', name='corridor', net='GND', layer='In2.Cu',
+                polygon=[[0, 0], [10, 0], [10, 4], [0, 4]], priority=1, clearance=.3, min_thickness=.25,
+                pad_connection='solid', island_removal='always')
+ZONE_UUID = '11111111-2222-3333-4444-555555555555'
+ZONE_EXPECT = dict(net='GND', layer='B.Cu', polygon=[[0, 0], [10, 0], [10, 4], [0, 4]])
+
+
+@pytest.mark.parametrize('op', [ZONE_ADD,
+                                dict(id='grow', op='zone.edit', uuid=ZONE_UUID, expect=ZONE_EXPECT,
+                                     set=dict(polygon=[[0, 0], [12, 0], [12, 6], [0, 6]], name='wider')),
+                                dict(id='drop', op='zone.delete', uuid=ZONE_UUID, expect=ZONE_EXPECT)])
+def test_schema_accepts_zone_add_resize_delete(project, op):
+    board, path, _ = project
+    edit(path, lambda d: d.update(operations=[op]))
+    assert changes.load(path, board, .15)['operations'] == [op]
+
+
+@pytest.mark.parametrize('mutate', [lambda op: op.update(polygon=[[0, 0], [1, 1]]),
+                                    lambda op: op.pop('min_thickness'),
+                                    lambda op: op.update(pad_connection='glued'),
+                                    lambda op: op.update(layers=['F.Cu', 'B.Cu']),
+                                    lambda op: op.update(name='')])
+def test_schema_refuses_bad_zone_add(project, mutate):
+    board, path, _ = project
+    op = json.loads(json.dumps(ZONE_ADD))
+    mutate(op)
+    edit(path, lambda d: d.update(operations=[op]))
+    with pytest.raises(changes.ChangeError, match='invalid change list'):
+        changes.load(path, board, .15)
+
+
+@pytest.mark.parametrize('op', [dict(id='e', op='zone.edit', uuid=ZONE_UUID, expect=ZONE_EXPECT, set={}),
+                                dict(id='e', op='zone.edit', uuid=ZONE_UUID, expect=dict(net='GND'),
+                                     set=dict(priority=2)),
+                                dict(id='d', op='zone.delete', uuid='not-a-uuid', expect=ZONE_EXPECT)])
+def test_schema_refuses_bad_zone_edit_delete(project, op):
+    board, path, _ = project
+    edit(path, lambda d: d.update(operations=[op]))
+    with pytest.raises(changes.ChangeError, match='invalid change list'):
+        changes.load(path, board, .15)
+
+
+def test_zone_add_dry_run_and_apply_use_guard(project, monkeypatch):
+    board, path, cfg = project
+    edit(path, lambda d: d.update(operations=[ZONE_ADD]))
+    mock_native(monkeypatch)
+    mock_guard(monkeypatch)
+    before = board.read_bytes()
+    result = changes.apply(cfg, path, dry_run=True)
+    assert result['ok'] and not result['applied'] and board.read_bytes() == before
+    result = changes.apply(cfg, path)
+    assert result['ok'] and result['applied'] and board.read_text() == 'measured-filled-board'
+
+
+def test_zone_resize_regression_rolls_back(project, monkeypatch):
+    board, path, cfg = project
+    op = dict(id='grow', op='zone.edit', uuid=ZONE_UUID, expect=ZONE_EXPECT,
+              set=dict(polygon=[[0, 0], [12, 0], [12, 6], [0, 6]]))
+    edit(path, lambda d: d.update(operations=[op]))
+    mock_native(monkeypatch)
+    unconnected = dict(unconnected_items=[dict(items=[dict(description='Pad 1 [PWR] of U1')])])
+    mock_guard(monkeypatch, after=unconnected, ok=False)
+    before = board.read_bytes()
+    result = changes.apply(cfg, path)
+    assert not result['ok'] and not result['applied'] and board.read_bytes() == before
+
+
+def test_zone_worker_names_zone():
+    assert "z.SetZoneName(data['name'])" in SCRIPT and 'name=item.GetZoneName()' in SCRIPT
+
+
+def _kicad_python():
+    import os
+    import shutil
+    exe = os.environ.get('OHMAI_KICAD_PYTHON', '/usr/bin/python3')
+    if not shutil.which('kicad-cli') or not Path(exe).exists():
+        return None
+    ok = subprocess.run([exe, '-c', 'import pcbnew'], capture_output=True).returncode == 0
+    return exe if ok else None
+
+
+SYNTHETIC_BOARD = r'''
+import sys, pcbnew as p
+b = p.BOARD()
+b.SetCopperLayerCount(4)
+for name in ('GND', 'PWR'):
+    b.Add(p.NETINFO_ITEM(b, name))
+mm = p.FromMM
+corners = [(0, 0), (40, 0), (40, 20), (0, 20)]
+for i in range(4):
+    s = p.PCB_SHAPE(b); s.SetShape(p.SHAPE_T_SEGMENT); s.SetLayer(p.Edge_Cuts); s.SetWidth(mm(.1))
+    (x0, y0), (x1, y1) = corners[i], corners[(i + 1) % 4]
+    s.SetStart(p.VECTOR2I(mm(x0), mm(y0))); s.SetEnd(p.VECTOR2I(mm(x1), mm(y1))); b.Add(s)
+for x in (5, 35):
+    t = p.PCB_TRACK(b); t.SetLayer(p.F_Cu); t.SetWidth(mm(1)); t.SetNet(b.FindNet('PWR'))
+    t.SetStart(p.VECTOR2I(mm(x), mm(10))); t.SetEnd(p.VECTOR2I(mm(x + .1), mm(10))); b.Add(t)
+z = p.ZONE(b); z.SetLayer(p.B_Cu); z.SetNet(b.FindNet('GND')); z.SetMinThickness(mm(.25))
+o = p.SHAPE_POLY_SET(); o.NewOutline()
+for x, y in [(1, 1), (39, 1), (39, 19), (1, 19)]:
+    o.Append(mm(x), mm(y))
+z.SetOutline(o); o.thisown = False; b.Add(z)
+p.SaveBoard(sys.argv[1], b)
+'''
+
+
+@pytest.mark.skipif(_kicad_python() is None, reason='needs kicad-cli and KiCad Python (pcbnew)')
+def test_native_zone_add_resize_delete_on_synthetic_board(tmp_path):
+    """Real worker + refill + DRC on a fictional 4-layer board: In2 pour, resize, delete."""
+    from ohmai.layout import zones
+    board = tmp_path / 'fictional.kicad_pcb'
+    subprocess.run([_kicad_python(), '-c', SYNTHETIC_BOARD, str(board)], check=True, capture_output=True)
+    base = tmp_path / 'base.kicad_pcb'
+    base.write_bytes(board.read_bytes())
+    gnd = zones.list_zones(board)[0]
+    cfg = dict(board=str(board), work_dir=str(tmp_path / 'out'), rules_resolved={})
+
+    def run(ops, dry_run):
+        path = tmp_path / 'changes.json'
+        path.write_text(json.dumps(dict(schema_version=1, base=dict(
+            commit='abcdef0', board_file=base.name, sha256=changes.digest(base)), operations=ops)))
+        return changes.apply(cfg, path, dry_run=dry_run)
+
+    corridor = [dict(ZONE_ADD, net='PWR', polygon=[[4, 8], [36, 8], [36, 12], [4, 12]]),
+                dict(VIA, id='v1', net='PWR', at=[5, 10], diameter=.8, drill=.4),
+                dict(VIA, id='v2', net='PWR', at=[35, 10], diameter=.8, drill=.4),
+                dict(id='grow', op='zone.edit', uuid=gnd['uuid'], expect=gnd['expect'],
+                     set=dict(polygon=[[1, 1], [39, 1], [39, 7], [1, 7]], name='ground'))]
+    old = board.read_bytes()
+    dry = run(corridor, True)
+    assert dry['ok'] and not dry['applied'] and board.read_bytes() == old, dry
+    assert dry['before']['unconnected'] == {'PWR': 1} and dry['after']['unconnected'] == {}
+    done = run(corridor, False)
+    assert done['ok'] and done['applied'], done
+    listed = {(z['net'], z['layers'][0]): z for z in zones.list_zones(board)}
+    assert listed[('PWR', 'In2.Cu')]['name'] == 'corridor'
+    assert listed[('GND', 'B.Cu')]['expect']['polygon'] == [[1, 1], [39, 1], [39, 7], [1, 7]]
+    # A stale zone.delete (old base geometry) is refused without touching the board.
+    applied = board.read_bytes()
+    stale = run([dict(id='drop', op='zone.delete', uuid=gnd['uuid'], expect=gnd['expect'])], True)
+    assert not stale['ok'] and board.read_bytes() == applied

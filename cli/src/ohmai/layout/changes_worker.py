@@ -50,7 +50,8 @@ def describe(item, kind):
                 priority=item.GetAssignedPriority(), clearance=p.ToMM(item.GetLocalClearance()),
                 min_thickness=p.ToMM(item.GetMinThickness()), pad_connection=conn[item.GetPadConnection()],
                 thermal_gap=p.ToMM(item.GetThermalReliefGap()), thermal_spoke=p.ToMM(item.GetThermalReliefSpokeWidth()),
-                island_removal='always' if item.GetIslandRemovalMode() == p.ISLAND_REMOVAL_MODE_ALWAYS else 'never')
+                island_removal='always' if item.GetIslandRemovalMode() == p.ISLAND_REMOVAL_MODE_ALWAYS else 'never',
+                name=item.GetZoneName())
 
 
 def matches(actual, expected):
@@ -92,6 +93,8 @@ def configure_zone(z, data):
     for key, (method, convert) in setters.items():
         if key in data:
             getattr(z, method)(convert(data[key]))
+    if 'name' in data:
+        z.SetZoneName(data['name'])
     if 'pad_connection' in data:
         z.SetPadConnection({'solid': p.ZONE_CONNECTION_FULL, 'thermal': p.ZONE_CONNECTION_THERMAL,
                             'none': p.ZONE_CONNECTION_NONE}[data['pad_connection']])

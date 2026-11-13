@@ -4,6 +4,15 @@
 Historical internal project names are anonymized aliases, not public repositories.
 
 ## 0.1.1 (unreleased)
+- `layout apply-changes` zone support: new `zone.delete`; `zone.edit` `set.polygon` resizes a zone;
+  optional zone `name`; zone `expect` needs only `net`, `layer` and `polygon`. New
+  `ohmai layout zones` lists zones with a ready `expect`. Zone ops share the dry-run, refill,
+  DRC gate and rollback of other operations; a KiCad-gated test adds, resizes and checks zones on a
+  synthetic 4-layer board.
+- New `ohmai layout current`: IPC-2152 (or legacy IPC-2221) screening of current targets against
+  copper weight, temperature rise and layers; reports width per layer and for a multi-layer
+  corridor, measured-width or pour-neck pass/fail, resistance/drop/dissipation and stitching-via
+  current and count. Copper thickness comes from flags, the board stackup or 1 oz/0.5 oz defaults.
 - Apache-2.0 NOTICE names "The OhmAI contributors" and credits
   easyeda2kicad (AGPL-3.0), Freerouting (GPL-3.0) and KiCad/pcbnew (GPL) as separate
   programs. First-party Python and shell sources carry SPDX plus copyright headers.

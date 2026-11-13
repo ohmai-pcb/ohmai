@@ -253,6 +253,10 @@
                   "always",
                   "never"
                 ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -334,6 +338,10 @@
                       "always",
                       "never"
                     ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [],
@@ -346,6 +354,32 @@
               "uuid",
               "expect",
               "set"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "op": {
+                "const": "zone.delete"
+              },
+              "uuid": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "expect": {
+                "$ref": "#/$defs/zone"
+              }
+            },
+            "required": [
+              "id",
+              "op",
+              "uuid",
+              "expect"
             ]
           },
           {
@@ -542,17 +576,15 @@
             "always",
             "never"
           ]
+        },
+        "name": {
+          "type": "string"
         }
       },
       "required": [
         "net",
         "layer",
-        "polygon",
-        "priority",
-        "clearance",
-        "min_thickness",
-        "pad_connection",
-        "island_removal"
+        "polygon"
       ]
     }
   }

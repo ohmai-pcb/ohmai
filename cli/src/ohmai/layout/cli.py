@@ -239,6 +239,61 @@ def cmd_apply_changes(a) -> int:
     return 0 if result['ok'] else 1
 
 
+def cmd_zones(a) -> int:
+    from ohmai.layout import zones
+
+    board = Path(a.board) if a.board else Path(_cfg(_project(), a)["board"])
+    rows = zones.list_zones(board, a.net)
+    if a.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    for r in rows:
+        tag = "" if r["editable"] else "  (" + r["reason"] + ")"
+        print(f"{r['uuid']}  {r['net'] or '<no net>'}  {','.join(r['layers'])}  prio {r['priority']}  "
+              f"{r['points']} pts{'  name ' + r['name'] if r['name'] else ''}{tag}")
+    return 0
+
+
+def cmd_current(a) -> int:
+    from ohmai.layout import current
+
+    try:
+        layers = [x.strip() for x in a.layers.split(",") if x.strip()]
+        board = Path(a.board) if a.board else None
+        if board is None and not a.copper_all:
+            try:
+                from ohmai.project import NotAProject, find_project
+                board = Path(_cfg(find_project(), a)["board"])
+            except NotAProject:
+                board = None
+        copper = current.default_copper(layers)
+        source = "default 1 oz outer / 0.5 oz inner"
+        if board is not None and board.is_file():
+            stack = current.board_copper(board)
+            if stack:
+                copper.update({n: t for n, t in stack.items() if n in layers})
+                source = f"stackup of {board.name}"
+        if a.copper_all:
+            copper = {n: current.parse_thickness(a.copper_all) for n in layers}
+            source = "--copper-all"
+        copper.update(current.parse_layer_values(a.copper, current.parse_thickness))
+        widths = current.parse_layer_values(a.width, float)
+        widths.update(current.parse_layer_values(a.pour_json, current.pour_neck))
+        targets = [current.parse_target(t, a.rise) for t in (a.target or [])]
+        if not targets:
+            raise ValueError("give at least one --target NAME=AMPS[@RISE_C]")
+        via = None
+        if a.via_drill:
+            via = dict(drill=a.via_drill, plating=current.parse_thickness(a.via_plating), count=a.via_count)
+        res = current.report(targets, layers, copper, a.method, widths, a.length, via, a.ambient)
+        res["copper_source"] = source
+    except (ValueError, OSError) as e:
+        print(f"ohmai layout current: {e}", file=sys.stderr)
+        return 2
+    print(json.dumps(res, indent=2) if a.json else f"copper: {source}\n" + current.format_text(res))
+    return 0 if res["ok"] is not False else 1
+
+
 def add_parser(sub) -> None:
     s = sub.add_parser("layout", help="layout steps (phase 8): placement fit / free-area scan; fanout, autoroute, "
                                       "pour, handroute (KiCad Python)",
@@ -302,6 +357,33 @@ def add_parser(sub) -> None:
     ac.add_argument("change_list")
     ac.add_argument("--dry-run", action="store_true", help="run full validation and DRC without changing the board")
     ac.set_defaults(fn=cmd_apply_changes)
+
+    zo = ls.add_parser("zones", help="list copper zones with UUID and the expect block for zone.edit/zone.delete")
+    zo.add_argument("--net", help="net name regex (full match)")
+    zo.add_argument("--board", help=".kicad_pcb (default: project board)")
+    zo.add_argument("--json", action="store_true")
+    zo.set_defaults(fn=cmd_zones)
+
+    cu = ls.add_parser("current", help="IPC-2152 style current/width sizing for tracks, pours/corridors and vias",
+                       description="Screening calculation; see docs/LAYOUT.md 'Current sizing'.")
+    cu.add_argument("--target", action="append", metavar="NAME=AMPS[@RISE_C]",
+                    help="current to check, repeatable, e.g. continuous=15 combined=19.5 peak=20@30")
+    cu.add_argument("--rise", type=float, default=20.0, help="allowed temperature rise, degC (default 20)")
+    cu.add_argument("--layers", default="F.Cu,B.Cu", help="copper layers that share the current (default F.Cu,B.Cu)")
+    cu.add_argument("--copper", action="append", metavar="LAYER=THICK", help="copper per layer: 1oz, 2oz, 35um, 0.07mm")
+    cu.add_argument("--copper-all", metavar="THICK", help="same copper weight on every listed layer (e.g. 2oz)")
+    cu.add_argument("--board", help=".kicad_pcb whose stackup gives copper thickness (default: project board)")
+    cu.add_argument("--width", action="append", metavar="LAYER=MM", help="measured narrowest width on a layer")
+    cu.add_argument("--pour-json", action="append", metavar="LAYER=FILE",
+                    help="take the width from an `ohmai layout pour --json` neck")
+    cu.add_argument("--length", type=float, help="path length, mm (adds resistance, drop and dissipation)")
+    cu.add_argument("--ambient", type=float, default=25.0, help="ambient for resistance, degC (default 25)")
+    cu.add_argument("--via-drill", type=float, help="stitching via drill, mm (adds per-via current and count)")
+    cu.add_argument("--via-plating", default="20um", help="via barrel plating (default 20um; ask your fab)")
+    cu.add_argument("--via-count", type=int, help="vias per layer change to check")
+    cu.add_argument("--method", choices=["ipc2152", "ipc2221"], default="ipc2152")
+    cu.add_argument("--json", action="store_true")
+    cu.set_defaults(fn=cmd_current)
 
     hr = ls.add_parser("handroute", help="grid A* for tail nets (thin-first by netclass width; prefer pours then retry missed nets), freeze, staged apply")
     hr.add_argument("action", nargs="?", default="status", choices=["status", "route", "freeze", "apply"])

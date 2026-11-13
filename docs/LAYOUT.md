@@ -199,12 +199,14 @@ rebase the affected operations against the new board.
 | `track.add` | `net`, `layer`, `start:[x,y]`, `end:[x,y]`, `width` |
 | `track.delete` | `uuid`, `expect` containing **all** the track.add geometry/net fields |
 | `zone.add` | `net`, `layer`, `polygon:[[x,y],...]`, `priority`, `clearance`, `min_thickness`, `pad_connection`, `island_removal` |
-| `zone.edit` | `uuid`, `expect` containing the zone.add fields, `set` containing at least one editable zone setting |
+| `zone.edit` | `uuid`, `expect` with at least `net`, `layer`, `polygon` (other zone.add fields optional), `set` containing at least one editable zone setting; `set.polygon` resizes/reshapes |
+| `zone.delete` | `uuid`, `expect` with at least `net`, `layer`, `polygon` |
 | `footprint.move` | `ref`, `expect:{"at":[x,y],"rotation":degrees}`, `to:[x,y]` (translation only) |
 
 Zone `pad_connection` is `solid`, `thermal` or `none`; `island_removal` is `always` or `never`.
 Optional `thermal_gap` and `thermal_spoke` apply to zone add/edit and can be included in `expect`.
-Zone edits may set polygon/priority/clearance/min_thickness/pad_connection/island_removal/thermal
+`zone.add` and `zone.edit` `set` also accept an optional `name` (KiCad zone name).
+Zone edits may set polygon/priority/clearance/min_thickness/pad_connection/island_removal/thermal/name
 settings, never net or layer. V1 edits only single-outline zones without holes, straight track
 segments and through vias; arcs, blind/buried via edits and complex/multilayer-zone edits fail closed.
 Polygon vertices must form a nonzero-area, non-self-intersecting outline. Deletes require both
@@ -235,6 +237,71 @@ before/after JSON DRC and a result. After-DRC evidence is written **before rollb
 a tool/refill failure instead preserves the inputs, partial output and failure diagnostic.
 Do not hand-edit a board to apply a RESULTS package: use its named apply command.
 
+
+### Zone add, resize and delete
+
+Zones are ordinary transaction operations: they are validated, dry-run, refilled, DRC-gated
+and rolled back exactly like tracks and vias. `ohmai layout zones [--net REGEX] [--json]` lists
+the board's copper zones (rule areas are skipped) with UUID, net, layers, name, priority and
+outline, and prints a ready-to-paste `expect` for every editable zone (single layer, one outline,
+no holes); other zones show why they cannot be edited. Example package (fictional board):
+
+```json
+{"schema_version": 1,
+ "base": {"commit": "abcdef0", "board_file": "board.kicad_pcb", "sha256": "<sha256 of base>"},
+ "operations": [
+  {"id": "pwr-in2", "op": "zone.add", "name": "pwr-corridor", "net": "PWR", "layer": "In2.Cu",
+   "polygon": [[4, 8], [36, 8], [36, 12], [4, 12]], "priority": 1, "clearance": 0.3,
+   "min_thickness": 0.25, "pad_connection": "solid", "island_removal": "always"},
+  {"id": "stitch-1", "op": "via.add", "net": "PWR", "at": [5, 10], "diameter": 0.8, "drill": 0.4,
+   "layers": ["F.Cu", "B.Cu"]},
+  {"id": "gnd-shrink", "op": "zone.edit", "uuid": "<uuid from ohmai layout zones>",
+   "expect": {"net": "GND", "layer": "B.Cu", "polygon": [[1, 1], [39, 1], [39, 19], [1, 19]]},
+   "set": {"polygon": [[1, 1], [39, 1], [39, 7], [1, 7]]}},
+  {"id": "old-pour", "op": "zone.delete", "uuid": "<uuid>",
+   "expect": {"net": "PWR", "layer": "F.Cu", "polygon": [[0, 0], [5, 0], [5, 5], [0, 5]]}}]}
+```
+
+Run `ohmai layout apply-changes changes.json --dry-run` first; the RESULTS package shows the
+per-net unconnected counts before and after. A stale `expect` (the zone was changed since you
+listed it) is refused before anything is written. Multi-layer zones and zones with holes cannot
+be edited or deleted by v1 packages; change them in KiCad.
+
+### Current sizing (`ohmai layout current`)
+
+A screening calculator for how much copper a current path needs. It answers, per target current:
+the cross-section required, the width needed on each layer alone, the width of a corridor that
+uses the same width on every listed layer, and (when widths are given) the capacity, temperature
+rise, resistance, voltage drop and dissipation, plus stitching-via current and count.
+
+```sh
+ohmai layout current --layers F.Cu,B.Cu,In2.Cu \
+  --target continuous=15 --target combined=19.5 --target peak=20@30 \
+  --width F.Cu=8 --width B.Cu=8 --width In2.Cu=8 --length 40 \
+  --via-drill 0.4 --via-count 10
+ohmai layout current --copper-all 2oz --target 10            # bare widths for 2 oz outer layers
+ohmai layout pour --net PWR --layer In2.Cu --json > in2.json
+ohmai layout current --layers In2.Cu --pour-json In2.Cu=in2.json --target continuous=15
+```
+
+- `--target NAME=AMPS[@RISE]` is repeatable; `RISE` (°C) defaults to `--rise` (20).
+- Copper thickness comes from `--copper LAYER=THICK` / `--copper-all` (`1oz`, `35um`, `0.035mm`),
+  else from the board stackup (`--board`, default the project board), else 1 oz outer / 0.5 oz inner.
+- `--width LAYER=MM` is the narrowest width of that layer along the path; `--pour-json` takes the
+  neck reported by `ohmai layout pour --json`. Widths on different layers count together only if
+  their necks overlap in position; the tool cannot know that, so measure honestly.
+- Via barrels are π·t·(d−t) with plating `--via-plating` (default 20 µm; ask your fab) and are sized
+  as internal conductors. "Per layer change" means every place the current moves between layers.
+- Exit 0 when every measured check passes (or nothing was measured), 1 on any FAIL, 2 on bad input.
+  `--json` gives the full machine-readable report.
+
+Method (`--method ipc2152`, default): the curve fit of the IPC-2152 generic (external, no modifiers)
+chart, A[mil²] = (117.555·ΔT^-0.913 + 1.15)·I^(0.84·ΔT^-0.108 + 1.159), which gives 513 mil² for
+10 A at +20 °C against about 500 mil² read off the chart. No board-thickness, plane or copper-weight
+modifiers are applied, so results are conservative for boards with planes. `--method ipc2221` uses
+the legacy I = k·ΔT^0.44·A^0.725 (k = 0.048 external, 0.024 internal). Resistance uses copper
+ρ = 1.72e-8 Ω·m at 20 °C, α = 0.00393/K, at ambient plus the computed rise. This is a sizing
+aid, not a thermal simulation: hot components, enclosures and adjacent heat sources are ignored.
 
 ### Shared deterministic native refill
 
