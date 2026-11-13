@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Phase 11: Fab outputs and release (Pre-order human gate)
 
 **Goal:** a tagged, reproducible release `rev-A` with a mandatory human pre-order sign-off (`review:fab`).

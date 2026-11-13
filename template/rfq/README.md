@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # RFQs and supplier questions
 
 One file per supplier question or RFQ: `rfq/<supplier>-<topic>.md`. Each file is a **standalone vendor

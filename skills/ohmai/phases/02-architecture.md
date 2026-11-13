@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Phase 2: Architecture and trade study
 
 **Goal:** the owner picks one architecture. Branch `phase/architecture`. Check `ohmai check architecture`.

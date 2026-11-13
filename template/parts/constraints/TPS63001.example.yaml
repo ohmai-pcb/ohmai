@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 # EXAMPLE constraints file (files named *.example.yaml are not checked).
 # Copy to parts/constraints/<PART>.yaml for a real part. Every fact cites a datasheet page.
 # Facts below are from the MPS TPS63001 datasheet Rev. 1.0, 7/20/2022 (PIN FUNCTIONS p.4,

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 name: release
 
 # Builds the CLI wheel when a v* tag is pushed, checks the tag equals __version__, and keeps the wheel as a

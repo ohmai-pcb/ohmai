@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Phase 8: Layout
 
 **Goal:** a board that passes DRC with the fab's rules, satisfies every datasheet layout constraint (`critical_loops`,

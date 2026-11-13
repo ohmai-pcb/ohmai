@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Phase 6: Supplier questions and RFQs
 
 **Goal:** answers to what datasheets do not say: custom magnetics, cables, enclosures, quotes, lead times.

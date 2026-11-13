@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Phase 4: Part selection and costed BOM
 
 **Goal:** an approved part for every block, satisfying the 3 BOM sourcing rules (`ohmai check bom-schema`).

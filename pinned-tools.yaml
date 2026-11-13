@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 # OhmAI release tool pins — the single source of truth for this ohmai release.
 # `ohmai setup` installs these exact versions (no prompts); `ohmai doctor` FAILs on a
 # mismatch unless OHMAI_ALLOW_UNPINNED=1 (or toolchain.allow_unpinned in ohmai.yaml).

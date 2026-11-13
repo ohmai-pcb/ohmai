@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Layout steps (phase 8)
 
 Project settings live in `hardware/layout.yaml` (or the file named by ohmai.yaml `layout.config`). Board rules

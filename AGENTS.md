@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # AGENTS.md: contributing to the OhmAI tool repo
 
 For agents and humans changing OhmAI itself. (Rules for agents working *in a generated project* live in

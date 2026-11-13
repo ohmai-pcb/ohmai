@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Testing OhmAI
 
 OhmAI's checks gate real hardware, so they are tested the way a design would be. Four layers, all run by

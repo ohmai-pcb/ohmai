@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Freerouting evidence log
 
 One entry per invocation. Never infer DRC success from an SES file or Java exit 0.

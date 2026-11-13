@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Phase 7: Schematic
 
 **Goal:** a schematic that matches the architecture, the constraints and the expected nets.

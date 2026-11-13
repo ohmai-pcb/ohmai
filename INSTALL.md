@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Install OhmAI (0.1.1 release preparation)
 
 The agent plugin is **guidance only**. It bundles no CLI, third-party Python code,

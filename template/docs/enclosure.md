@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 <!-- ohmai:template: fill in, then delete this line. No enclosure? Replace this line with an HTML comment
      that starts with "ohmai:not-applicable" plus a one-line reason. Gate: owner approves fit and IP (phase 9). -->
 # Enclosure and IP: {{project_name}}

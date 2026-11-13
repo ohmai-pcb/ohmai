@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Toolchain on a shared box (restore, durability, coordination)
 
 The toolchain is machine-local. KiCad comes from apt and ohmai runs from a venv, and neither is in project

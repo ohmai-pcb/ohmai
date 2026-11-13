@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Architecture
 
 OhmAI has three parts: a **skill** that tells an agent how to run a hardware project, a **template** that

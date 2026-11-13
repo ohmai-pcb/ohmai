@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Roadmap
 
 Versions apply to the tool (CLI + skill + template), all versioned together.

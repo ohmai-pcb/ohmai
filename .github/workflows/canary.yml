@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 # Toolchain canary (owner 2026-10-15): weekly, run the golden + known-bad suites against the newest
 # KiCad application and libraries and report breakage. It never moves a pin: no lock, snapshot or
 # ohmai.yaml is written and nothing is committed. Moving a pin is `ohmai upgrade` in a project.

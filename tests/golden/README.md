@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Golden projects
 
 Each directory here is a reference project. `ohmai golden` rebuilds it from its sources with the pinned

@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Choose the router before routing
 
 How-to (commands, `--nets`, gates, 2.5.0 behaviour): `docs/routing/ROUTER-GUIDE.md` in the OhmAI source.

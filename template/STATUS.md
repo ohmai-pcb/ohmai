@@ -9,6 +9,7 @@ authors:            # identities that write this project's work; reviewers must 
 updated: {{date}}
 ---
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 
 # STATUS: {{project_name}}
 

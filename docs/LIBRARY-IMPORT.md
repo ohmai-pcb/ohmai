@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Library import (`ohmai kicad-libs fetch|import|verify|list`)
 
 Missing KiCad parts are an agent tool problem. The agent fetches, imports and verifies them end-to-end.

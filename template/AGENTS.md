@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # AGENTS.md: rules for any agent working in this project
 
 This is an OhmAI hardware project (template from OhmAI {{ohmai_version}}). The owner decides. Agents research,

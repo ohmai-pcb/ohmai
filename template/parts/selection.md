@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 <!-- ohmai:template: fill in, then delete this line. Gate: owner approves each part with a named second source (phase 4). -->
 # Part selection: {{project_name}}
 

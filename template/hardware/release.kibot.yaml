@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The OhmAI contributors
 # KiBot config for tagged releases (rev-*). Runs in CI as a separate process (KiBot is AGPL-3.0).
 # Docs: https://kibot.readthedocs.io  (check option names against your KiBot version)
 kibot:

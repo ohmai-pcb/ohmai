@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Decision log: {{project_name}}
 
 Append-only. One entry per owner decision, written the same day. Add a matching row to the STATUS.md

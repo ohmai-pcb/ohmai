@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # Optional always-on host nudge
 
 Use this compact text in an approved project AGENTS.md or host rule; do not paste

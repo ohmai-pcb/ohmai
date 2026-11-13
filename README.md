@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/ohmai-logo-dark-transparent.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo/ohmai-logo-light-transparent.svg">

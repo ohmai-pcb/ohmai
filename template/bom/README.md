@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 # BOM
 
 `bom.csv` is the single BOM. One row per unique part. `refs` are space-separated.

@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The OhmAI contributors -->
 ## Gate: phase N <name>
 
 **Owner decision requested:** <what merging this PR locks>
