@@ -22,3 +22,7 @@ Optional related tools such as KiBot (AGPL) and SKiDL/InSpice (GPL) may also be
 invoked as separate processes. CAD data from KiCad libraries, EasyEDA or LCSC is
 not bundled. Python dependencies are separately installed under their respective
 licenses; no third-party dependency code is vendored in the plugin.
+
+The OhmAI wordmark uses outlined glyphs derived from Inter
+(SIL Open Font License 1.1). Inter font files are not shipped in this
+repository.

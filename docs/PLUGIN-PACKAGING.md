@@ -81,3 +81,6 @@ FAIL. Keep the separate SPDX notices and licensing boundaries intact.
 - Run native host installs and discovery, including Grok Bot's supported import UX.
 - Choose/publish the matching semver tag and built guidance-only artifact after approval.
 - Fill the mandatory project [tool issue report](templates/tool-issues.md).
+- There is no KiCad PCM package in this repository yet. A 64×64 PCM-ready
+  icon lives at [docs/assets/logo/pcm/resources/icon.png](assets/logo/pcm/resources/icon.png);
+  copy it to `resources/icon.png` in a PCM artifact when that packaging is added.
