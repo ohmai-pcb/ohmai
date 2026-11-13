@@ -944,13 +944,18 @@ def prepare_autoroute(
         # dsn.patch edits Specctra text in place (no sexp tree API).
         dsn_cfg = dict(ar.get("dsn") or {})
         planes = dict(cfg.get("planes") or {})
-        signal_layers = list(cfg.get("signal_layers") or ["F.Cu", "B.Cu"])
-        # copper = DSN layer names to consider. Layers not in signal_layers are
-        # flipped signal→power. Default to signal_layers only: KiCad often exports
-        # inner planes already as (type power) under names like GND/PWR, not In1.Cu.
-        copper = list(cfg.get("copper") or signal_layers)
+        # The merged F/B handroute default must not masquerade as an explicit
+        # autorouter override. Derive default DSN policy from real stackup roles.
+        signal_layers = (list(cfg['signal_layers']) if cfg.get('signal_layers') is not None
+                         and cfg.get('_signal_layers_explicit', True) else None)
+        copper = list(cfg.get('copper') or [])
+        from . import dsn_layers
+        raw_text = raw_dsn.read_text(encoding='utf-8', errors='replace')
+        board_layers = dsn_layers.board_layers(pcb)
+        layer_policy = dsn_layers.policy(raw_text, planes, copper, signal_layers,
+                                        cfg.get('inner_signal_layer'), board_layers)
         patched, dsn_log = dsn_mod.patch(
-            raw_dsn.read_text(encoding="utf-8", errors="replace"),
+            raw_text,
             dsn_cfg,
             planes,
             copper,
@@ -959,11 +964,19 @@ def prepare_autoroute(
             inner_nets=ar.get("inner_nets"),
             nets=nets,
             exclude=exclude,
+            board_layers=board_layers,
         )
         if nets:
             dsn_log = list(dsn_log) + [f"subset nets={nets!r}"]
         if exclude:
             dsn_log = list(dsn_log) + [f"exclude nets={exclude!r}"]
+        if ses_out.is_file():
+            try:
+                bad = dsn_layers.ses_non_signal_wires(ses_out.read_text(), layer_policy['signal_layers'])
+                if bad:
+                    dsn_log.append(f'WARNING: existing SES has non-signal-layer wires: {bad}; reroute, do not import')
+            except ValueError:
+                dsn_log.append('WARNING: existing SES cannot be parsed; do not import')
         patched_dsn.write_text(patched, encoding="utf-8")
         dsn_edited = True
 
@@ -1003,6 +1016,8 @@ def prepare_autoroute(
         "patched_dsn": str(patched_dsn),
         "dsn_edited": dsn_edited,
         "dsn_log": dsn_log,
+        "signal_layers": layer_policy["signal_layers"] if dsn_edited else [],
+        "non_signal_layers": layer_policy["non_signal_layers"] if dsn_edited else [],
         "ses_out": str(ses_out),
         "passes": eff_passes,
         "opt_passes": eff_opt,
@@ -1089,12 +1104,17 @@ def run_autoroute(prepared: dict) -> dict:
                         route_vias += 1
         except (ValueError, IndexError):
             ses_invalid = True
+    from . import dsn_layers
+    non_signal = (dsn_layers.ses_non_signal_wires(ses_text, prepared['signal_layers'])
+                  if ses_text.strip() and not ses_invalid and prepared.get('signal_layers') else {})
     error_pass = bool(re.search(r"Error during routing passes", log, re.I))
     npe = bool(re.search(r"NullPointerException|to_trace_entries is null", log))
-    ok = (proc.returncode == 0) and (not error_pass) and (not npe) and (not ses_invalid) and (route_wires + route_vias > 0)
+    ok = (proc.returncode == 0) and (not error_pass) and (not npe) and (not ses_invalid) and (route_wires + route_vias > 0) and not non_signal
     # Freerouting often exits 0 after a mid-pass crash — force failure for the CLI.
     rc = 0 if ok else (proc.returncode if proc.returncode else 1)
     reasons = []
+    if non_signal:
+        reasons.append("non_signal_layer_wires")
     if ses_invalid:
         reasons.append("ses_invalid")
     if error_pass:
@@ -1111,6 +1131,8 @@ def run_autoroute(prepared: dict) -> dict:
         "fail_reasons": reasons,
         "java": java_bin,
         "ses_exists": ses_path.is_file(),
+        "ses_non_signal_wires": non_signal,
+        "warnings": [f"SES has non-signal-layer wires: {non_signal}; do not import"] if non_signal else [],
         "ses_route_wires": route_wires,
         "ses_route_vias": route_vias,
         "ignored_options": [line for line in log.splitlines() if "Unknown settings property" in line],

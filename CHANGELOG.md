@@ -8,6 +8,11 @@ Historical internal project names are anonymized aliases, not public repositorie
   JDK 25 major, KiCad 9.0.2 / accepted range 9.0.x, easyeda2kicad 1.0.1). `ohmai setup` installs them
   with no prompts and verifies checksums; `ohmai doctor` FAILs on a mismatch (expected vs found, plus
   the fix command). `OHMAI_ALLOW_UNPINNED=1` (or `toolchain.allow_unpinned`) downgrades that to a warning.
+- `layout autoroute` derives signal layers from the DSN/board stackup and `planes` with zero config:
+  every class gets `use_layer` with signal layers only; dedicated inner planes are kept and empty power
+  layers get a DSN-only pinless plane reservation, so Freerouting 2.5.0 no longer routes signal wires on
+  GND/PWR planes while through-vias still work. Explicit `signal_layers`/`inner_signal_layer` still
+  override. A run whose SES has wires on a non-signal layer fails (`non_signal_layer_wires`) and warns.
 - Canonical portable skill and guidance-only Grok/Claude/Cursor plugin artifacts.
 - Separate CLI/KiCad 9.x bootstrap; doctor now FAILs missing/wrong KiCad.
 - Public release privacy/licensing gate; current-tree private examples anonymized.

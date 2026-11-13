@@ -3,7 +3,8 @@
 
 KiCad writes the DSN (units um, y = -board y); these steps keep Freerouting inside the board rules where its own
 model falls short. Every step is driven by the layout config (`autoroute.dsn`, `planes`, `signal_layers`,
-`inner_signal_layer`); with an empty config only the plane and layer steps that the config asks for run.
+`inner_signal_layer`). Signal classes are always restricted to the derived signal layers; reserved
+plane/power layers retain dedicated-plane reservations, including when no optional DSN edits are configured.
 
  1 drop_pins        pins of a padstack (e.g. castellation half-pads centred on the outline) leave the DSN
  1 keepouts         extra keep-out rectangles (board mm), e.g. strips along castellated edges
@@ -110,11 +111,17 @@ def normalize_wiring(s: str) -> tuple[str, int]:
     return s[:start] + sexp.dumps(["wiring"] + wires + other) + "\n" + s[end:], merged_count
 
 
-def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers: list[str],
+def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers: list[str] | None,
           inner_layer: str | None = None, inner_nets: str | None = None, nets: str | None = None,
-          exclude: str | None = None) -> tuple[str, list[str]]:
+          exclude: str | None = None, board_layers: dict | None = None) -> tuple[str, list[str]]:
     from shapely.geometry import LineString, Polygon
 
+    from . import dsn_layers
+
+    layers = dsn_layers.policy(s, planes, copper, signal_layers, inner_layer, board_layers)
+    signal_layers = layers["signal_layers"]
+    inner_layer = layers["inner_layer"]
+    s, reservations = dsn_layers.reserve_planes(s, layers)
     log: list[str] = []
     ko: list[str] = []
     # 1. dropped pins and their net references
@@ -158,13 +165,13 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             q = re.escape(_q(n))
             s = re.sub(rf"\n\s*\(net {q}\s*\n\s*\(pins[^)]*\)\s*\)", "", s)
             s = re.sub(rf"(\(class \S+[^\n]*?) {q}(?=[ \n])", r"\1", s)
-        s = re.sub(r"\n\s*\(plane [^\n]*\n[^\n]*\)\)", "", s)
-    # 4. power layers
-    for lay in copper:
-        if lay not in signal_layers:
-            s, k = re.subn(rf"\(layer {re.escape(lay)}\s*\(type signal\)", f"(layer {lay}\n      (type power)", s)
-            if k != 1:
-                raise ValueError(f"DSN: signal layer {lay} not found once (found {k})")
+    # 4. Explicit overrides may turn a formerly power-typed layer into signal.
+    for lay, old_type in layers['types'].items():
+        new_type = 'signal' if lay in signal_layers else 'power'
+        if new_type != old_type:
+            s = re.sub(rf'(\(layer {re.escape(_q(lay))}\s*\(type )\w+(\))',
+                       lambda m, typ=new_type: m[1] + typ + m[2], s)
+
     # 5. fixed pre-placed copper
     wi = s.find("(wiring")
     if wi >= 0:
@@ -198,7 +205,7 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             return re.sub(rf"(\(path \S+ ){w['from']} ", rf"\g<1>{w['to']} ", m.group(1))
         s = re.sub(rf"(\(padstack {re.escape(w['padstack'])}.*?\(attach off\))", widen, s, flags=re.S)
     # 9. inner signal layer only for inner_nets
-    if inner_layer and inner_layer in signal_layers:
+    if inner_layer and inner_layer in signal_layers and inner_nets:
         a = s.index("  (network")
         b = s.index("  (wiring", a)
         net_s = s[a:b]
@@ -214,8 +221,7 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             for n in allowed:
                 head = re.sub(rf'\s{re.escape(n)}(?=[\s)])', "", head, count=1)
             net_s = net_s[:i0] + head + net_s[j0:]
-        others = " ".join(lay for lay in signal_layers if lay != inner_layer)
-        net_s = re.sub(r'(\(use_via (?:"[^"]+"|\S+)\)\n)', lambda m: m.group(1) + f"        (use_layer {others})\n", net_s)
+
         if allowed:
             ic = dsn_cfg.get("inner_class") or {}
             cls = (f"    (class {ic.get('name', 'InnerOk')} " + " ".join(allowed) +
@@ -226,6 +232,10 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             net_s = net_s[:k] + cls + net_s[k:]
         s = s[:a] + net_s + s[b:]
         log.append(f"{inner_layer} allowed for {len(allowed)} nets: {' '.join(allowed)}")
+    s = dsn_layers.constrain_classes(s, signal_layers, inner_layer, bool(inner_nets),
+                                    (dsn_cfg.get('inner_class') or {}).get('name', 'InnerOk'))
+    log.extend(reservations)
+    log.append('signal classes use_layer: ' + ', '.join(signal_layers))
     if nets or exclude:
         s = subset_nets(s, nets, exclude)
     # Geometry-preserving degree-two chain join. Required to avoid Freerouting
@@ -237,4 +247,5 @@ def patch(s: str, dsn_cfg: dict, planes: dict, copper: list[str], signal_layers:
             log.append(f"coalesced {joined} fixed wire chain joins (geometry unchanged)")
     else:
         log.append("coalesce_fixed_chains disabled")
+    s = dsn_layers.ensure_plane_nets(s)
     return s, log

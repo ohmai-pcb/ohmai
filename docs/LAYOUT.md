@@ -267,3 +267,36 @@ successful fill never overwrites project settings. Timestamped backups precede o
 outputs/evidence. The normal and recovery paths must produce the same canonical polygons;
 use synthetic mocked-native tests in the normal suite and real-KiCad repeated comparisons
 when investigating native crashes.
+
+
+### Autorouter signal layers and plane reservations
+
+With zero optional configuration, `layout autoroute` derives its allowed signal
+layers from the exported board stackup. DSN power-type layers, board power layers,
+inner plane polygons and layers named by `planes: {NET: layer}` are **not** signal
+routing layers. Standard names such as `In1.Cu` resolve to custom DSN names such
+as `GND`. Every network class gets an explicit `circuit/use_layer`, including
+classes with no prior circuit or via rule. Unknown layer names fail preparation.
+
+Non-signal layers retain their original dedicated-plane polygons. An empty
+power layer gets a board-boundary plane on a pinless, reserved-name net
+(`__ohmai_reserved_layer_<layer>`). These are DSN-only reservations, **not new
+physical PCB copper**, and must never be imported as zones. Plane declarations
+and their pinless net definitions survive scoped net selection. This makes
+Freerouting 2.5.0 honour the layer's power role and still permits through-vias
+and antipads. A power type alone is insufficient: Freerouting treats it as
+signal when no plane exists. Full-layer `keepout` **and `wire_keepout`** were
+rejected by the forced F.Cu/B.Cu via control: both prevent through-via routing. Plane net copper already on
+shared signal layers remains fixed/obstructing. Shared signal-layer zone outlines
+are deferred to native refill (an exported outline is not a filled polygon).
+**Always refill and native-guard an additive SES import**, including every net,
+short/crossing, hole clearance, connection width, SAFETY and non-zone clearance.
+An SES alone is never a gate pass or a claim that a shared-layer pour survived.
+
+Explicit `signal_layers` overrides inferred roles; `inner_signal_layer` adds that
+layer even if it was inferred as reserved. `autoroute.inner_nets` still limits
+that optional inner layer to its matching class. Overrides are deliberate board
+policy, not an automatic invitation to route through power planes.
+Preparation warns if an existing SES contains new non-signal-layer wires. A new
+router result with such wires fails (`non_signal_layer_wires`) and records layer
+counts: reroute rather than retaining plane-layer stubs or importing blindly.

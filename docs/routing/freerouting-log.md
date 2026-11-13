@@ -118,7 +118,7 @@ relative. Each DSN still needs a standalone minimal reduction before upstream fi
 
 ## FR-20261110 — Freerouting 2.5.0 upgrade re-test (local)
 
-Evidence bundle: `/tmp/ohmai-fr25-20261110/` (not distributed). Board: usb-c-12v-stereo
+Evidence bundle: `$OHMAI_FR25_EVIDENCE` (retained local bundle, not distributed). Board: reference-power-board
 copper `6bb6f50`. Scope same as FR-20261109-01..04. Freerouting **2.5.0** jar +
 OpenJDK 25.0.4.1; private `--user_data_path` so the shared 2.2.4 config was untouched.
 Additive SES import kept F.Cu/B.Cu only (2.5.0 also emits plane-layer `GND`/`PWR`
@@ -157,8 +157,40 @@ zone refill. 2.2.4 numbers from FR-20261109-04 (a70513b copper, coalesced).
 | 2.5.0 FR-20261110-10 | yes (478 joins) | 157/17 | 55 → **55** | 9 → **9** | 0/0 | 192 → 185 |
 | 2.5.0 FR-20261110-11 | no | 159/17 | 55 → **55** | 9 → **9** | 0/0 | 192 → 185 |
 
-2.5.0 did **not** regress SAFETY/nonzone clearance on this board when only signal
-layers were imported. Coalescing is **optional** on 2.5.0+ (`autoroute.dsn.coalesce_fixed_chains`,
+**Qualification (2026-11-10):** both 2.5.0 imports discarded **27 GND-layer and
+31 PWR-layer wire records**. The 55/9 clearance/SAFETY and 192→185 measurements
+are valid only for that incomplete F.Cu/B.Cu subset, not the full routed solution.
+The layers were incorrectly available because OhmAI stripped plane polygons and
+failed to emit default class `use_layer` constraints. These numbers do **not**
+show that 2.5.0 fixed custom-rule compliance, and the 2.2.4 comparison also used a
+different copper baseline. Withdraw any general SAFETY improvement inference.
+The no-NPE observations above remain independent evidence about issue #721.
+
+The incomplete subset did not regress the measured counters. Coalescing is **optional** on 2.5.0+ (`autoroute.dsn.coalesce_fixed_chains`,
 default still true for 2.2.4 compatibility). Custom KiCad SAFETY rules remain a
-DSN modelling gap — do not treat SES success as promotion. Plane-layer SES wires
-from 2.5.0 need a separate import policy before any full-SES promotion trial.
+DSN modelling gap — do not treat SES success as promotion. The plane-layer routing preparation bug must be fixed before a full-SES trial;
+keep the F/B orphan-via filter and native guard, not the invalid plane stubs.
+
+## FR-20261113 — derived signal layers + plane reservations (local)
+
+Board: reference-power-board copper `188d7e0` (4 layers; inner GND/PWR power-typed;
+`planes: {GND: In1.Cu}` only). Scoped 2.5.0 run on the 31 nets of the earlier stubbed
+pass, 30 passes, 0 optimizer passes, 8 min job timeout, zero extra DSN config.
+DSN log: dedicated-plane areas kept for GND/PWR, DSN-only reservation on empty PWR,
+every class `use_layer F.Cu B.Cu`.
+
+| Check | Before fix (same scope) | After fix |
+|---|---|---|
+| SES route wires on GND/PWR | 55 of 131 | **0** of 135 (77 F.Cu, 58 B.Cu) |
+| SES vias kept by the F/B one-layer filter | 0 of 33 | **25 of 27** (2 dangling FR stubs dropped) |
+| Kept vias with same-net copper on F.Cu **and** B.Cu | 0 | **25 of 25** |
+
+Per-net additive import, fresh-process refill native guard after each net
+(reject on any hard gate, SAFETY > 9, nonzone > 55, any net worse, SW2_NODE/VSYS_BB
+unconnected): 7 nets accepted (Q3-G, Q5-G, Q4-G, U7-OUT 1→0; D_CC2-A1 2→0;
+I2C_SDA 3→2; U4-PA8 2→1). Cumulative gate: unconnected 49 → 41, shorts/crossings/
+hole clearance/connection width 0, SAFETY 9 → 9, nonzone 55 → 55, no net worse,
+SW2_NODE/VSYS_BB 0 unconnected. Rejected: ADC_ISNS, J5-Pin_3, J5-Pin_4 (SAFETY 13–17),
+D_ESD2-A1 (nonzone 56), U1-CELL_BATPRESZ (splits VSYS_BB), STEREO_PGD and U5-OVP
+(split V_BATT_PROT 1→2), JP1-Pin_1 and Q7A-G (no target improvement). Shared-layer
+pour splitting and custom SAFETY rules remain DSN modelling gaps; keep the guard.

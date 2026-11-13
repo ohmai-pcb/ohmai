@@ -88,6 +88,7 @@ def load(project, path: Path | None = None) -> dict:
     path = path or config_path(project)
     given = yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else {}
     cfg = _merge(DEFAULTS, given or {}, "layout")
+    cfg["_signal_layers_explicit"] = "signal_layers" in (given or {})
     if cfg["pour"] is not None:
         cfg["pour"] = _merge({**POUR_DEFAULTS, "local": POUR_DEFAULTS["local"]}, cfg["pour"], "layout.pour")
     cfg["_file"] = str(path) if path.is_file() else None

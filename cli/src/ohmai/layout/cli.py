@@ -158,6 +158,9 @@ def cmd_autoroute(a) -> int:
     else:
         print(f"autoroute: ok={run.get('ok')}, route_wires={run.get('ses_route_wires')}, "
               f"route_vias={run.get('ses_route_vias')}, log={record['id']}, DRC={record['drc_status']}")
+        for w in [x for x in prepared.get("dsn_log") or [] if str(x).startswith("WARNING")] + list(
+                run.get("warnings") or []):
+            print(f"autoroute: {w}", file=sys.stderr)
         if run.get("fail_reasons"):
             print(f"autoroute: FAIL ({', '.join(run['fail_reasons'])})", file=sys.stderr)
         if run.get("stderr_tail"):
