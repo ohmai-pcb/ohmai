@@ -24,7 +24,7 @@ debt. Review reuse before inventing: unnecessary machinery, existing tools, one 
 End every stop/gate: `Skipped / not checked: …; residual risk: …`.
 
 ## Router selection
-Read `docs/routing/router-selection.md` in the OhmAI source first. Internal handroute owns power, high-current, custom SAFETY/keepout and neck-sensitive nets. Freerouting is only for low-risk signals without custom-rule dependencies, on copies with native refill/DRC acceptance. Keep automatic run logs; never promote a clearance or SAFETY regression.
+Read `docs/routing/ROUTER-GUIDE.md` and `docs/routing/router-selection.md` in the OhmAI source first. Internal handroute owns power, high-current, custom SAFETY/keepout and neck-sensitive nets. Freerouting is only for low-risk signals without custom-rule dependencies, on copies with native refill/DRC acceptance. Keep automatic run logs (see `docs/routing/FREEROUTING-RUNS.md`); never promote a clearance or SAFETY regression.
 
 ## Do, in order (4-Stage Incremental Placement + Routing)
 1. **Outline & Fab rules**:

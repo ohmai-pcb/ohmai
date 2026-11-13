@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Choose the router before routing
 
+How-to (commands, `--nets`, gates, 2.5.0 behaviour): `docs/routing/ROUTER-GUIDE.md` in the OhmAI source.
+Run-log template and upstream checklist: `docs/routing/FREEROUTING-RUNS.md`.
+
+
 | Use internal handroute | Consider Freerouting only |
 |---|---|
 | Power/high-current nets, SAFETY/custom rules, keepouts, neck-sensitive connections | Low-risk signal nets in regions without custom-rule dependencies |

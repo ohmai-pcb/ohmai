@@ -57,6 +57,11 @@ evaluates `critical_loops:`, `keepouts:`, `layout_checklist:`, and `pour:` direc
 
 ## Layout CLI subcommands & `--staged` dry-runs
 
+When to use handroute versus Freerouting, how to scope a run, and the
+acceptance gates: [routing/ROUTER-GUIDE.md](routing/ROUTER-GUIDE.md).
+Per-run log template: [routing/FREEROUTING-RUNS.md](routing/FREEROUTING-RUNS.md).
+
+
 - `ohmai layout fit <REF> --at x,y[,rot] [--scan] [--rules] [--staged]`
 - `ohmai layout fanout [--nets REGEX] [--exclude-pad REF.PAD] [--exclude-near REF.PAD:radius_mm] [--staged]`
 - `ohmai layout autoroute [--opt-passes 2] [--timeout 00:10:00]` (hard 3-try router cap on any fixed placement)

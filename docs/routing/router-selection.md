@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Choose the router before routing
 
+How-to (commands, `--nets`, gates, 2.5.0 behaviour): [ROUTER-GUIDE.md](ROUTER-GUIDE.md).
+Run-log template and upstream checklist: [FREEROUTING-RUNS.md](FREEROUTING-RUNS.md).
+
+
 | Use internal handroute | Consider Freerouting only |
 |---|---|
 | Power/high-current nets, SAFETY/custom rules, keepouts, neck-sensitive connections | Low-risk signal nets in regions without custom-rule dependencies |
