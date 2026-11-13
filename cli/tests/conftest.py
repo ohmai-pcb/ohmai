@@ -2,6 +2,8 @@
 # Copyright 2026 The OhmAI contributors
 """Hermetic Git/LFS homes: tests must not alter the runner's accounts or repos."""
 
+import os
+
 import pytest
 
 
@@ -9,6 +11,10 @@ import pytest
 def isolated_git_home(tmp_path, monkeypatch):
     home = tmp_path / 'test-home'
     home.mkdir()
+    # The pinned KiCad library cache defaults to ~/.cache: keep the real one visible under the scratch
+    # HOME, or import-time `needs kicad-libs` markers (real HOME) disagree with the runs (scratch HOME).
+    monkeypatch.setenv('OHMAI_KICAD_LIBS', os.environ.get('OHMAI_KICAD_LIBS')
+                       or os.path.expanduser('~/.cache/ohmai/kicad-libs'))
     monkeypatch.setenv('HOME', str(home))
     monkeypatch.setenv('XDG_CONFIG_HOME', str(home / '.config'))
     monkeypatch.setenv('GIT_CONFIG_GLOBAL', str(home / '.gitconfig'))
