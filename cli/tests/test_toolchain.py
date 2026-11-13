@@ -164,12 +164,18 @@ def test_first_version():
 
 def test_constraints_pin_every_runtime_dependency():
     text = (REPO / "cli" / "constraints.txt").read_text()
-    pins = {m.group(1).lower(): m.group(2) for m in re.finditer(r"^([A-Za-z0-9._-]+)==(\S+)", text, re.M)}
+
+    def canon(name: str) -> str:   # PEP 503: typing_extensions == typing-extensions == Typing.Extensions
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    pairs = {(canon(m.group(1)), m.group(2)) for m in re.finditer(r"^([A-Za-z0-9._-]+)==(\S+)", text, re.M)}
+    pins = {name for name, _ in pairs}
     for dep in tc.python_deps():
-        assert dep.lower() in pins, f"{dep} (ohmai runtime dependency) not pinned in cli/constraints.txt"
+        assert canon(dep) in pins, f"{dep} (ohmai runtime dependency) not pinned in cli/constraints.txt"
     lock = (REPO / "cli" / "requirements.lock").read_text()
-    for name, ver in pins.items():
-        assert re.search(rf"^{re.escape(name)}=={re.escape(ver)}\b", lock, re.M | re.I), f"{name} not in requirements.lock"
+    locked = {(canon(m.group(1)), m.group(2)) for m in re.finditer(r"^([A-Za-z0-9._-]+)==([^\s;\\]+)", lock, re.M)}
+    missing = sorted(f"{name}=={ver}" for name, ver in pairs - locked)
+    assert not missing, f"pinned in constraints.txt but not in requirements.lock: {missing}"
     assert "--hash=sha256:" in lock
 
 
