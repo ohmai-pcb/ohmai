@@ -4,7 +4,10 @@
 
 Historical internal project names are anonymized aliases, not public repositories.
 
-## 0.1.1 (unreleased)
+## 0.2.0 (unreleased)
+
+The `v0.2.0` tag is created at release; until then the install lines that pin `@v0.2.0` do not resolve.
+
 - Roadmap: v0.2 is now layout tooling, plugin and public release. Dogfood of a real board
   through rev-A, a frozen rev-A golden project, multi-unit symbols, and dense QFN
   escape/fanout move to v0.3.

@@ -30,7 +30,7 @@ Everything below ships in 0.1.0.
   pins/junctions/labels now; ship stricter detection only with clean twins + known-bad cases.
 
 ## v0.2: layout tooling, plugin and public release
-- Issue-feedback work collected under 0.1.1 (unreleased): GitHub issues #1/#3/#4, plugin packaging #6,
+- Issue-feedback work collected under 0.2.0 (unreleased): GitHub issues #1/#3/#4, plugin packaging #6,
   Freerouting 2.5.0 DSN plane-layer and NPE fixes, `apply-changes` zone add/resize/delete,
   `ohmai layout current`, handroute island counts matching KiCad, NOTICE and SPDX headers.
 - Brand logo and app icon in `docs/assets/logo/`, README wordmark, and a 64×64 `resources/icon.png`

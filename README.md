@@ -45,7 +45,7 @@ Your agent researches parts, extracts pin tables and layout rules with exact dat
 
 ---
 
-Plugin/skill installation for Cursor, Grok Build, Grok Bot and Claude Code: [INSTALL.md](INSTALL.md). The prepared 0.1.1 plugin is guidance only; external tools are separate.
+Plugin/skill installation for Cursor, Grok Build, Grok Bot and Claude Code: [INSTALL.md](INSTALL.md). The prepared 0.2.0 plugin is guidance only; external tools are separate.
 
 ## Why OhmAI exists
 
@@ -130,7 +130,7 @@ Details: [`skill/phases/`](skill/phases/), [`docs/ARCHITECTURE.md`](docs/ARCHITE
 
 ### Install & Create a Project
 ```bash
-pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.0#subdirectory=cli"
+pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.2.0#subdirectory=cli"   # v0.2.0 tag is created at release; before that, install from a checkout (next line)
 # contributors: git clone https://github.com/ohmai-pcb/ohmai.git && cd ohmai && pip install -e "cli[dev,layout]"
 ohmai setup                            # install this release's pinned tools (no prompts)
 ohmai skill install                    # copies skill/ to ~/.cursor/skills/ohmai (use --dest for other agents)

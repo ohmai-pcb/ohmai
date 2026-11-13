@@ -2,4 +2,4 @@
 # Copyright 2026 The OhmAI contributors
 """OhmAI: idea-to-finished-PCB workflow for KiCad, run by an LLM agent with human gates."""
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"

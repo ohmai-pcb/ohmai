@@ -1,13 +1,13 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 The OhmAI contributors -->
-# Install OhmAI (0.1.1 release preparation)
+# Install OhmAI (0.2.0 release preparation)
 
 The agent plugin is **guidance only**. It bundles no CLI, third-party Python code,
 KiCad/pcbnew, Freerouting, EasyEDA/LCSC CAD content or converter. Install the CLI
 and toolchain separately **on the computer that executes checks**. Never label
 ERC/DRC enabled merely because a skill was copied.
 
-**Not published yet:** the prepared version is `0.1.1` / future tag `v0.1.1`.
+**Not published yet:** the prepared version is `0.2.0` / future tag `v0.2.0` (created at release).
 Do not use the pinned remote commands until the owner publishes that tag. Existing
 `v0.1.0` does not contain this plugin. No marketplace submission is implied.
 
@@ -17,7 +17,7 @@ Do not use the pinned remote commands until the owner publishes that tag. Existi
 python3 -m venv "$HOME/.local/share/ohmai/venv"
 . "$HOME/.local/share/ohmai/venv/bin/activate"
 # After the release tag exists:
-python -m pip install 'git+https://github.com/ohmai-pcb/ohmai.git@v0.1.1#subdirectory=cli'
+python -m pip install 'git+https://github.com/ohmai-pcb/ohmai.git@v0.2.0#subdirectory=cli'
 # Before publication, from a trusted source checkout instead:
 # python -m pip install ./cli
 
@@ -42,7 +42,7 @@ From the trusted source checkout (CLI dependencies provide YAML/jsonschema):
 
 ```sh
 python scripts/package_plugin.py --output dist/ohmai-marketplace
-python scripts/validate_plugin.py --tag v0.1.1
+python scripts/validate_plugin.py --tag v0.2.0
 python scripts/validate_plugin.py --marketplace dist/ohmai-marketplace
 ```
 

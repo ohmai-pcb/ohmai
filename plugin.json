@@ -1,6 +1,6 @@
 {
   "name": "ohmai",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Idea-to-PCB engineering guidance for KiCad with verified tools and human gates.",
   "author": {
     "name": "The OhmAI contributors"

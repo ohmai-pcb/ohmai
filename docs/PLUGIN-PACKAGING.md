@@ -55,7 +55,7 @@ permissions, billing, marketplace fetches, or OS-specific KiCad installation.
 ## Maintainer commands
 
 ```sh
-python scripts/validate_plugin.py --tag v0.1.1
+python scripts/validate_plugin.py --tag v0.2.0
 python scripts/package_plugin.py --output dist/ohmai-marketplace
 python scripts/validate_plugin.py --marketplace dist/ohmai-marketplace
 grok plugin validate dist/ohmai-marketplace/plugins/ohmai

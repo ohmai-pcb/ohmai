@@ -7,7 +7,7 @@ description: >
   parts, schematic, layout, sourcing, fabrication and bring-up with human gates.
 license: Apache-2.0
 metadata:
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 The OhmAI contributors -->
@@ -24,7 +24,7 @@ Plugin/skill installed does NOT mean the CLI or ERC/DRC works. Do this for new A
 existing projects before any phase work:
 
 1. Run `ohmai --version`. If absent, create an isolated venv and install the separate
-   CLI with `python -m pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.1#subdirectory=cli"`.
+   CLI with `python -m pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.2.0#subdirectory=cli"`.
    This tag must be published before public install; for an approved local checkout
    use `python -m pip install /path/to/ohmai/cli`. Do not claim an unpublished tag works.
 2. Run `kicad-cli version`. Require **9.x**, with reference patch **9.0.2**; respect
@@ -48,7 +48,7 @@ read `AGENTS.md` and `STATUS.md` → "Next actions", and continue the current ph
 
 **New idea** ("My idea is X, use OhmAI to make it"):
 1. Check the CLI: `ohmai --version`. If it is missing:
-   `python -m pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.1.1#subdirectory=cli"` (or `pip install -e <checkout>/cli`).
+   `python -m pip install "git+https://github.com/ohmai-pcb/ohmai.git@v0.2.0#subdirectory=cli"` (or `pip install -e <checkout>/cli`).
 2. Pick a short project name from the idea (kebab-case). Use the owner's name if they gave one.
 3. Create the repo with the idea in the owner's own words:
    `ohmai new <name> --idea "<the idea, verbatim>"` (pass `--anonymous` if the owner wants a public/anonymous repo)
