@@ -143,7 +143,7 @@ and what was then planned for 0.2 (first real board through rev-A; that goal lat
 - Toolchain: the Freerouting tier-1 entry records its Java runtime (`java:`; `FREEROUTING_JAVA` or `java` on
   PATH) and `check toolchain` FAILs on a different runtime (Freerouting >= 2.2 needs Java 25). Release jars say
   `Implementation-Version: unspecified`, which was locked as the version; the file name is used then. Found
-  while moving reference-board from 2.1.0 to 2.2.4 (reference-board D-019). TESTING/ARCHITECTURE updated.
+  while moving the reference board from Freerouting 2.1.0 to 2.2.4. TESTING/ARCHITECTURE updated.
 - Docs: new docs/TESTING.md (unit, known-bad, golden, lock/upgrade, canary); ARCHITECTURE.md gains the
   licensing table and "research tools: what OhmAI uses, in which phase, and why" (atopile, tscircuit, KiCad
   MCP servers and commercial tools not used, with reasons); ROADMAP, SKILL.md cheat sheet (lock, upgrade,
@@ -226,8 +226,8 @@ and what was then planned for 0.2 (first real board through rev-A; that goal lat
 - Review gate: reviewer-requested post-review nits. A reviewer's own `[nit]` issue resolved as
   `fixed-post-review` + commit lets the files named in it differ from the reviewed `files_hash` (WARN, no
   re-verification); any other changed file still FAILs. Briefs keep earlier per-file hashes under
-  `history:` so a regenerated brief does not lose the reviewed baseline (dogfood: reference-board Reviewer-A R1).
-- Review gate (dogfood: reference-board Reviewer-A H3): the brief's "Changed since" list is computed against the brief the
+  `history:` so a regenerated brief does not lose the reviewed baseline (found while dogfooding the reference board).
+- Review gate (found while dogfooding the reference board): the brief's "Changed since" list is computed against the brief the
   latest reviewer checked; free-form `OhmAI-Author:` trailers no longer add a duplicate name-only author when
   a full identity with that name exists; setting `review.status: reviewed` in a constraints YAML after the
   review no longer invalidates the review hash (compared without the `review:` block, via git history).
@@ -239,7 +239,7 @@ and what was then planned for 0.2 (first real board through rev-A; that goal lat
   `ohmai commit -m ...` appends the trailer from `ohmai.yaml` `author:` / `OHMAI_AUTHOR_*`. The review
   gate takes authors from trailers first; STATUS.md `authors:` only for grandfathered commits. `ohmai new`'s
   initial commit carries a trailer.
-- Phase 7 (dogfood: reference-board D-012): pinned official KiCad libraries + per-project lib tables
+- Phase 7 (found while dogfooding the reference board): pinned official KiCad libraries + per-project lib tables
   (`ohmai kicad-libs install|tables|status`, check `kicad-libs`); per-part symbol maps
   `parts/symbol-maps/<stem>.yaml` (pin-map, passives and pull-ups work in datasheet pins; stale maps FAIL);
   constraints bind by MPN field or `match.refs`, not value substring; passives: rail decoupling vs per-pin,
@@ -249,10 +249,10 @@ and what was then planned for 0.2 (first real board through rev-A; that goal lat
   them); new `readability` check (label-only passive joins, local labels with allow-list, crossings,
   junction ambiguity, overlapping text/symbols, wires through bodies, off-grid). `netlist` accepts a
   wired, unlabelled `Net-(...)` net whose nodes match.
-- `readability` (dogfood: reference-board Reviewer-A schematic review F1, F13-F15): FAILs when a power symbol's net name sits
+- `readability` (found while reviewing the reference-board schematic): FAILs when a power symbol's net name sits
   next to another node's wire or junction, a field sits on a pin line or pin number or over a DNP cross, a part's
   text touches a power symbol's name, or the sheet title overflows the title-block field (font ESTIMATE).
-- `kicad-app` check (phases 7, 8, 11; owner request, reference-board D-014): `kicad-cli version` must be inside ohmai.yaml
+- `kicad-app` check (phases 7, 8, 11; owner request): `kicad-cli version` must be inside ohmai.yaml
   `kicad.app` (`">=9.0.2,<9.1"`, `"9.0.x"`); FAIL outside the range or on an unparseable range, WARN when unpinned.
   Template pins `">=9.0,<9.1"` next to `kicad.libraries`.
 - Review independence wording: the WARN and the brief now say "level N or better (1 = most independent)" instead
@@ -265,5 +265,5 @@ and what was then planned for 0.2 (first real board through rev-A; that goal lat
   > bot/instructions > human) and documents why each was unavailable, then asks the owner. `resolutions.md`
   `accepted_independence: [{gate, reviewer, level, files_hash, by: owner, owner, reason, alternatives_tried, ref}]`
   turns the independence WARN into PASS with a "WAIVED" note for that one review/gate/hash; an entry missing a
-  field (e.g. alternatives_tried) FAILs; it never carries over to a new hash or another gate. Dogfood: reference-board D-016.
+  field (e.g. alternatives_tried) FAILs; it never carries over to a new hash or another gate. Found while dogfooding the reference board.
 
