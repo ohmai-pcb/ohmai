@@ -17,6 +17,7 @@ from pathlib import Path
 import jsonschema
 
 from ohmai import sexp
+from ohmai.jsonout import last_json_object
 from ohmai.layout import native_guard
 from ohmai.layout.changes_worker import SCRIPT
 
@@ -112,7 +113,7 @@ def _native(data: dict, board: Path, candidate: Path, work: Path) -> dict:
     if not proc.stdout.strip():
         raise ChangeError(f'native apply failed (exit {proc.returncode}); see {work}')
     try:
-        result = json.loads(proc.stdout.strip().splitlines()[-1])
+        result = last_json_object(proc.stdout)
     except ValueError as error:
         raise ChangeError(f'invalid native response; see {work}') from error
     if proc.returncode and result.get('ok'):
