@@ -15,7 +15,8 @@ tools:
     filename: freerouting-2.5.0.jar
   jdk:
     # Major only: Freerouting 2.5.0 needs Java 25; patch builds (e.g. 25.0.4.1) are accepted.
-    # Not fetched by setup — install a JDK 25 and set FREEROUTING_JAVA if `java` is not on PATH.
+    # Not fetched by setup — install a JDK 25 (auto-discovered under ~/.local/share/jdk25,
+    # the ohmai cache, or OHMAI_JDK_ROOT) and set FREEROUTING_JAVA if `java` is not on PATH.
     version: "25"
     match: major
   kicad:

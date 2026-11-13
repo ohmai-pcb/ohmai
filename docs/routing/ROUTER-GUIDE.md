@@ -54,7 +54,8 @@ This release pins Freerouting **2.5.0** (the jar, with JDK 25) in
 `pinned-tools.yaml`. `ohmai setup` fetches that jar and verifies its sha256;
 `ohmai doctor` FAILs on a different version unless `OHMAI_ALLOW_UNPINNED=1`.
 Use the jar with JDK 25, not the GraalVM `freerouting-cli`. The Java binary
-is taken from `FREEROUTING_JAVA` if set, otherwise a discovered JDK 25.
+is taken from `FREEROUTING_JAVA` if set, otherwise a discovered JDK 25
+(`~/.local/share/jdk25`, the ohmai cache, or `OHMAI_JDK_ROOT`).
 `ohmai layout autoroute` always passes `--user_data_path` under
 `~/.local/share/ohmai/freerouting/<ver>/userdata` so the shared
 `~/.config/freerouting` is never touched.

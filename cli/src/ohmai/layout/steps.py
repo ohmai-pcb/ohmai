@@ -1062,7 +1062,7 @@ def run_autoroute(prepared: dict) -> dict:
         if not shutil.which("java"):
             raise FileNotFoundError(
                 "java not found; install JDK 25 (auto-discovered under "
-                "~/.local/share/jdk25, ~/.cache/ohmai/jdk, or /workspace/.toolcache/jdk25) "
+                "~/.local/share/jdk25, the ohmai cache, or OHMAI_JDK_ROOT) "
                 "or set FREEROUTING_JAVA to the java binary"
             )
     de = Path(prepared["patched_dsn"] if prepared.get("dsn_edited") else prepared["raw_dsn"])

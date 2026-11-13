@@ -206,28 +206,45 @@ def _fake_java(path: Path, version: str) -> Path:
 def _no_system_java(monkeypatch, tmp_path):
     monkeypatch.delenv("FREEROUTING_JAVA", raising=False)
     monkeypatch.delenv("OHMAI_FREEROUTING_JAVA", raising=False)
+    monkeypatch.delenv("OHMAI_JDK_ROOT", raising=False)
     monkeypatch.delenv("JAVA_HOME", raising=False)
     empty = tmp_path / "empty-bin"
     empty.mkdir(exist_ok=True)
     monkeypatch.setenv("PATH", str(empty))
 
 
-def test_jdk_search_roots_include_known_locations():
+def test_jdk_search_roots_include_known_locations(monkeypatch):
+    monkeypatch.delenv("OHMAI_JDK_ROOT", raising=False)
     roots = pins.jdk_search_roots()
-    assert Path("/workspace/.toolcache/jdk25") in roots
+    assert all("/.toolcache/" not in r.as_posix() for r in roots)
     assert any(r.as_posix().endswith("/.local/share/jdk25") for r in roots)
     assert any(r.name in {"jdk", "jdk25"} and "ohmai" in r.as_posix() for r in roots)
 
 
-def test_discover_jdk_finds_local_share_and_toolcache_without_env(tmp_path, monkeypatch):
+def test_jdk_search_roots_include_ohmai_jdk_root(tmp_path, monkeypatch):
+    extra = tmp_path / "custom-jdk"
+    monkeypatch.setenv("OHMAI_JDK_ROOT", str(extra))
+    roots = pins.jdk_search_roots()
+    assert roots[0] == extra
+    assert any(r.as_posix().endswith("/.local/share/jdk25") for r in roots)
+
+
+def test_discover_jdk_finds_local_share(tmp_path, monkeypatch):
     _no_system_java(monkeypatch, tmp_path)
     local = _fake_java(tmp_path / "share/jdk25/java-25-openjdk-amd64/bin/java", "25.0.4.1")
     monkeypatch.setattr(pins, "jdk_search_roots", lambda: [tmp_path / "share/jdk25"])
     ver, exe = pins.discover_jdk(require_major="25")
     assert ver == "25.0.4.1" and Path(exe) == local.resolve()
 
-    tool = _fake_java(tmp_path / "toolcache/jdk25/root/usr/lib/jvm/java-25-openjdk-amd64/bin/java", "25.0.1")
-    monkeypatch.setattr(pins, "jdk_search_roots", lambda: [tmp_path / "toolcache/jdk25"])
+
+def test_discover_jdk_finds_ohmai_jdk_root(tmp_path, monkeypatch):
+    _no_system_java(monkeypatch, tmp_path)
+    tool = _fake_java(tmp_path / "custom-jdk/root/usr/lib/jvm/java-25-openjdk-amd64/bin/java", "25.0.1")
+    monkeypatch.setenv("OHMAI_JDK_ROOT", str(tmp_path / "custom-jdk"))
+    monkeypatch.setattr(pins, "cache_root", lambda: tmp_path / "missing-cache")
+    monkeypatch.setattr(pins, "data_home", lambda: tmp_path / "missing-data")
+    monkeypatch.setenv("HOME", str(tmp_path / "missing-home"))
+    (tmp_path / "missing-home").mkdir()
     ver, exe = pins.discover_jdk(require_major="25")
     assert ver == "25.0.1" and Path(exe) == tool.resolve()
 
@@ -245,6 +262,7 @@ def test_discover_jdk_env_overrides_even_when_not_25(tmp_path, monkeypatch):
 def test_discover_jdk_prefers_25_over_path_java_21(tmp_path, monkeypatch):
     monkeypatch.delenv("FREEROUTING_JAVA", raising=False)
     monkeypatch.delenv("OHMAI_FREEROUTING_JAVA", raising=False)
+    monkeypatch.delenv("OHMAI_JDK_ROOT", raising=False)
     monkeypatch.delenv("JAVA_HOME", raising=False)
     j21 = _fake_java(tmp_path / "bin/java", "21.0.12")
     j25 = _fake_java(tmp_path / "share/jdk25/bin/java", "25.0.4.1")

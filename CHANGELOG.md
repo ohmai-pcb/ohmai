@@ -19,6 +19,9 @@ Historical internal project names are anonymized aliases, not public repositorie
   no links yet).
 - Router guide and Freerouting run-log template: `docs/routing/ROUTER-GUIDE.md` and
   `docs/routing/FREEROUTING-RUNS.md`.
+- JDK 25 auto-discovery no longer searches a hard-coded machine-local toolcache path.
+  Set `OHMAI_JDK_ROOT` for an optional extra search root; `FREEROUTING_JAVA` remains
+  an override. Default roots are still `~/.local/share/jdk25` and the ohmai cache.
 - `layout pour`: `--board PCB` (as documented; exclusive with `--staged`), `--section x=MM|y=MM`
   and `--width-at X,Y` width reports that ignore cuts along outline edges and do not depend on the
   cut direction. The neck now ignores same-net vias/pads that do not touch the pour (listed under

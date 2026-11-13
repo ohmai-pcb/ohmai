@@ -32,6 +32,7 @@ SCHEMA = "ohmai-pinned-tools/v1"
 MANIFEST_NAME = "pinned-tools.yaml"
 OVERRIDE_ENV = "OHMAI_ALLOW_UNPINNED"
 PINNED_TOOLS_ENV = "OHMAI_PINNED_TOOLS"
+JDK_ROOT_ENV = "OHMAI_JDK_ROOT"
 FIX_SETUP = "ohmai setup"
 FIX_UNPINNED = f"Or {OVERRIDE_ENV}=1 to test this version"
 
@@ -260,17 +261,26 @@ def resolve_java(exe: str | Path) -> Path | None:
 
 
 def jdk_search_roots() -> list[Path]:
-    """Well-known places a JDK 25 may already be installed (commissioning or this box)."""
+    """Well-known places a JDK 25 may already be installed.
+
+    `OHMAI_JDK_ROOT`, if set, is an optional extra search root (a JDK home or a
+    tree containing ``bin/java``). It does not override ``FREEROUTING_JAVA``.
+    """
     data = data_home()
-    roots = [
-        cache_root() / "jdk",
-        cache_root() / "jdk25",
-        data / "ohmai" / "jdk",
-        data / "ohmai" / "jdk25",
-        data / "jdk25",
-        Path.home() / ".local/share/jdk25",
-        Path("/workspace/.toolcache/jdk25"),
-    ]
+    roots: list[Path] = []
+    extra = (os.environ.get(JDK_ROOT_ENV) or "").strip()
+    if extra:
+        roots.append(Path(extra))
+    roots.extend(
+        [
+            cache_root() / "jdk",
+            cache_root() / "jdk25",
+            data / "ohmai" / "jdk",
+            data / "ohmai" / "jdk25",
+            data / "jdk25",
+            Path.home() / ".local/share/jdk25",
+        ]
+    )
     seen: set[Path] = set()
     out: list[Path] = []
     for r in roots:
@@ -307,8 +317,9 @@ def _java_bins_under(root: Path) -> list[Path]:
 
 def discover_jdk(*, require_major: str | None = "25") -> tuple[str | None, str | None]:
     """Locate a Java binary. FREEROUTING_JAVA / OHMAI_FREEROUTING_JAVA win as an override
-    (even when the major does not match). Otherwise prefer a well-known JDK 25, then
-    JAVA_HOME / PATH if they satisfy require_major."""
+    (even when the major does not match). Otherwise prefer a well-known JDK 25
+    (including optional OHMAI_JDK_ROOT), then JAVA_HOME / PATH if they satisfy
+    require_major."""
     for key in ("FREEROUTING_JAVA", "OHMAI_FREEROUTING_JAVA"):
         env = os.environ.get(key)
         if not env:

@@ -189,7 +189,7 @@ This release pins:
 | Tool | Pin |
 |---|---|
 | Freerouting | 2.5.0 jar (GitHub release URL + sha256); use the jar with JDK 25, not the GraalVM native CLI. `ohmai layout autoroute` always passes `--user_data_path` under `~/.local/share/ohmai/freerouting/<ver>/userdata` so the shared `~/.config/freerouting` is never touched. |
-| JDK | 25 (major; any 25.x build). Auto-discovered from `~/.local/share/jdk25`, the ohmai cache, or `/workspace/.toolcache/jdk25`; `FREEROUTING_JAVA` remains an override. |
+| JDK | 25 (major; any 25.x build). Auto-discovered from `~/.local/share/jdk25`, the ohmai cache, or `OHMAI_JDK_ROOT` (an optional extra search root); `FREEROUTING_JAVA` remains an override. |
 | KiCad (`kicad-cli`) | 9.0.2 tested; accepted range `9.0.x` |
 | easyeda2kicad | 1.0.1 (PyPI, AGPL-3.0, subprocess only) |
 
