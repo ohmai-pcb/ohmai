@@ -4,6 +4,10 @@
 Historical internal project names are anonymized aliases, not public repositories.
 
 ## 0.1.1 (unreleased)
+- Handroute island counts now match KiCad: custom pads include their primitives (filled polygons,
+  rects, circles, strokes, arcs) and anchor shape, so an exposed pad joins its same-footprint
+  leg pads, and vias and THT pads reach filled inner-layer pours. Fixes false `initial_islands`
+  (stereo SW2_NODE 5 to 1, GND 59 to 2) and needless stitch proposals on already joined nets.
 - `layout apply-changes` zone support: new `zone.delete`; `zone.edit` `set.polygon` resizes a zone;
   optional zone `name`; zone `expect` needs only `net`, `layer` and `polygon`. New
   `ohmai layout zones` lists zones with a ready `expect`. Zone ops share the dry-run, refill,

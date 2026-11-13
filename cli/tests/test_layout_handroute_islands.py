@@ -676,3 +676,85 @@ def test_unsupported_pad_is_not_silently_treated_as_connected():
     items = steps._handroute_copper_items(board, "SIG", ["F.Cu"])
     assert len(items) == 1
     assert not items[0][1][0].is_empty
+
+
+def _custom_ep_case(tmp_path, *, primitive=True, anchor=None):
+    """Synthetic DSOP-8 style drain: custom EP (0.005 mm anchor + gr_poly) and two
+    same-numbered leg pads that touch only the EP's primitive polygon."""
+    q = {"ref": "Q1", "lib": "kb:DSOP", "x": 110, "y": 110, "rot": 0,
+         "pads": [("5", 0, -0.45, 0.005, 0.005, "SW"),
+                  ("5", 0.64, -2.77, 0.5, 1.2, "SW"),
+                  ("5", 1.91, -2.77, 0.5, 1.2, "SW")],
+         "cy": (-3, -3.6, 3, 2)}
+    cfg, pcb = _case(tmp_path, [q], layers=["F.Cu"], margin=2.0)
+    txt = pcb.read_text()
+    i = txt.index('(pad "5" smd rect')
+    j = txt.index("(size 0.005 0.005)", i) + len("(size 0.005 0.005)")
+    extra = ""
+    if anchor:
+        extra += f"\n\t\t\t(options (clearance outline) (anchor {anchor}))"
+    if primitive:
+        extra += ("\n\t\t\t(primitives\n\t\t\t\t(gr_poly\n\t\t\t\t\t(pts\n\t\t\t\t\t\t(xy -2.125 -1.75) "
+                  "(xy 2.125 -1.75) (xy 2.125 1.75) (xy -2.125 1.75)\n\t\t\t\t\t)\n"
+                  "\t\t\t\t\t(width 0.1)\n\t\t\t\t\t(fill yes)\n\t\t\t\t)\n\t\t\t)")
+    pcb.write_text(txt[:i] + txt[i:j].replace("smd rect", "smd custom") + extra + txt[j:])
+    return cfg, pcb
+
+
+def test_custom_ep_primitives_merge_same_footprint_pads(tmp_path):
+    """Q5 regression (stereo SW2_NODE 5 vs KiCad 1): EP primitives are copper."""
+    cfg, pcb = _custom_ep_case(tmp_path)
+    board = L.load(pcb)
+    ep = next(p for p in board.pads() if p.shape == "custom")
+    assert ep.primitives and ep.primitives[0][0] == "poly"
+    copper = steps._handroute_pad_shape(ep)
+    assert copper.area > 4.2 * 3.5  # the polygon (plus its 0.1 mm stroke), not the anchor dot
+    items = steps._handroute_copper_items(board, "SW", ["F.Cu"])
+    assert len(steps._handroute_islands(items)) == 1
+    rep = steps.run_handroute(cfg, "route", ["SW"], dry_run=True)
+    assert rep["initial_islands"]["SW"] == 1
+    assert rep["already_connected_nets"] == ["SW"]
+    assert not rep["routes"].get("SW") and rep["segments_added"] == 0
+
+
+def test_custom_ep_without_primitives_stays_split(tmp_path):
+    """Control: the anchor alone (0.005 mm) never invents a join."""
+    _, pcb = _custom_ep_case(tmp_path, primitive=False)
+    items = steps._handroute_copper_items(L.load(pcb), "SW", ["F.Cu"])
+    assert len(steps._handroute_islands(items)) == 3
+
+
+def test_custom_pad_rect_anchor_and_stroke_primitives():
+    from shapely.geometry import Point
+    prims = (("line", (0.0, 0.0), (3.0, 0.0), 0.4),
+             ("circle", (0.0, 2.0), 0.5, 0.0, True),
+             ("arc", (-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), 0.2))
+    pad = L.Pad("U1", "EP", 10, 10, (9, 9, 11, 11), "SIG", ("F.Cu",), shape="custom",
+                size=(1.0, 1.0), anchor="rect", primitives=prims)
+    shape = steps._handroute_pad_shape(pad)
+    assert shape.covers(Point(10.45, 10.45))        # rect anchor corner
+    assert shape.covers(Point(12.9, 10.0))          # end of the 0.4 mm stroke
+    assert shape.covers(Point(10.0, 12.3))          # filled circle
+    assert shape.distance(Point(10.0, 9.0)) < 0.11  # arc apex (y down: mid at -1)
+    assert not shape.covers(Point(12.0, 12.0))      # never the primitive AABB
+
+
+def test_rotated_custom_pad_rotates_primitives():
+    from shapely.geometry import Point
+    pad = L.Pad("U1", "EP", 0, 0, (-3, -3, 3, 3), "SIG", ("F.Cu",), shape="custom",
+                size=(0.01, 0.01), rotation=90,
+                primitives=(("poly", ((0.0, -0.2), (3.0, -0.2), (3.0, 0.2), (0.0, 0.2)), 0.0, True),))
+    shape = steps._handroute_pad_shape(pad)
+    # KiCad 90 deg (CCW on screen, y down): local +x maps to world -y.
+    assert shape.covers(Point(0, -2.5)) and not shape.covers(Point(2.5, 0))
+
+
+def test_inner_plane_joins_vias_like_kicad(tmp_path):
+    """Vias and THT pads must reach a filled inner-layer pour (stereo GND 59 vs KiCad 2)."""
+    cfg, pcb = _case(tmp_path, [_pad("A", 103, 105, "GND"), _pad("B", 117, 105, "GND")],
+                     vias=[(104, 107, "GND"), (116, 107, "GND")],
+                     tracks=[("GND", (103, 105), (104, 107), "F.Cu"), ("GND", (117, 105), (116, 107), "F.Cu")],
+                     layers=["F.Cu", "B.Cu"])
+    _inject_zone(pcb, "GND", [(102, 106), (118, 106), (118, 108), (102, 108)], layer="In1.Cu")
+    items = steps._handroute_copper_items(L.load(pcb), "GND", ["F.Cu", "B.Cu"])
+    assert len(steps._handroute_islands(items)) == 1

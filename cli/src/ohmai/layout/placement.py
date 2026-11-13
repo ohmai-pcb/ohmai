@@ -38,6 +38,10 @@ class Pad:
     size: tuple[float, float] | None = None
     rotation: float = 0.0
     roundrect_ratio: float = 0.0
+    # Custom pads: KiCad anchor shape ("circle"/"rect") and copper primitives in
+    # the pad-local frame (before pad rotation). See `pad_primitives`.
+    anchor: str = "circle"
+    primitives: tuple = ()
 
     @property
     def name(self) -> str:
@@ -215,6 +219,75 @@ def _pad_box(p, cx, cy, w, h, deg) -> Box:
     return x0, y0, x1, y1
 
 
+def _fill_yes(g, default: bool) -> bool:
+    f = sexp.first(g, "fill")
+    if f is None or len(f) < 2:
+        return default
+    return str(f[1]) in ("yes", "solid", "true")
+
+
+def pad_primitives(p) -> tuple:
+    """Custom-pad copper primitives in the pad-local frame, unrotated.
+
+    Each entry is a plain tuple so Pad stays hashable/serialisable:
+    ("poly", pts, width, filled), ("rect", start, end, width, filled),
+    ("circle", center, radius, width, filled), ("line", start, end, width),
+    ("arc", start, mid, end, width). Bezier curves are kept as their control
+    polyline ("line" chain), which is inside their hull and so never invents copper
+    far outside the real curve.
+    """
+    prim = sexp.first(p, "primitives")
+    if not prim:
+        return ()
+    out = []
+    for g in prim[1:]:
+        if not isinstance(g, list) or not g:
+            continue
+        wn = _f(g, "width", 1)
+        width = wn[0] if wn else 0.0
+        head = g[0]
+        if head == "gr_poly":
+            pl = sexp.first(g, "pts")
+            pts = tuple((float(xy[1]), float(xy[2])) for xy in (pl[1:] if pl else [])
+                        if isinstance(xy, list) and xy and xy[0] == "xy")
+            if len(pts) >= 3:
+                # Pad polygons are filled unless explicitly (fill no/none).
+                out.append(("poly", pts, width, _fill_yes(g, True)))
+            elif len(pts) == 2:
+                out.append(("line", pts[0], pts[1], width))
+        elif head == "gr_rect":
+            a, b = _f(g, "start"), _f(g, "end")
+            if a and b:
+                out.append(("rect", tuple(a), tuple(b), width, _fill_yes(g, False)))
+        elif head == "gr_circle":
+            c, e = _f(g, "center"), _f(g, "end")
+            if c and e:
+                out.append(("circle", tuple(c), math.hypot(e[0] - c[0], e[1] - c[1]), width, _fill_yes(g, False)))
+        elif head == "gr_line":
+            a, b = _f(g, "start"), _f(g, "end")
+            if a and b:
+                out.append(("line", tuple(a), tuple(b), width))
+        elif head == "gr_arc":
+            a, m, b = _f(g, "start"), _f(g, "mid"), _f(g, "end")
+            if a and m and b:
+                out.append(("arc", tuple(a), tuple(m), tuple(b), width))
+            elif a and b:
+                out.append(("line", tuple(a), tuple(b), width))
+        elif head in ("gr_curve", "gr_bezier"):
+            pl = sexp.first(g, "pts")
+            pts = [(float(xy[1]), float(xy[2])) for xy in (pl[1:] if pl else [])
+                   if isinstance(xy, list) and xy and xy[0] == "xy"]
+            for a, b in zip(pts, pts[1:], strict=False):
+                out.append(("line", a, b, width))
+    return tuple(out)
+
+
+def _pad_anchor(p) -> str:
+    opts = sexp.first(p, "options")
+    anc = sexp.first(opts, "anchor") if opts else None
+    return str(anc[1]) if anc and len(anc) > 1 else "circle"
+
+
 def _graphic_points(g) -> list[tuple[float, float]]:
     head = g[0]
     if head in ("fp_line", "fp_rect"):
@@ -335,7 +408,8 @@ def load(path: Path) -> Board:
                                layers, hole=len(p) > 2 and p[2] in ("thru_hole", "np_thru_hole"),
                                drill=_drill(p), shape=p[3] if len(p) > 3 else "rect",
                                size=tuple(size), rotation=pdeg,
-                               roundrect_ratio=(_f(p, "roundrect_rratio", 1) or [0.0])[0]))
+                               roundrect_ratio=(_f(p, "roundrect_rratio", 1) or [0.0])[0],
+                               anchor=_pad_anchor(p), primitives=pad_primitives(p)))
         fps[ref] = fp
     vias = []
     for v in sexp.find(tree, "via"):

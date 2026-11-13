@@ -1223,9 +1223,10 @@ def lcfg_pour(cfg: dict, net: str | None, layer: str | None) -> dict:
 def _handroute_pad_shape(pad):
     """Inscribed copper, never the empty corners of a placement bounding box.
 
-    Unknown/custom pads use only their anchor, not the primitive bounding box.
-    This can miss an escape but cannot invent a copper landing in empty space.
-    Placement obstacle envelopes intentionally remain conservative AABBs.
+    Custom pads are their anchor plus every copper primitive (filled polygons,
+    rects, circles, strokes and arcs), exactly as KiCad connects them; never the
+    primitive bounding box. Unknown shapes (trapezoid) fail closed to the anchor
+    point. Placement obstacle envelopes intentionally remain conservative AABBs.
     """
     from shapely import affinity
     from shapely.geometry import LineString, Point, box
@@ -1250,9 +1251,84 @@ def _handroute_pad_shape(pad):
     else:
         # A custom anchor can be circular; an inscribed disk is safe for both
         # circle and rectangle anchors. Unsupported trapezoids fail closed.
-        shape = Point(0, 0).buffer(min(w, h) / 2, quad_segs=32) if kind == "custom" else Point(0, 0)
+        if kind == "custom":
+            shape = (box(-w / 2, -h / 2, w / 2, h / 2) if getattr(pad, "anchor", "circle") == "rect"
+                     else Point(0, 0).buffer(min(w, h) / 2, quad_segs=32))
+            prims = _custom_primitive_shapes(getattr(pad, "primitives", ()) or ())
+            if prims is not None:
+                shape = shape.union(prims)
+        else:
+            shape = Point(0, 0)
     shape = affinity.rotate(shape, -getattr(pad, "rotation", 0), origin=(0, 0))
     return affinity.translate(shape, pad.x, pad.y)
+
+
+def _custom_primitive_shapes(primitives):
+    """Union of custom-pad primitives (pad-local frame), or None when there are none."""
+    from shapely.geometry import LineString, Point, Polygon, box
+    from shapely.ops import unary_union
+
+    def stroke(coords, width):
+        return LineString(coords).buffer(max(width, 1e-6) / 2, quad_segs=16)
+
+    parts = []
+    for prim in primitives:
+        kind = prim[0]
+        if kind == "poly":
+            _, pts, width, filled = prim
+            ring = list(pts) + [pts[0]]
+            if filled:
+                poly = Polygon(pts)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                parts.append(poly.buffer(width / 2, quad_segs=16) if width > 0 else poly)
+            else:
+                parts.append(stroke(ring, width))
+        elif kind == "rect":
+            _, a, b, width, filled = prim
+            r = box(min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
+            if filled:
+                parts.append(r.buffer(width / 2, quad_segs=16) if width > 0 else r)
+            else:
+                parts.append(stroke(list(r.exterior.coords), width))
+        elif kind == "circle":
+            _, c, radius, width, filled = prim
+            if filled:
+                parts.append(Point(c).buffer(radius + width / 2, quad_segs=32))
+            else:
+                parts.append(Point(c).buffer(radius + width / 2, quad_segs=32)
+                             .difference(Point(c).buffer(max(0.0, radius - width / 2), quad_segs=32)))
+        elif kind == "line":
+            _, a, b, width = prim
+            parts.append(stroke([a, b], width))
+        elif kind == "arc":
+            _, a, m, b, width = prim
+            parts.append(stroke(_arc_points(a, m, b), width))
+    parts = [g for g in parts if not g.is_empty]
+    return unary_union(parts) if parts else None
+
+
+def _arc_points(a, m, b, segments: int = 24) -> list:
+    """Polyline through a three-point arc (start, mid, end)."""
+    ax, ay = a
+    bx, by = m
+    cx, cy = b
+    d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(d) < 1e-12:
+        return [a, m, b]
+    ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
+    uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
+    r = math.hypot(ax - ux, ay - uy)
+    t0, tm, t1 = (math.atan2(y - uy, x - ux) for x, y in (a, m, b))
+
+    def ccw(t_from, t_to):
+        return (t_to - t_from) % (2 * math.pi)
+
+    sweep = ccw(t0, t1)
+    if ccw(t0, tm) > sweep:  # mid not on the CCW sweep: go the other way
+        sweep -= 2 * math.pi
+    return [(ux + r * math.cos(t0 + sweep * k / segments), uy + r * math.sin(t0 + sweep * k / segments))
+            for k in range(segments + 1)]
 
 
 def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
@@ -1270,6 +1346,10 @@ def _handroute_copper_items(board, net_name: str, layers: list[str]) -> list:
     other_layers = {s.layer for s in board.segments if s.layer.endswith(".Cu")}
     other_layers.update(lay for p in board.pads() for lay in p.layers
                         if lay.endswith(".Cu") and lay != "*.Cu")
+    # Filled pour layers (e.g. an In1.Cu GND plane) must be known before vias and
+    # through-hole pads are modelled, or those never touch the plane copper.
+    other_layers.update(z.layer for z in getattr(board, "zones", []) or []
+                        if getattr(z, "filled", True) and _same_net(z.net, net_name) and z.layer.endswith(".Cu"))
     copper_layers = layers + sorted(other_layers - set(layers))
     items = []
     for p in board.pads():

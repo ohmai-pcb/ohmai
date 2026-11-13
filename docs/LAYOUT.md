@@ -107,6 +107,13 @@ proposed copper. The zone model keeps actual filled polygons, including concavit
 instead of treating their enclosing rectangles as copper. Refill and DRC remain
 the authority for the written board's connectivity.
 
+The island model matches KiCad connectivity on the stored fill: pads of the same footprint
+that touch through a custom pad's primitives (an exposed pad joined to drain legs) are one
+island, and vias and through-hole pads reach filled pours on every copper layer, including
+inner planes that are not routing layers. On the stereo reference board every net's
+`initial_islands` equals a KiCad union-find count after refill. The count uses the fill stored
+in the board; refill first if the pours are stale.
+
 Handroute also respects resolved custom footprint safety clearances for both
 track and via occupancy. Copper inside a foreign safety envelope is never
 reopened as an A* seed merely because an own-net pad or track overlaps it.
@@ -122,8 +129,11 @@ orthogonal cells. Terminal stubs enter the copper core rather than merely
 clipping an edge: a nominally wide track can otherwise have a much narrower
 physical connection. Circle, oval, roundrect and rotated rectangle terminals use
 inscribed real pad copper, never the empty corners of placement bounding boxes.
-Custom pads use their anchor only; unsupported pad shapes remain non-routable
-terminals rather than inventing copper. Custom `edge_clearance` constraints also raise both handroute and fanout setbacks.
+Custom pads are their anchor (circle or rect, from `(options (anchor ...))`) plus every copper
+primitive: filled `gr_poly`, `gr_rect`, `gr_circle`, and stroked lines, arcs, outlines and
+bezier control polylines, each grown by its stroke width and rotated with the pad. Never the
+primitive bounding box. Unsupported pad shapes (trapezoid) remain non-routable terminals rather
+than inventing copper. Custom `edge_clearance` constraints also raise both handroute and fanout setbacks.
 Via placement uses the **via** radius against tracks and
 other vias, including drill-to-drill spacing, rather than the smaller track radius.
 
