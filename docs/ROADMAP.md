@@ -28,20 +28,28 @@ Everything below ships in 0.1.0.
   unsplit interior tees/junctions/labels. Current coverage is partial. Require generators to split at all
   pins/junctions/labels now; ship stricter detection only with clean twins + known-bad cases.
 
-## v0.2: first real board end to end
-- Dogfood a real board through rev-A; fix every friction point in the phase guides and the CLI.
+## v0.2: layout tooling, plugin and public release
+- Issue-feedback work collected under 0.1.1 (unreleased): GitHub issues #1/#3/#4, plugin packaging #6,
+  Freerouting 2.5.0 DSN plane-layer and NPE fixes, `apply-changes` zone add/resize/delete,
+  `ohmai layout current`, handroute island counts matching KiCad, NOTICE and SPDX headers.
+- Brand logo and app icon in `docs/assets/logo/`, README wordmark, and a 64×64 `resources/icon.png`
+  ready for KiCad PCM packaging.
+- README refresh: v0.2 (unreleased) status, new layout tools, and upcoming example projects
+  (pico-k, usb-c-12v-stereo, hohme-sense).
+- Router guide and Freerouting run-log template (`docs/routing/`).
+- `ohmai new --github` (owner-approved `gh repo create` + first push).
 - CI and the weekly canary verified on GitHub (kicad/kicad:9.0 container, sticky comment, KiBot release);
   first real `ohmai upgrade` (kicad-cli 9.0.x) through the suites.
-- Multi-unit symbols (op-amps, gates, MCU banks) in `schematic build`, pin-map and gen-netlist.
-- reference-board frozen at rev-A and added as a golden project (with layout: drc + gerbers), if ready.
-- `ohmai new --github` (owner-approved `gh repo create` + first push).
 
 ## v0.3: design-intent checks
+- Dogfood a real board through rev-A; fix every friction point in the phase guides and the CLI.
+- A reference board frozen at rev-A and added as a golden project (with layout: drc + gerbers), so
+  Freerouting/KiKit upgrades get suite coverage.
+- Multi-unit symbols (op-amps, gates, MCU banks) in `schematic build`, pin-map and gen-netlist.
+- Dense QFN escape/fanout improvements.
 - Net voltage annotations (from the power tree) → abs-max and capacitor/resistor rating checks per pin.
 - Creepage/clearance: generate `.kicad_dru` rules from the `docs/safety.md` table and verify them
   (plus its known-bad case).
-- A golden board with a routed layout, so drc and gerbers are snapshotted and Freerouting/KiKit upgrades get
-  suite coverage.
 - Schematic visual diff (KiBot/KiRi style) posted in PRs.
 - Publish `ohmai` to PyPI: trusted-publishing job in `release.yml` (environment `pypi`), first upload.
 - passive-mpn: more vendor codes (Panasonic ERJ, KEMET, TDK C-series) and voltage/dielectric decode.

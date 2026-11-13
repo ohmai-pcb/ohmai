@@ -4,6 +4,9 @@
 Historical internal project names are anonymized aliases, not public repositories.
 
 ## 0.1.1 (unreleased)
+- Roadmap: v0.2 is now layout tooling, plugin and public release. Dogfood of a real board
+  through rev-A, a frozen rev-A golden project, multi-unit symbols, and dense QFN
+  escape/fanout move to v0.3.
 - `layout pour`: `--board PCB` (as documented; exclusive with `--staged`), `--section x=MM|y=MM`
   and `--width-at X,Y` width reports that ignore cuts along outline edges and do not depend on the
   cut direction. The neck now ignores same-net vias/pads that do not touch the pour (listed under
@@ -61,7 +64,7 @@ Historical internal project names are anonymized aliases, not public repositorie
 First release. An AI-agent skill plus the `ohmai` CLI that takes a PCB idea through 12 gated
 phases (requirements to bring-up) with deterministic KiCad 9 checks, owner review gates, attributed commits,
 a pinned toolchain, a known-bad mutation suite and a golden project. See docs/ROADMAP.md for what is in 0.1.0
-and what comes in 0.2 (first real board through rev-A).
+and what was then planned for 0.2 (first real board through rev-A; that goal later moved to v0.3).
 - `ohmai status --set-phase/--gate [--decision D-xxx]`: front-matter edits without hand-editing STATUS.md;
   `approved` requires a logged decision.
 - New `passive-mpn` check: UniRoyal / Yageo RC / Samsung CL / Murata GRM-GCM MPNs are decoded and compared to
