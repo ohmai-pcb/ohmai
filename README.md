@@ -11,7 +11,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![KiCad 9](https://img.shields.io/badge/KiCad-9.0+-314CB0.svg)](https://www.kicad.org/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB.svg)](https://www.python.org/)
-[![Status: v0.2 (unreleased) experimental](https://img.shields.io/badge/Status-v0.2_unreleased_experimental-orange.svg)](#what-works-today-vs-current-limitations)
+[![Status: v0.2.0 released, experimental](https://img.shields.io/badge/Status-v0.2.0_released_experimental-orange.svg)](#what-works-today-vs-current-limitations)
 
 [**Quickstart**](#quickstart) · [**How It Works (The 12 Phases)**](#the-12-phases) · [**What Works Today**](#what-works-today-vs-current-limitations) · [**Layout tools**](#layout-tools) · [**CLI Reference**](#cli-overview) · [**Pinned tools**](#pinned-tool-versions-per-release)
 
@@ -63,7 +63,7 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 
 ## What works today vs. current limitations
 
-> **Status: v0.2 (unreleased, experimental / early-stage).** Layout tooling, plugin packaging and release prep are in tree but not tagged. [pico-k](https://github.com/ohmai-pcb/pico-k) is a public example design; it has not been fabricated yet. See [Example projects](#example-projects) and [ROADMAP](docs/ROADMAP.md).
+> **Status: [v0.2.0](https://github.com/ohmai-pcb/ohmai/releases/tag/v0.2.0) released (experimental / early-stage).** v0.3 work (layout autonomy, real board through rev-A) is in progress. [pico-k](https://github.com/ohmai-pcb/pico-k) is a public example design; it has not been fabricated yet. See [Example projects](#example-projects) and [ROADMAP](docs/ROADMAP.md).
 
 ### Works well today
 - **Datasheet constraint extraction & citation checking (`ohmai check constraints`, `ohmai datasheets`):** Catching pinout/direction mistakes, missing pull-ups, and unverified datasheet claims before schematic capture begins. Tracking datasheet URLs, SHA-256 digests, and cited pages in `datasheets/manifest.yaml` without committing binary `.pdf` blobs.
