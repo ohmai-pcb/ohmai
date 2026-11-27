@@ -63,7 +63,7 @@ OhmAI does **not** make an LLM an autonomous senior hardware engineer. Instead, 
 
 ## What works today vs. current limitations
 
-> **Status: v0.2 (unreleased, experimental / early-stage).** Layout tooling, plugin packaging and release prep are in tree but not tagged. No public example board or physical fabrication is claimed. See [ROADMAP](docs/ROADMAP.md).
+> **Status: v0.2 (unreleased, experimental / early-stage).** Layout tooling, plugin packaging and release prep are in tree but not tagged. [pico-k](https://github.com/ohmai-pcb/pico-k) is a public example design; it has not been fabricated yet. See [Example projects](#example-projects) and [ROADMAP](docs/ROADMAP.md).
 
 ### Works well today
 - **Datasheet constraint extraction & citation checking (`ohmai check constraints`, `ohmai datasheets`):** Catching pinout/direction mistakes, missing pull-ups, and unverified datasheet claims before schematic capture begins. Tracking datasheet URLs, SHA-256 digests, and cited pages in `datasheets/manifest.yaml` without committing binary `.pdf` blobs.
@@ -92,11 +92,11 @@ Closing a dense board still needs human steering. The copper often looks like an
 
 ## Example projects
 
-These boards are being prepared as public examples. They are not published yet, so this list has no links.
+Boards designed with OhmAI. More examples will be published as they are ready.
 
-- pico-k
-- usb-c-12v-stereo
-- hohme-sense
+- [pico-k](https://github.com/ohmai-pcb/pico-k) — RP2350A + MAX31856 Type-K thermocouple board (rev-A design, pre-fab)
+- usb-c-12v-stereo (not published yet)
+- hohme-sense (not published yet)
 
 ---
 
